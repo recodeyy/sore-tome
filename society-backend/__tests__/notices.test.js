@@ -70,10 +70,11 @@ jest.mock('../src/services/AuditLogService', () => ({
 
 jest.mock('../middleware/auth', () => ({
   authMiddleware: (req, res, next) => {
-    req.user = { uid: 'admin1', role: 'admin', society_id: 'soc1', name: 'Test Admin' };
+    req.user = { uid: 'admin1', role: 'main_admin', society_id: 'soc1', name: 'Test Admin' };
     next();
   },
   adminOnly: (req, res, next) => next(),
+  canManageContent: (req, res, next) => next(),
 }));
 
 jest.mock('../middleware/tenantMiddleware', () => ({

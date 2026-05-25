@@ -75,5 +75,14 @@ function canManageContent(req, res, next) {
   next();
 }
 
-module.exports = { authMiddleware, adminOnly, mainAdminOnly, canManageFunds, canManageContent };
+function guardOnly(req, res, next) {
+  const role = req.user?.role;
+  if (role !== "guard" && role !== "main_admin") {
+    logger.warn({ userId: req.user?.uid, role, path: req.path }, "SEC-WARN: Unauthorized Guard Access Attempt");
+    return res.status(403).json({ error: "Access denied. Guard or Admin role required." });
+  }
+  next();
+}
+
+module.exports = { authMiddleware, adminOnly, mainAdminOnly, canManageFunds, canManageContent, guardOnly };
 

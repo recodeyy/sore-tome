@@ -81,19 +81,50 @@ router.post("/transactions", authMiddleware, tenantMiddleware, canManageFunds, v
   try {
     const { title, amount, type, note, category, transactionId } = req.body;
     const db = getDb();
-    const docRef = await db.collection("transactions").add({
-      society_id: req.societyId, // MANDATORY: Multi-tenancy partition
-      title,
-      amount: Number(amount),
-      type,
-      category: category || "Other",
-      note: note || "",
-      transactionId: transactionId || null,
-      addedBy: req.user.uid,
-      createdAt: getAdmin().firestore.FieldValue.serverTimestamp(),
+    const admin = getAdmin();
+    const summaryRef = db.collection("society_funds_summary").doc(req.societyId);
+
+    const collectIncrement = type === "credit" ? Number(amount) : 0;
+    const spendIncrement = type === "debit" ? Number(amount) : 0;
+    const incrementAmount = type === "credit" ? Number(amount) : -Number(amount);
+
+    let docId = "";
+    await db.runTransaction(async (transaction) => {
+      const summaryDoc = await transaction.get(summaryRef);
+      const newTxRef = db.collection("transactions").doc();
+      docId = newTxRef.id;
+
+      if (!summaryDoc.exists) {
+        transaction.set(summaryRef, {
+          society_id: req.societyId,
+          totalCollected: collectIncrement,
+          totalSpent: spendIncrement,
+          balance: incrementAmount,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+      } else {
+        transaction.update(summaryRef, {
+          totalCollected: admin.firestore.FieldValue.increment(collectIncrement),
+          totalSpent: admin.firestore.FieldValue.increment(spendIncrement),
+          balance: admin.firestore.FieldValue.increment(incrementAmount),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+      }
+
+      transaction.set(newTxRef, {
+        society_id: req.societyId,
+        title,
+        amount: Number(amount),
+        type,
+        category: category || "Other",
+        note: note || "",
+        transactionId: transactionId || null,
+        addedBy: req.user.uid,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
     });
 
-    res.status(201).json({ id: docRef.id, message: "Transaction recorded" });
+    res.status(201).json({ id: docId, message: "Transaction recorded" });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -103,9 +134,11 @@ router.post("/transactions", authMiddleware, tenantMiddleware, canManageFunds, v
 router.get("/summary", authMiddleware, tenantMiddleware, async (req, res) => {
   try {
     const db = getDb();
+    const admin = getAdmin();
     const { redis } = require("../src/shared/Redis");
-    const [transSnap, settingsSnap] = await Promise.all([
-      db.collection("transactions").where("society_id", "==", req.societyId).orderBy("createdAt", "desc").limit(100).get(),
+    
+    const [summarySnap, settingsSnap] = await Promise.all([
+      db.collection("society_funds_summary").doc(req.societyId).get(),
       db.collection("society_settings").doc(req.societyId).get()
     ]);
 
@@ -113,16 +146,43 @@ router.get("/summary", authMiddleware, tenantMiddleware, async (req, res) => {
     let totalDebit = 0;
     const categoryBreakdown = {};
 
-    transSnap.forEach((doc) => {
-      const d = doc.data();
-      if (d.type === "credit") {
-        totalCredit += d.amount;
-      } else if (d.type === "debit") {
-        totalDebit += d.amount;
+    if (summarySnap.exists) {
+      const summaryData = summarySnap.data();
+      totalCredit = summaryData.totalCollected || 0;
+      totalDebit = summaryData.totalSpent || 0;
+
+      // To populate category breakdown, fetch recent debit transactions
+      const transSnap = await db.collection("transactions")
+        .where("society_id", "==", req.societyId)
+        .where("type", "==", "debit")
+        .orderBy("createdAt", "desc")
+        .limit(100)
+        .get();
+
+      transSnap.forEach((doc) => {
+        const d = doc.data();
         const cat = d.category || "Other";
         categoryBreakdown[cat] = (categoryBreakdown[cat] || 0) + d.amount;
-      }
-    });
+      });
+    } else {
+      // Fallback: dynamic calculation from the last 100 transactions
+      const transSnap = await db.collection("transactions")
+        .where("society_id", "==", req.societyId)
+        .orderBy("createdAt", "desc")
+        .limit(100)
+        .get();
+
+      transSnap.forEach((doc) => {
+        const d = doc.data();
+        if (d.type === "credit") {
+          totalCredit += d.amount;
+        } else if (d.type === "debit") {
+          totalDebit += d.amount;
+          const cat = d.category || "Other";
+          categoryBreakdown[cat] = (categoryBreakdown[cat] || 0) + d.amount;
+        }
+      });
+    }
 
     const settings = settingsSnap.exists ? settingsSnap.data() : { target: 200000, currency: "Rs", maintenanceFee: 625 };
     const maintenanceFee = settings.maintenanceFee || 625;
@@ -136,7 +196,7 @@ router.get("/summary", authMiddleware, tenantMiddleware, async (req, res) => {
     const liableUsers = usersSnap.docs.filter(u => u.data().maintenanceExempt !== true);
 
     const now = new Date();
-    const firstDayTs = getAdmin().firestore.Timestamp.fromDate(new Date(now.getFullYear(), now.getMonth(), 1));
+    const firstDayTs = admin.firestore.Timestamp.fromDate(new Date(now.getFullYear(), now.getMonth(), 1));
     const paidMatch = await db.collection("transactions")
       .where("society_id", "==", req.societyId)
       .where("createdAt", ">=", firstDayTs)
@@ -329,6 +389,8 @@ router.post("/payments/verify", authMiddleware, tenantMiddleware, async (req, re
     // On success: Create transaction record
     const { title, category } = req.body;
     const db = getDb();
+    const admin = getAdmin();
+    const summaryRef = db.collection("society_funds_summary").doc(req.societyId);
     
     const docData = {
       society_id: req.societyId,
@@ -339,16 +401,37 @@ router.post("/payments/verify", authMiddleware, tenantMiddleware, async (req, re
       note: `Gateway: ${provider.name} | ID: ${verification.transactionId}`,
       transactionId: verification.transactionId,
       addedBy: req.user.uid,
-      createdAt: getAdmin().firestore.FieldValue.serverTimestamp(),
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
     };
 
-    await db.collection("transactions").add(docData);
+    await db.runTransaction(async (transaction) => {
+      const summaryDoc = await transaction.get(summaryRef);
+      const newTxRef = db.collection("transactions").doc();
+
+      if (!summaryDoc.exists) {
+        transaction.set(summaryRef, {
+          society_id: req.societyId,
+          totalCollected: recordedAmount,
+          totalSpent: 0,
+          balance: recordedAmount,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+      } else {
+        transaction.update(summaryRef, {
+          totalCollected: admin.firestore.FieldValue.increment(recordedAmount),
+          balance: admin.firestore.FieldValue.increment(recordedAmount),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+      }
+
+      transaction.set(newTxRef, docData);
+    });
 
     // AI V2.4: Log admin action if it's a significant payment
     await AuditLogService.getInstance().logAdminAction(
       req.user,
       "Payment Verified",
-      `Payment of ${amount} verified via ${provider.name}`
+      `Payment of ${recordedAmount} verified via ${provider.name}`
     );
 
     res.json({ 
@@ -391,6 +474,7 @@ router.post("/payments/webhook", async (req, res) => {
     
     // Idempotency check
     const db = getDb();
+    const admin = getAdmin();
     const webhookDoc = await db.collection("processed_webhooks").doc(eventId).get();
     if (webhookDoc.exists) {
       return res.status(200).send("Already processed");
@@ -405,12 +489,12 @@ router.post("/payments/webhook", async (req, res) => {
       // We look up the transaction by transactionId to see if it was already processed synchronously
       const transSnap = await db.collection("transactions").where("transactionId", "==", paymentId).get();
       if (transSnap.empty) {
-        // If we attached society_id and user_id to notes, we could create it here.
-        // For MVP, we log it so admin can manually reconcile, or we extract from notes.
         const notes = paymentEntity.notes || {};
         if (notes.society_id) {
-          await db.collection("transactions").add({
-            society_id: notes.society_id,
+          const notesSocietyId = notes.society_id;
+          const summaryRef = db.collection("society_funds_summary").doc(notesSocietyId);
+          const docData = {
+            society_id: notesSocietyId,
             title: "Webhook Payment Capture",
             amount: Number(amount),
             type: "credit",
@@ -418,19 +502,62 @@ router.post("/payments/webhook", async (req, res) => {
             note: `Gateway: razorpay | ID: ${paymentId}`,
             transactionId: paymentId,
             addedBy: notes.user_id || "system",
-            createdAt: getAdmin().firestore.FieldValue.serverTimestamp(),
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          };
+
+          await db.runTransaction(async (transaction) => {
+            // Re-verify webhook doc inside transaction to prevent race conditions
+            const webhookDocRef = db.collection("processed_webhooks").doc(eventId);
+            const innerDoc = await transaction.get(webhookDocRef);
+            if (innerDoc.exists) return;
+
+            const summaryDoc = await transaction.get(summaryRef);
+            const newTxRef = db.collection("transactions").doc();
+
+            if (!summaryDoc.exists) {
+              transaction.set(summaryRef, {
+                society_id: notesSocietyId,
+                totalCollected: Number(amount),
+                totalSpent: 0,
+                balance: Number(amount),
+                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+              });
+            } else {
+              transaction.update(summaryRef, {
+                totalCollected: admin.firestore.FieldValue.increment(Number(amount)),
+                balance: admin.firestore.FieldValue.increment(Number(amount)),
+                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+              });
+            }
+
+            transaction.set(newTxRef, docData);
+            transaction.set(webhookDocRef, {
+              processedAt: admin.firestore.FieldValue.serverTimestamp(),
+              event: event.event
+            });
           });
         } else {
           logger.warn({ paymentId }, "Webhook received but no society_id in notes to create transaction.");
+          // Still mark as processed to prevent repeat deliver attempts
+          await db.collection("processed_webhooks").doc(eventId).set({
+            processedAt: admin.firestore.FieldValue.serverTimestamp(),
+            event: event.event
+          });
         }
+      } else {
+        // Already processed synchronously, just mark webhook as processed
+        await db.collection("processed_webhooks").doc(eventId).set({
+          processedAt: admin.firestore.FieldValue.serverTimestamp(),
+          event: event.event
+        });
       }
+    } else {
+      // Mark other events as processed
+      await db.collection("processed_webhooks").doc(eventId).set({
+        processedAt: admin.firestore.FieldValue.serverTimestamp(),
+        event: event.event
+      });
     }
-
-    // Mark as processed
-    await db.collection("processed_webhooks").doc(eventId).set({
-      processedAt: getAdmin().firestore.FieldValue.serverTimestamp(),
-      event: event.event
-    });
 
     res.status(200).send("OK");
   } catch (err) {

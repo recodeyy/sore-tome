@@ -15,6 +15,8 @@ class SplashScreen extends ConsumerStatefulWidget {
 
 class _SplashScreenState extends ConsumerState<SplashScreen> {
   bool _isAnimationComplete = false;
+  bool _hasError = false;
+  String _errorMessage = '';
 
   @override
   void initState() {
@@ -45,17 +47,103 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
         Navigator.pushReplacementNamed(context, '/login');
       }
     } else if (userAsync is AsyncError) {
-      Navigator.pushReplacementNamed(context, '/login');
+      setState(() {
+        _hasError = true;
+        _errorMessage = 'Unable to establish a connection with SERO servers. Please verify your internet settings or try again.';
+      });
     }
   }
 
   @override
   Widget build(BuildContext context) {
     ref.listen(authProvider, (previous, next) {
-      if (next is AsyncData || next is AsyncError) {
+      if (next is AsyncData || (next is AsyncError && _isAnimationComplete)) {
         _navigateToNextScreen();
       }
     });
+
+    if (_hasError) {
+      return Scaffold(
+        body: Container(
+          decoration: const BoxDecoration(
+            color: kPrimaryGreen, // Deep matte green for luxury look
+          ),
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(32.0),
+              child: Card(
+                elevation: 12,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                color: Colors.white,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 32.0),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.withValues(alpha: 0.1),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.wifi_off_rounded, color: Colors.orange, size: 48),
+                      ),
+                      const SizedBox(height: 24),
+                      Text(
+                        'Connection Timeout',
+                        style: GoogleFonts.outfit(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: kDeepNavy,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        _errorMessage,
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.outfit(
+                          fontSize: 14,
+                          color: const Color(0xFF64748B),
+                          height: 1.5,
+                        ),
+                      ),
+                      const SizedBox(height: 32),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 52,
+                        child: ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: kPrimaryGreen,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            elevation: 0,
+                          ),
+                          onPressed: () {
+                            setState(() {
+                              _hasError = false;
+                            });
+                            // Force invalidate authProvider to retry network check
+                            ref.invalidate(authProvider);
+                          },
+                          icon: const Icon(Icons.refresh_outlined),
+                          label: Text(
+                            'RETRY CONNECTION',
+                            style: GoogleFonts.outfit(
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 1.0,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
 
     return Scaffold(
       body: Container(

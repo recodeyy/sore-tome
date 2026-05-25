@@ -1,5 +1,8 @@
 import { Pool, PoolConfig } from "pg";
 import { logger } from "../shared/Logger";
+import { AsyncLocalStorage } from "async_hooks";
+
+export const tenantContextStore = new AsyncLocalStorage<{ societyId: string }>();
 
 class Database {
   private static instance: Database;
@@ -48,23 +51,54 @@ class Database {
   public getPool(): Pool {
     const originalQuery = this.pool.query.bind(this.pool);
 
-    // V3.14: Observability Wrapper (Slow Query Tracking)
+    // V3.14: Observability Wrapper (Slow Query Tracking) + Tenant Isolation
     this.pool.query = (async (text: any, params: any) => {
+      const store = tenantContextStore.getStore();
+      const societyId = store?.societyId;
       const start = Date.now();
-      try {
-        const result = await originalQuery(text, params);
-        const duration = Date.now() - start;
 
-        if (duration > 500) {
-          logger.warn({ 
-            duration, 
-            query: typeof text === 'string' ? text.substring(0, 200) : 'complex_query'
-          }, "⚠️ Slow Database Query Detected");
+      if (societyId) {
+        // Enforce session settings by running set_config on a client connection
+        const client = await this.pool.connect();
+        try {
+          await client.query("SELECT set_config('app.current_tenant', $1, false)", [societyId]);
+          
+          let result;
+          if (params) {
+            result = await client.query(text, params);
+          } else {
+            result = await client.query(text);
+          }
+
+          const duration = Date.now() - start;
+          if (duration > 500) {
+            logger.warn({ 
+              duration, 
+              query: typeof text === 'string' ? text.substring(0, 200) : 'complex_query'
+            }, "⚠️ Slow Database Query Detected");
+          }
+
+          return result;
+        } finally {
+          client.release();
         }
+      } else {
+        // Run normally if no tenant context exists (e.g. background tasks or migrations)
+        try {
+          const result = await originalQuery(text, params);
+          const duration = Date.now() - start;
 
-        return result;
-      } catch (err) {
-        throw err;
+          if (duration > 500) {
+            logger.warn({ 
+              duration, 
+              query: typeof text === 'string' ? text.substring(0, 200) : 'complex_query'
+            }, "⚠️ Slow Database Query Detected");
+          }
+
+          return result;
+        } catch (err) {
+          throw err;
+        }
       }
     }) as any;
 

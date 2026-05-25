@@ -71,6 +71,23 @@ class AuthNotifier extends StateNotifier<AsyncValue<UserModel?>> {
     await ApiService.clearToken();
     state = const AsyncValue.data(null);
   }
+
+  Future<void> deleteAccount() async {
+    state = const AsyncValue.loading();
+    try {
+      final res = await ApiService.delete('/users/me');
+      if (res.statusCode == 200) {
+        await ApiService.clearToken();
+        state = const AsyncValue.data(null);
+      } else {
+        final data = jsonDecode(res.body);
+        throw data['error'] ?? 'Failed to delete account';
+      }
+    } catch (e, st) {
+      state = AsyncValue.error(e, st);
+      rethrow;
+    }
+  }
 }
 
 

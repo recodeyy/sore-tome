@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from "express";
+import { tenantContextStore } from "../src/shared/Database";
 
 export interface TenantRequest extends Request {
   user?: {
@@ -31,5 +32,8 @@ export const tenantMiddleware = (req: Request, res: Response, next: NextFunction
   // Inject societyId into the request object for easy access in routes/services
   tReq.societyId = societyId;
   
-  next();
+  // Set AsyncLocalStorage context before entering subsequent handlers
+  tenantContextStore.run({ societyId }, () => {
+    next();
+  });
 };

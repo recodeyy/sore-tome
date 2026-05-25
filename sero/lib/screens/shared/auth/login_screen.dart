@@ -5,6 +5,7 @@ import 'package:sero/providers/shared/auth_provider.dart';
 import 'package:sero/widgets/shared/brand_logo.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:sero/config/constants.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -251,21 +252,59 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       // HEAVY FIX: SizedBox with fixed height prevents "jumping"
                       // INDEXEDSTACK prevents "lag" by keeping forms alive in background
                       SizedBox(
-                        height: 275, // Locked height for ultimate stability
-                        child: IndexedStack(
-                          index: _selectedIndex,
+                        height: 315, // Expanded height to support legal footer without overflow
+                        child: Column(
                           children: [
-                            // Resident Form
-                            AnimatedOpacity(
-                              opacity: _selectedIndex == 0 ? 1.0 : 0.0,
-                              duration: const Duration(milliseconds: 200),
-                              child: _residentForm(),
+                            Expanded(
+                              child: IndexedStack(
+                                index: _selectedIndex,
+                                children: [
+                                  // Resident Form
+                                  AnimatedOpacity(
+                                    opacity: _selectedIndex == 0 ? 1.0 : 0.0,
+                                    duration: const Duration(milliseconds: 200),
+                                    child: _residentForm(),
+                                  ),
+                                  // Admin Form
+                                  AnimatedOpacity(
+                                    opacity: _selectedIndex == 1 ? 1.0 : 0.0,
+                                    duration: const Duration(milliseconds: 200),
+                                    child: _adminForm(),
+                                  ),
+                                ],
+                              ),
                             ),
-                            // Admin Form
-                            AnimatedOpacity(
-                              opacity: _selectedIndex == 1 ? 1.0 : 0.0,
-                              duration: const Duration(milliseconds: 200),
-                              child: _adminForm(),
+                            const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                            const SizedBox(height: 12),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                GestureDetector(
+                                  onTap: () => _openLegalUrl('Privacy Policy', AppConstants.privacyPolicyUrl),
+                                  child: const Text(
+                                    'Privacy Policy',
+                                    style: TextStyle(
+                                      color: Color(0xFF64748B),
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w500,
+                                      decoration: TextDecoration.underline,
+                                    ),
+                                  ),
+                                ),
+                                const Text('   •   ', style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12)),
+                                GestureDetector(
+                                  onTap: () => _openLegalUrl('Terms & Conditions', AppConstants.termsConditionsUrl),
+                                  child: const Text(
+                                    'Terms & Conditions',
+                                    style: TextStyle(
+                                      color: Color(0xFF64748B),
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w500,
+                                      decoration: TextDecoration.underline,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
                         ),
@@ -433,6 +472,43 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  void _openLegalUrl(String title, String url) {
+    showDialog(
+      context: context,
+      builder: (BuildContext ctx) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('You can view the full legal agreement at:'),
+              const SizedBox(height: 12),
+              SelectableText(
+                url,
+                style: const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 16),
+              const Text('For security or user data inquiries, contact:'),
+              const SizedBox(height: 6),
+              const SelectableText(
+                AppConstants.supportEmail,
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
     );
   }
 

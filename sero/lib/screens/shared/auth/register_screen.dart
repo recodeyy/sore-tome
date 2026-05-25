@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:sero/app/theme.dart';
 import 'package:sero/services/auth_service.dart';
+import 'package:sero/config/constants.dart';
 
 /// Register screen — new residents fill name, phone, password, flat number.
 /// After submitting, their account is "pending" until an admin approves it.
@@ -285,12 +286,82 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     ),
                   ),
                   const SizedBox(height: 24),
+                  const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      GestureDetector(
+                        onTap: () => _openLegalUrl('Privacy Policy', AppConstants.privacyPolicyUrl),
+                        child: const Text(
+                          'Privacy Policy',
+                          style: TextStyle(
+                            color: Color(0xFF64748B),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                            decoration: TextDecoration.underline,
+                          ),
+                        ),
+                      ),
+                      const Text('   •   ', style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12)),
+                      GestureDetector(
+                        onTap: () => _openLegalUrl('Terms & Conditions', AppConstants.termsConditionsUrl),
+                        child: const Text(
+                          'Terms & Conditions',
+                          style: TextStyle(
+                            color: Color(0xFF64748B),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                            decoration: TextDecoration.underline,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
                 ],
               ),
             ),
           ),
         ),
       ],
+    );
+  }
+
+  void _openLegalUrl(String title, String url) {
+    showDialog(
+      context: context,
+      builder: (BuildContext ctx) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('You can view the full legal agreement at:'),
+              const SizedBox(height: 12),
+              SelectableText(
+                url,
+                style: const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 16),
+              const Text('For security or user data inquiries, contact:'),
+              const SizedBox(height: 6),
+              const SelectableText(
+                AppConstants.supportEmail,
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
     );
   }
 }

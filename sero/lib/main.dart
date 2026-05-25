@@ -5,8 +5,10 @@ import 'firebase_options.dart';
 import 'services/notification_service.dart';
 import 'app/app.dart';
 import 'widgets/shared/error_boundary.dart';
+import 'config/env.dart';
 
 Future<void> main() async {
+  Environment.validate(); // Lock API environment target checking
   WidgetsFlutterBinding.ensureInitialized();
   try {
     await Firebase.initializeApp(

@@ -22,20 +22,59 @@ router.post("/register", authMiddleware, async (req, res) => {
       return res.status(200).json({ message: "User already registered", user: existing.data() });
     }
 
+    const cleanPhone = (phone || "").toString().replace(/\s+/g, "");
+    const targetSociety = society_id || "main_society";
+
+    // Query whitelist roster
+    const whitelistSnap = await db.collection("whitelisted_flats")
+      .where("society_id", "==", targetSociety)
+      .where("phone", "==", cleanPhone)
+      .limit(1)
+      .get();
+
+    const isWhitelisted = !whitelistSnap.empty;
+    const initialStatus = isWhitelisted ? "approved" : "pending";
+
     const userData = {
       uid: req.user.uid,
       name,
       flatNumber,
-      phone: phone || "",
-      society_id: society_id || "main_society", // Fallback for legacy if not provided
+      phone: cleanPhone,
+      society_id: targetSociety, // Fallback for legacy if not provided
       role: "resident", // default role
       residentType: "owner", // owner | tenant | guest
-      status: "pending",
+      status: initialStatus,
       maintenanceExempt: false,
       createdAt: getAdmin().firestore.FieldValue.serverTimestamp(),
+      approvedAt: isWhitelisted ? getAdmin().firestore.FieldValue.serverTimestamp() : null,
+      approvedBy: isWhitelisted ? "system_auto_approval" : null,
     };
 
     await userRef.set(userData);
+
+    // Notify admins / user
+    if (isWhitelisted) {
+      await db.collection("notifications").add({
+        type: "registration_approved",
+        title: "Registration approved!",
+        body: `Welcome to the society, ${name}! Your account was auto-approved.`,
+        targetUserId: req.user.uid,
+        society_id: targetSociety,
+        read: false,
+        createdAt: getAdmin().firestore.FieldValue.serverTimestamp(),
+      });
+    } else {
+      await db.collection("notifications").add({
+        type: "registration_request",
+        title: "New registration request",
+        body: `${name} from Flat ${flatNumber} wants to join.`,
+        targetRole: "main_admin",
+        userId: req.user.uid,
+        read: false,
+        createdAt: getAdmin().firestore.FieldValue.serverTimestamp(),
+      });
+    }
+
     res.status(201).json({ message: "User registered", user: userData });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -309,6 +348,56 @@ router.post("/me/photo", authMiddleware, upload.single("photo"), async (req, res
     });
 
     res.json({ photoUrl: publicUrl, message: "Profile photo updated" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /users/me — GDPR compliant account deletion
+router.delete("/me", authMiddleware, tenantMiddleware, async (req, res) => {
+  try {
+    const db = getDb();
+    const admin = getAdmin();
+    const userRef = db.collection("users").doc(req.user.uid);
+    const userDoc = await userRef.get();
+
+    if (!userDoc.exists || userDoc.data().society_id !== req.societyId) {
+      return res.status(404).json({ error: "User profile not found in active society context." });
+    }
+
+    // Anonymize sensitive personal fields, set status to deleted, clear FCM/tokens
+    const currentData = userDoc.data();
+    const anonymizedData = {
+      name: "Deleted Resident",
+      phone: `deleted_${req.user.uid}_${currentData.phone || ""}`.substring(0, 50),
+      email: "",
+      photoUrl: "",
+      fcmToken: "",
+      status: "deleted",
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      deletedAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
+
+    await db.runTransaction(async (transaction) => {
+      transaction.update(userRef, anonymizedData);
+    });
+
+    // Revoke refresh tokens
+    const tokensSnap = await db.collection("refresh_tokens").where("userId", "==", req.user.uid).get();
+    if (!tokensSnap.empty) {
+      const batch = db.batch();
+      tokensSnap.forEach((doc) => batch.delete(doc.ref));
+      await batch.commit();
+    }
+
+    // Log administrative action
+    await AuditLogService.getInstance().logAdminAction(
+      { uid: req.user.uid, name: "Deleted Resident", role: req.user.role },
+      "Account Deleted",
+      `User ${req.user.uid} has self-deleted their account.`
+    );
+
+    res.json({ success: true, message: "Your account has been deleted successfully." });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

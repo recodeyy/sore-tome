@@ -1,4 +1,9 @@
 node_modules/
 .env
+*.env
 config/serviceAccountKey.json
+**/serviceAccountKey.json
 *.log
+*.keystore
+*.jks
+key.properties

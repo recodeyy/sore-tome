@@ -1,0 +1,22 @@
+# Local environment files
+.env
+*.env
+society-backend/.env
+society-backend/.env.*
+
+# Firebase private credentials
+society-backend/config/serviceAccountKey.json
+**/serviceAccountKey.json
+
+# Android release signing configurations and keys
+*.keystore
+*.jks
+key.properties
+sero/android/key.properties
+
+# Logs and system files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.DS_Store
+Thumbs.db

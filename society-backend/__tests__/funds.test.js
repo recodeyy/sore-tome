@@ -34,6 +34,7 @@ jest.mock('../config/firebase', () => {
   });
 
   const mockDoc = {
+    id: 'new-tx-id',
     get: mockGet,
     update: jest.fn(() => Promise.resolve()),
     delete: jest.fn(() => Promise.resolve()),
@@ -52,11 +53,22 @@ jest.mock('../config/firebase', () => {
     initFirebase: jest.fn(),
     getDb: jest.fn(() => ({ 
       collection: jest.fn(() => mockCollection),
-      batch: jest.fn(() => ({ commit: jest.fn(), update: jest.fn(), delete: jest.fn() })) 
+      batch: jest.fn(() => ({ commit: jest.fn(), update: jest.fn(), delete: jest.fn() })),
+      runTransaction: jest.fn((callback) => {
+        const transactionObject = {
+          get: mockGet,
+          set: jest.fn(),
+          update: jest.fn(),
+        };
+        return callback(transactionObject);
+      })
     })),
     getAdmin: jest.fn(() => ({
       firestore: { 
-        FieldValue: { serverTimestamp: jest.fn(() => 'mock_timestamp') },
+        FieldValue: { 
+          serverTimestamp: jest.fn(() => 'mock_timestamp'),
+          increment: jest.fn((val) => val)
+        },
         Timestamp: { fromDate: jest.fn((d) => ({ toDate: () => d })) }
       }
     })),

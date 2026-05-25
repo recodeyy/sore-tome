@@ -6,7 +6,7 @@ function initFirebase() {
   if (admin.apps.length > 0) return;
 
   const projectId = process.env.FIREBASE_PROJECT_ID;
-  const serviceAccountPath = process.env.FIREBASE_SERVICE_ACCOUNT_PATH;
+  const serviceAccountPath = process.env.FIREBASE_SERVICE_ACCOUNT_PATH || "config/serviceAccountKey.json";
   
   // Try loading from environment variables first
   let clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
@@ -19,25 +19,31 @@ function initFirebase() {
     credential = admin.credential.cert({
       projectId,
       clientEmail,
-      privateKey: privateKey.includes("\\n") 
-        ? privateKey.replace(/\\n/g, "\n") 
-        : privateKey,
+      privateKey: privateKey.replace(/\\n/g, "\n"),
     });
-  } else if (serviceAccountPath) {
-    // 2. Initialize via service account JSON file (Best for local dev)
+    console.log("✅ Firebase initialized via environment variables.");
+  } else {
+    // 2. Fallback check for production environments
+    if (process.env.NODE_ENV === "production") {
+      console.error("\n❌ CRITICAL ERROR: Missing Firebase environment credentials in Production!");
+      throw new Error("Targeted Failure: Firebase Configuration Incomplete for Production");
+    }
+
+    // 3. Fallback to local untracked file if explicitly present in development
+    const fs = require("fs");
     const path = require("path");
     const fullPath = path.isAbsolute(serviceAccountPath) 
       ? serviceAccountPath 
       : path.join(process.cwd(), serviceAccountPath);
-    
-    credential = admin.credential.cert(fullPath);
-    console.log(`✅ Firebase: Loading credentials from ${serviceAccountPath}`);
-  }
 
-  if (!credential) {
-    console.error("\n❌ CRITICAL ERROR: Missing Firebase credentials!");
-    console.error("Provide FIREBASE_CLIENT_EMAIL/PRIVATE_KEY or FIREBASE_SERVICE_ACCOUNT_PATH\n");
-    throw new Error("Targeted Failure: Firebase Configuration Incomplete");
+    if (fs.existsSync(fullPath)) {
+      credential = admin.credential.cert(fullPath);
+      console.log(`✅ Firebase: Loading credentials from local file ${fullPath}`);
+    } else {
+      console.error("\n❌ CRITICAL ERROR: Missing Firebase credentials!");
+      console.error("Provide FIREBASE_CLIENT_EMAIL and FIREBASE_PRIVATE_KEY environment variables, or save untracked config/serviceAccountKey.json locally.\n");
+      throw new Error("Targeted Failure: Firebase Configuration Incomplete");
+    }
   }
 
   try {

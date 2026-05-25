@@ -1,17 +1,9 @@
 const express = require("express");
 const router = express.Router();
 const { getDb, getAdmin } = require("../config/firebase");
-const { authMiddleware } = require("../middleware/auth");
+const { authMiddleware, guardOnly } = require("../middleware/auth");
 const { tenantMiddleware } = require("../middleware/tenantMiddleware");
 const { logger } = require("../src/shared/Logger");
-
-// Middleware to restrict access to guards
-function guardOnly(req, res, next) {
-  if (req.user.role !== "guard" && req.user.role !== "main_admin") {
-    return res.status(403).json({ error: "Access denied. Guard or Admin role required." });
-  }
-  next();
-}
 
 // GET /visitors -> Get visitors for the society
 // Guards/Admins see all for today. Residents see only their own.

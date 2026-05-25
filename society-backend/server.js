@@ -105,7 +105,34 @@ app.use(cors({
 // ─── API Versioning & Routing ─────────────────────────────────────────────────
 const v1Router = express.Router();
 
+const { authMiddleware } = require("./middleware/auth");
+const { tenantMiddleware } = require("./middleware/tenantMiddleware");
+
 v1Router.use("/auth", require("./routes/auth"));
+
+// Apply globally to all subsequent versioned routes
+v1Router.use((req, res, next) => {
+  const path = req.path;
+  if (
+    path.startsWith("/auth") ||
+    path === "/users/register" ||
+    path === "/users/me" ||
+    path === "/users/me/photo" ||
+    path.startsWith("/funds/webhook")
+  ) {
+    if (path === "/users/register" || path === "/users/me" || path === "/users/me/photo") {
+      return authMiddleware(req, res, next);
+    }
+    return next();
+  }
+  
+  // For all other routes, apply both authMiddleware and tenantMiddleware
+  authMiddleware(req, res, (err) => {
+    if (err) return next(err);
+    tenantMiddleware(req, res, next);
+  });
+});
+
 v1Router.use("/users", standardLimiter, require("./routes/users"));
 v1Router.use("/notices", standardLimiter, require("./routes/notices"));
 v1Router.use("/issues", standardLimiter, require("./routes/issues"));

@@ -13,6 +13,25 @@ service cloud.firestore {
       return data.society_id == request.auth.token.society_id;
     }
 
+    // Strict append-only transaction ledger rules
+    match /transactions/{docId} {
+      allow read: if isAuthenticated() && isSameSociety(resource.data);
+      allow create: if isAuthenticated() && isSameSociety(request.resource.data) && (request.auth.token.role in ['main_admin', 'treasurer'] || request.auth.token.role == 'superadmin');
+      allow update, delete: if false;
+    }
+
+    // Strict summary rules
+    match /society_funds_summary/{docId} {
+      allow read: if isAuthenticated() && request.auth.token.society_id == docId;
+      allow write: if isAuthenticated() && request.auth.token.society_id == docId && (request.auth.token.role in ['main_admin', 'treasurer'] || request.auth.token.role == 'superadmin');
+    }
+
+    // Whitelisted flats rules
+    match /whitelisted_flats/{docId} {
+      allow read: if isAuthenticated() && resource.data.society_id == request.auth.token.society_id;
+      allow write: if isAuthenticated() && request.resource.data.society_id == request.auth.token.society_id && (request.auth.token.role in ['main_admin', 'secretary'] || request.auth.token.role == 'superadmin');
+    }
+
     // Tenant Isolation Pattern: All collections must be partitioned by society_id
     match /{collection}/{docId} {
       

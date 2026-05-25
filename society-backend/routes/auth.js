@@ -153,7 +153,17 @@ router.post("/register", validate(RegisterSchema), async (req, res) => {
             return res.status(409).json({ error: "This phone number is already registered" });
         }
 
-        const hashedPassword = await bcrypt.hash(password, 10);
+                const hashedPassword = await bcrypt.hash(password, 10);
+
+        // Check if phone number is whitelisted for auto-approval roster
+        const whitelistSnap = await db.collection("whitelisted_flats")
+            .where("society_id", "==", society_id)
+            .where("phone", "==", cleanPhone)
+            .limit(1)
+            .get();
+
+        const isWhitelisted = !whitelistSnap.empty;
+        const initialStatus = isWhitelisted ? "approved" : "pending";
 
         const userRef = db.collection("users").doc();
         const userData = {
@@ -165,12 +175,12 @@ router.post("/register", validate(RegisterSchema), async (req, res) => {
             blockName: blockName || "",
             society_id, // Partition ID
             role: "resident",
-            status: "pending",       // pending | approved | rejected
+            status: initialStatus,       // pending | approved | rejected
             createdAt: getAdmin().firestore.FieldValue.serverTimestamp(),
             residentType: "owner",
             maintenanceExempt: false,
-            approvedAt: null,
-            approvedBy: null,
+            approvedAt: isWhitelisted ? getAdmin().firestore.FieldValue.serverTimestamp() : null,
+            approvedBy: isWhitelisted ? "system_auto_approval" : null,
             // ── Phase 1.5: Attack Protection ────────────────
             failedLoginAttempts: 0,
             lockUntil: null,
@@ -178,16 +188,28 @@ router.post("/register", validate(RegisterSchema), async (req, res) => {
 
         await userRef.set(userData);
 
-        // Notification for admins
-        await db.collection("notifications").add({
-            type: "registration_request",
-            title: "New registration request",
-            body: `${name} from Flat ${flatNumber}${blockName ? ", Block " + blockName : ""} wants to join.`,
-            targetRole: "main_admin",
-            userId: userRef.id,
-            read: false,
-            createdAt: getAdmin().firestore.FieldValue.serverTimestamp(),
-        });
+        // Notification for admins/user
+        if (isWhitelisted) {
+            await db.collection("notifications").add({
+                type: "registration_approved",
+                title: "Registration approved!",
+                body: `Welcome to the society, ${name}! Your account was auto-approved.`,
+                targetUserId: userRef.id,
+                society_id,
+                read: false,
+                createdAt: getAdmin().firestore.FieldValue.serverTimestamp(),
+            });
+        } else {
+            await db.collection("notifications").add({
+                type: "registration_request",
+                title: "New registration request",
+                body: `${name} from Flat ${flatNumber}${blockName ? ", Block " + blockName : ""} wants to join.`,
+                targetRole: "main_admin",
+                userId: userRef.id,
+                read: false,
+                createdAt: getAdmin().firestore.FieldValue.serverTimestamp(),
+            });
+        }
 
         res.status(201).json({
             message: "Registration submitted. Please wait for admin approval before logging in.",
@@ -268,6 +290,12 @@ router.post("/login", validate(LoginSchema), async (req, res) => {
             return res.status(403).json({ 
                 error: "Your registration was not approved. Please contact the society admin.",
                 status: "rejected"
+            });
+        }
+        if (user.status === "deleted") {
+            return res.status(403).json({ 
+                error: "Your account has been deleted. Please register again.",
+                status: "deleted"
             });
         }
 

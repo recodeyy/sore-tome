@@ -6,7 +6,8 @@
   "scripts": {
     "start": "tsx server.js",
     "dev": "tsx watch server.js",
-    "test": "jest"
+    "test": "jest",
+    "seed:demo": "tsx scripts/seed-demo-users.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.20.0",
