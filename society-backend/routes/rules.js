@@ -12,9 +12,9 @@ router.get("/", authMiddleware, tenantMiddleware, async (req, res) => {
     const db = getDb();
     const snap = await db.collection("rules")
       .where("society_id", "==", req.societyId)
-      .orderBy("order", "asc")
       .get();
-    const rules = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+    const rules = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
+      .sort((a, b) => (a.order ?? 99) - (b.order ?? 99));
     res.json({ rules });
   } catch (err) {
     res.status(500).json({ error: err.message });

@@ -1,4 +1,3 @@
-import { PGVectorStore } from "@langchain/community/vectorstores/pgvector";
 import { OpenAIEmbeddings } from "@langchain/openai";
 import { db } from "../../shared/Database";
 import { Document } from "@langchain/core/documents";
@@ -29,22 +28,6 @@ export class VectorStoreService {
       VectorStoreService.instance = new VectorStoreService();
     }
     return VectorStoreService.instance;
-  }
-
-  /**
-   * Returns the underlying PGVectorStore instance.
-   */
-  public async getVectorStore(): Promise<PGVectorStore> {
-    return await PGVectorStore.initialize(this.embeddings, {
-      pool: this.pool,
-      tableName: "document_chunks",
-      columns: {
-        idColumnName: "id",
-        vectorColumnName: "vector",
-        contentColumnName: "content",
-        metadataColumnName: "metadata",
-      },
-    });
   }
 
   /**
@@ -114,17 +97,16 @@ export class VectorStoreService {
    * Added for Phase 3: Strict Document Ingestion with Deduplication and Metadata Enforcement
    */
   public async ingestDocuments(documents: Document[], society_id: string): Promise<boolean> {
-    const store = await this.getVectorStore();
     const crypto = require('crypto');
     let addedCount = 0;
-    
+
     for (const doc of documents) {
       // Strictly Enforce Metadata schema
       if (!doc.metadata.document_id) {
          doc.metadata.document_id = `doc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       }
       doc.metadata.society_id = society_id;
-      
+
       const contentHash = crypto.createHash("sha256").update(doc.pageContent).digest("hex");
       doc.metadata.content_hash = contentHash;
 
@@ -133,7 +115,12 @@ export class VectorStoreService {
       const duplicateRes = await this.pool.query(duplicateQuery, [contentHash, society_id]);
 
       if (duplicateRes.rows.length === 0) {
-        await store.addDocuments([doc]);
+        const [embedding] = await this.embeddings.embedDocuments([doc.pageContent]);
+        const vectorString = `[${embedding.join(",")}]`;
+        await this.pool.query(
+          `INSERT INTO document_chunks (content, metadata, vector, society_id) VALUES ($1, $2, $3, $4)`,
+          [doc.pageContent, JSON.stringify(doc.metadata), vectorString, society_id]
+        );
         addedCount++;
       }
     }

@@ -183,8 +183,7 @@ export class AIQueueService {
     // 2. Build Vector Store
     // V3.10: Final 15% is Vector indexing
     await this.updateJobStatus(job.id!, { progress: 85 });
-    const store = await vectorStore.getVectorStore();
-    await store.addDocuments(docs);
+    await vectorStore.ingestDocuments(docs, society_id);
     await this.updateJobStatus(job.id!, { progress: 95 });
 
     // 3. Mark as Indexed in Storage Metadata (Phase 6 requirement)

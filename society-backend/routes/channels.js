@@ -56,9 +56,8 @@ router.get("/", authMiddleware, tenantMiddleware, async (req, res) => {
   try {
     const db = getDb();
     let query = db.collection("channels")
-      .where("society_id", "==", req.societyId)
-      .orderBy("createdAt", "desc");
-    
+      .where("society_id", "==", req.societyId);
+
     if (req.user.role !== "main_admin" && req.user.role !== "superadmin" && req.user.role !== "secretary") {
       query = query.where("allowedRoles", "array-contains", req.user.role);
     }
@@ -71,7 +70,8 @@ router.get("/", authMiddleware, tenantMiddleware, async (req, res) => {
         ...data,
         createdAt: data.createdAt ? data.createdAt.toDate().toISOString() : null,
       };
-    });
+    })
+    .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
     res.json({ channels });
   } catch (err) {
     res.status(500).json({ error: err.message });

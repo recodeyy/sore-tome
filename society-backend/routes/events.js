@@ -9,12 +9,14 @@ const { AuditLogService } = require("../src/services/AuditLogService");
 router.get("/", authMiddleware, tenantMiddleware, async (req, res) => {
   try {
     const db = getDb();
+    // Single-field filter only (no composite index needed); sort in memory
     const snap = await db.collection("events")
       .where("society_id", "==", req.societyId)
-      .orderBy("date", "asc")
-      .limit(20)
       .get();
-    const events = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+    const events = snap.docs
+      .map((doc) => ({ id: doc.id, ...doc.data() }))
+      .sort((a, b) => String(a.date || a.eventDate || '').localeCompare(String(b.date || b.eventDate || '')))
+      .slice(0, 20);
     res.json({ events });
   } catch (err) {
     res.status(500).json({ error: err.message });

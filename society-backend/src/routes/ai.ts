@@ -11,6 +11,7 @@ import { z } from "zod";
 import { authMiddleware } from "../../middleware/auth";
 import { tenantMiddleware } from "../../middleware/tenantMiddleware";
 import { VectorStoreService } from "../services/ai/VectorStoreService";
+import { db } from "../shared/Database";
 import rateLimit from "express-rate-limit";
 
 // Rate limiting for costly AI Ingestion
@@ -278,10 +279,8 @@ router.get("/logs", authMiddleware, tenantMiddleware, async (req: Request, res: 
 router.get("/rules", authMiddleware, tenantMiddleware, async (req: Request, res: Response) => {
   try {
     const societyId = (req as any).societyId;
-    const vectorStore = VectorStoreService.getInstance();
-    const store = await vectorStore.getVectorStore();
-    
-    const result = await (store as any).pool.query(`
+
+    const result = await db.query(`
       SELECT DISTINCT ON (content) content, metadata->>'source' as source
       FROM document_chunks
       WHERE (metadata->>'society_id')::text = $1 AND metadata->>'documentType' = 'rules'

@@ -64,10 +64,12 @@ router.get("/", authMiddleware, tenantMiddleware, mainAdminOnly, async (req, res
     
     const snap = await db.collection("users")
       .where("society_id", "==", societyId)
-      .orderBy("flatNumber", "asc")
       .get();
-      
-    const users = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+
+    const users = snap.docs.map((doc) => {
+      const { password, ...safe } = doc.data();
+      return { id: doc.id, ...safe };
+    }).sort((a, b) => String(a.flatNumber || '').localeCompare(String(b.flatNumber || '')));
     res.json({ users, total: users.length });
   } catch (err) {
     res.status(500).json({ error: err.message });

@@ -19,10 +19,11 @@ router.get("/", authMiddleware, tenantMiddleware, async (req, res) => {
     const db = getDb();
     const snap = await db.collection("polls")
       .where("society_id", "==", req.societyId)
-      .orderBy("createdAt", "desc")
       .get();
-      
-    const polls = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+    const toMillis = (v) => (v && v.toMillis) ? v.toMillis() : 0;
+    const polls = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+      .sort((a, b) => toMillis(b.createdAt) - toMillis(a.createdAt));
     res.json({ polls });
   } catch (err) {
     logger.error({ error: err.message }, "Error fetching polls");

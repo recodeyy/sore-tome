@@ -33,8 +33,13 @@ router.get("/", authMiddleware, tenantMiddleware, async (req, res) => {
       // In production, you'd filter by entryTime >= startOfDay
     }
 
-    const snap = await query.orderBy("entryTime", "desc").limit(50).get();
-    const visitors = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    // No orderBy in the query (avoids composite index); sort in memory
+    const snap = await query.limit(200).get();
+    const toMillis = (v) => (v && v.toMillis) ? v.toMillis() : (v ? new Date(v).getTime() || 0 : 0);
+    const visitors = snap.docs
+      .map(doc => ({ id: doc.id, ...doc.data() }))
+      .sort((a, b) => toMillis(b.entryTime) - toMillis(a.entryTime))
+      .slice(0, 50);
 
     res.json({ visitors });
   } catch (err) {

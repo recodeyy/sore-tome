@@ -70,6 +70,119 @@ export const CreateTransactionSchema = z.object({
   }).strict()
 });
 
+// Finance Schemas (money is in integer minor units / paise)
+const minorUnits = z.number().int().nonnegative();
+
+export const CreateInvoiceSchema = z.object({
+  body: z.object({
+    number: sanitizedString.max(50),
+    unitId: z.string().max(64).optional(),
+    memberId: z.string().max(64).optional(),
+    period: z.string().max(20).optional(),
+    dueDate: z.string().max(40).optional(),
+    lines: z.array(z.object({
+      description: sanitizedString.max(200),
+      component: z.string().max(50).optional(),
+      quantity: z.number().int().positive().optional().default(1),
+      unitPriceMinor: minorUnits,
+      taxMinor: minorUnits.optional().default(0),
+    })).min(1, "At least one line is required"),
+  }).strict()
+});
+
+export const RecordPaymentSchema = z.object({
+  body: z.object({
+    idempotencyKey: sanitizedString.max(100),
+    invoiceId: sanitizedString.max(64),
+    amountMinor: z.number().int().positive(),
+    provider: z.string().max(40).optional(),
+    providerPaymentId: z.string().max(120).optional(),
+    metadata: z.record(z.string(), z.any()).optional(),
+  }).strict()
+});
+
+export const CreateExpenseSchema = z.object({
+  body: z.object({
+    vendor: z.string().max(120).optional(),
+    category: z.string().max(50).optional(),
+    description: sanitizedString.max(300),
+    amountMinor: z.number().int().positive(),
+    taxMinor: minorUnits.optional().default(0),
+  }).strict()
+});
+
+export const DecideExpenseSchema = z.object({
+  body: z.object({
+    decision: z.enum(["approved", "rejected"]),
+    comment: z.string().max(500).optional(),
+  }).strict()
+});
+
+// Amenity booking schemas
+export const CreateAmenitySchema = z.object({
+  body: z.object({
+    name: sanitizedString.max(100),
+    capacity: z.number().int().positive().optional().default(1),
+  }).strict()
+});
+
+export const BookAmenitySchema = z.object({
+  body: z.object({
+    startAt: z.string().datetime({ message: "startAt must be an ISO datetime" }),
+    endAt: z.string().datetime({ message: "endAt must be an ISO datetime" }),
+    memberId: z.string().max(64).optional(),
+  }).strict()
+});
+
+// Complaint Schemas (Phase 4)
+export const CreateComplaintSchema = z.object({
+  body: z.object({
+    title: sanitizedString.max(150),
+    description: sanitizedString.max(2000),
+    categoryId: z.string().uuid().optional(),
+    unitId: z.string().max(64).optional(),
+    location: z.string().max(120).optional(),
+    priority: z.enum(["low", "medium", "high", "critical"]).optional(),
+    isPrivate: z.boolean().optional().default(false),
+  }).strict()
+});
+
+export const AssignComplaintSchema = z.object({
+  body: z.object({
+    assigneeId: sanitizedString.max(64),
+    assigneeType: z.enum(["staff", "committee", "vendor"]).optional().default("staff"),
+    reason: z.string().max(300).optional(),
+  }).strict()
+});
+
+export const ComplaintStatusSchema = z.object({
+  body: z.object({
+    status: z.enum(["open", "in_progress", "resolved", "closed"]),
+    note: z.string().max(1000).optional(),
+  }).strict()
+});
+
+export const ComplaintSlaPauseSchema = z.object({
+  body: z.object({
+    pause: z.boolean(),
+    reason: z.string().max(300).optional(),
+  }).strict()
+});
+
+export const ComplaintCommentSchema = z.object({
+  body: z.object({
+    body: sanitizedString.max(2000),
+    visibility: z.enum(["internal", "resident"]).optional().default("resident"),
+  }).strict()
+});
+
+export const ComplaintFeedbackSchema = z.object({
+  body: z.object({
+    rating: z.number().int().min(1).max(5),
+    comment: z.string().max(500).optional(),
+  }).strict()
+});
+
 // Media Schemas
 export const MediaUploadSchema = z.object({
   file: FileSchema,

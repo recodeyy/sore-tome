@@ -299,12 +299,39 @@ router.post("/login", validate(LoginSchema), async (req, res) => {
 
         logger.info({ ip, userId: userDoc.id }, "Login successful with refresh token");
 
+        // Generate Firebase custom token so Flutter can sign into Firebase Auth
+        // (required for direct Firestore SDK access in the app)
+        let firebaseToken = null;
+        try {
+            firebaseToken = await getAdmin().auth().createCustomToken(userDoc.id, {
+                role: user.role,
+                society_id: user.society_id,
+            });
+        } catch (e) {
+            logger.warn({ userId: userDoc.id }, "Firebase custom token generation failed (non-fatal)");
+        }
+
         const { password: _, ...safeUser } = user;
-        res.json({ token, refreshToken, user: safeUser });
+        res.json({ token, refreshToken, firebaseToken, user: safeUser });
 
     } catch (err) {
         logger.error({ ip, error: err.message }, "Unhandled error during login");
         res.status(500).json({ error: "Internal server error" });
+    }
+});
+
+// GET /auth/firebase-token — re-issue a Firebase custom token for an active JWT session
+// Used on app restart so the Firestore SDK can re-authenticate.
+router.get("/firebase-token", authMiddleware, async (req, res) => {
+    try {
+        const firebaseToken = await getAdmin().auth().createCustomToken(req.user.uid, {
+            role: req.user.role,
+            society_id: req.user.society_id,
+        });
+        res.json({ firebaseToken });
+    } catch (err) {
+        logger.error({ userId: req.user.uid, error: err.message }, "Firebase token re-issue failed");
+        res.status(500).json({ error: "Could not issue Firebase token" });
     }
 });
 
@@ -319,13 +346,13 @@ router.get("/pending", authMiddleware, mainAdminOnly, async (req, res) => {
             .collection("users")
             .where("status", "==", "pending")
             .where("society_id", "==", societyId)
-            .orderBy("createdAt", "asc")
             .get();
 
+        const toMillis = (v) => (v && v.toMillis) ? v.toMillis() : 0;
         const users = snap.docs.map((doc) => {
             const { password, ...safe } = doc.data();
             return { id: doc.id, ...safe };
-        });
+        }).sort((a, b) => toMillis(a.createdAt) - toMillis(b.createdAt));
 
         res.json({ pending: users, count: users.length });
     } catch (err) {
@@ -458,20 +485,21 @@ router.get("/notifications", authMiddleware, async (req, res) => {
                 .collection("notifications")
                 .where("targetRole", "==", "main_admin")
                 .where("society_id", "==", societyId)
-                .orderBy("createdAt", "desc")
-                .limit(30)
+                .limit(100)
                 .get();
         } else {
             snap = await db
                 .collection("notifications")
                 .where("targetUserId", "==", req.user.uid)
                 .where("society_id", "==", societyId)
-                .orderBy("createdAt", "desc")
-                .limit(30)
+                .limit(100)
                 .get();
         }
 
-        const notifications = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+        const toMillis = (v) => (v && v.toMillis) ? v.toMillis() : 0;
+        const notifications = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
+            .sort((a, b) => toMillis(b.createdAt) - toMillis(a.createdAt))
+            .slice(0, 30);
         res.json({ notifications });
     } catch (err) {
         res.status(500).json({ error: err.message });

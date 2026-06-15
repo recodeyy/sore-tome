@@ -19,7 +19,7 @@ const aiLimiter = rateLimit({
 // Middleware specifically for notice management
 const canManageContent = (req, res, next) => {
   const role = req.user?.role;
-  if (["main_admin", "secretary"].includes(role)) {
+  if (["super_admin", "main_admin", "admin", "secretary"].includes(role)) {
     return next();
   }
   return res.status(403).json({ error: "Forbidden: You don't have permission to manage notices" });
@@ -33,11 +33,13 @@ router.get("/", authMiddleware, tenantMiddleware, async (req, res) => {
     
     const snap = await db.collection("notices")
       .where("society_id", "==", societyId)
-      .orderBy("createdAt", "desc")
-      .limit(50)
+      .limit(200)
       .get();
 
-    const notices = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const toMillis = (v) => (v && v.toMillis) ? v.toMillis() : 0;
+    const notices = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+      .sort((a, b) => toMillis(b.createdAt) - toMillis(a.createdAt))
+      .slice(0, 50);
     res.json({ notices });
   } catch (err) {
     res.status(500).json({ error: err.message });

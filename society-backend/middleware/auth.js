@@ -37,8 +37,8 @@ const { logger } = require("../src/shared/Logger");
 // Only allow admins and superadmins (legacy helper)
 function adminOnly(req, res, next) {
   const role = req.user?.role;
-  const isAuthorized = role === "superadmin" || role === "main_admin";
-  
+  const isAuthorized = ["super_admin", "main_admin", "admin"].includes(role);
+
   if (!isAuthorized) {
     logger.warn({ userId: req.user?.uid, role, path: req.path }, "SEC-WARN: Unauthorized Admin Access Attempt");
     return res.status(403).json({ error: "Admin access required" });
@@ -57,7 +57,7 @@ function mainAdminOnly(req, res, next) {
 
 function canManageFunds(req, res, next) {
   const role = req.user?.role;
-  const allowed = ["main_admin", "treasurer"];
+  const allowed = ["super_admin", "main_admin", "treasurer"];
   if (!allowed.includes(role)) {
     logger.warn({ userId: req.user?.uid, role, path: req.path }, "SEC-WARN: Unauthorized Funds Management Attempt");
     return res.status(403).json({ error: "Treasurer or admin access required" });
@@ -67,7 +67,7 @@ function canManageFunds(req, res, next) {
 
 function canManageContent(req, res, next) {
   const role = req.user?.role;
-  const allowed = ["main_admin", "secretary"];
+  const allowed = ["super_admin", "main_admin", "admin", "secretary"];
   if (!allowed.includes(role)) {
     logger.warn({ userId: req.user?.uid, role, path: req.path }, "SEC-WARN: Unauthorized Content Management Attempt");
     return res.status(403).json({ error: "Secretary or admin access required" });

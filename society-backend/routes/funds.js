@@ -15,8 +15,7 @@ router.get("/", authMiddleware, tenantMiddleware, async (req, res) => {
     const db = getDb();
     const snap = await db.collection("funds")
       .where("society_id", "==", req.societyId)
-      .orderBy("createdAt", "desc")
-      .limit(12)
+      .limit(100)
       .get();
 
     const funds = snap.docs.map((doc) => {
@@ -26,7 +25,9 @@ router.get("/", authMiddleware, tenantMiddleware, async (req, res) => {
         ...data,
         createdAt: data.createdAt ? data.createdAt.toDate().toISOString() : null,
       };
-    });
+    })
+    .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
+    .slice(0, 12);
     res.json({ funds });
   } catch (err) {
     logger.error({ ip, error: err.message }, "Error fetching funds");
@@ -41,32 +42,32 @@ router.get("/transactions", authMiddleware, tenantMiddleware, async (req, res) =
     const { cursor, limit = 30 } = req.query;
     const db = getDb();
     
-    let query = db
+    // Fetch with equality filter only (no composite index needed), sort and
+    // paginate in memory using the cursor id
+    const snap = await db
       .collection("transactions")
       .where("society_id", "==", req.societyId)
-      .orderBy("createdAt", "desc");
-      
-    if (cursor) {
-      // Find the document to start after
-      const cursorDoc = await db.collection("transactions").doc(cursor).get();
-      if (cursorDoc.exists) {
-        query = query.startAfter(cursorDoc);
-      }
-    }
-    
-    const snap = await query.limit(Number(limit)).get();
+      .limit(500)
+      .get();
 
-    const transactions = snap.docs.map((doc) => {
+    const all = snap.docs.map((doc) => {
       const data = doc.data();
       return {
         id: doc.id,
         ...data,
         createdAt: data.createdAt ? data.createdAt.toDate().toISOString() : null,
       };
-    });
-    
-    const hasMore = snap.docs.length === Number(limit);
-    const nextCursor = hasMore ? snap.docs[snap.docs.length - 1].id : null;
+    }).sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+
+    let start = 0;
+    if (cursor) {
+      const idx = all.findIndex(t => t.id === cursor);
+      if (idx >= 0) start = idx + 1;
+    }
+    const transactions = all.slice(start, start + Number(limit));
+
+    const hasMore = start + Number(limit) < all.length;
+    const nextCursor = hasMore && transactions.length > 0 ? transactions[transactions.length - 1].id : null;
 
     res.json({ transactions, hasMore, nextCursor });
   } catch (err) {
@@ -105,7 +106,7 @@ router.get("/summary", authMiddleware, tenantMiddleware, async (req, res) => {
     const db = getDb();
     const { redis } = require("../src/shared/Redis");
     const [transSnap, settingsSnap] = await Promise.all([
-      db.collection("transactions").where("society_id", "==", req.societyId).orderBy("createdAt", "desc").limit(100).get(),
+      db.collection("transactions").where("society_id", "==", req.societyId).limit(500).get(),
       db.collection("society_settings").doc(req.societyId).get()
     ]);
 
@@ -136,15 +137,20 @@ router.get("/summary", authMiddleware, tenantMiddleware, async (req, res) => {
     const liableUsers = usersSnap.docs.filter(u => u.data().maintenanceExempt !== true);
 
     const now = new Date();
-    const firstDayTs = getAdmin().firestore.Timestamp.fromDate(new Date(now.getFullYear(), now.getMonth(), 1));
+    const firstDayMs = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+    // Equality-only query; date range applied in memory (no composite index needed)
     const paidMatch = await db.collection("transactions")
       .where("society_id", "==", req.societyId)
-      .where("createdAt", ">=", firstDayTs)
       .where("category", "==", "maintenance")
       .where("type", "==", "credit")
       .get();
 
-    const paidUids = new Set(paidMatch.docs.map(doc => doc.data().addedBy));
+    const paidUids = new Set(paidMatch.docs
+      .filter(doc => {
+        const c = doc.data().createdAt;
+        return c && c.toMillis ? c.toMillis() >= firstDayMs : true;
+      })
+      .map(doc => doc.data().addedBy));
     const unpaidCount = liableUsers.filter(u => !paidUids.has(u.data().uid)).length;
 
     res.json({
@@ -232,14 +238,17 @@ router.get("/maintenance-status", authMiddleware, tenantMiddleware, async (req, 
     }
 
     const oldestDate = monthsToCheck[monthsToCheck.length - 1].start;
+    // Equality-only query (merge-joins single-field indexes, no composite needed);
+    // apply the date range in memory
     const transSnap = await db.collection("transactions")
       .where("society_id", "==", req.societyId)
-      .where("createdAt", ">=", oldestDate)
       .where("category", "==", "maintenance")
       .where("type", "==", "credit")
       .get();
 
-    const payments = transSnap.docs.map(doc => doc.data());
+    const payments = transSnap.docs
+      .map(doc => doc.data())
+      .filter(t => t.createdAt && t.createdAt.toMillis ? t.createdAt.toMillis() >= oldestDate.toMillis() : true);
 
     const overdueList = [];
     const paidUids = new Set();

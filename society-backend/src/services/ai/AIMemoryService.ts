@@ -41,8 +41,7 @@ export class AIMemoryService {
    */
   public async storeLongTermMemory(userId: string, societyId: string, summary: string, options: { requestId: string }) {
     const vectorStore = VectorStoreService.getInstance();
-    const store = await vectorStore.getVectorStore();
-    
+
     const doc = new Document({
       pageContent: summary,
       metadata: {
@@ -53,7 +52,7 @@ export class AIMemoryService {
       },
     });
 
-    await store.addDocuments([doc]);
+    await vectorStore.ingestDocuments([doc], societyId);
     logger.info({ ...options, userId, societyId }, "Long-Term Memory Stored Successfully");
   }
 }

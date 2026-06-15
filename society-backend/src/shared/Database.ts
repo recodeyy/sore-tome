@@ -34,8 +34,8 @@ class Database {
     // Initial heartbeat
     this.checkConnection();
 
-    // Periodic heartbeat every 60s
-    setInterval(() => this.checkConnection(), 60000);
+    // Periodic heartbeat every 60s. unref so it never keeps the process alive.
+    setInterval(() => this.checkConnection(), 60000).unref();
   }
 
   public static getInstance(): Database {

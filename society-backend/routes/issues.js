@@ -22,17 +22,16 @@ router.get("/", authMiddleware, tenantMiddleware, async (req, res) => {
       // Residents see: (PostedBy == Me) OR (Status == open)
       // Firestore doesn't support OR natively in a scalable way without multiple queries or IN clause
       // We'll perform two targeted indexed queries and merge to ensure O(log N) performance
+      // Equality-only queries (no composite index needed); sorted in memory below
       const [mySnap, openSnap] = await Promise.all([
         db.collection("issues")
           .where("society_id", "==", societyId)
           .where("postedBy", "==", req.user.uid)
-          .orderBy("createdAt", "desc")
           .limit(50)
           .get(),
         db.collection("issues")
           .where("society_id", "==", societyId)
           .where("status", "==", "open")
-          .orderBy("createdAt", "desc")
           .limit(50)
           .get()
       ]);
@@ -57,11 +56,10 @@ router.get("/", authMiddleware, tenantMiddleware, async (req, res) => {
       return res.json({ issues });
     } 
 
-    // Admin Path: Strict server-side filtering
-    query = query.orderBy("createdAt", "desc");
+    // Admin Path: equality filters only; sort in memory (no composite index needed)
     if (status) query = query.where("status", "==", status);
-    
-    const snap = await query.limit(50).get();
+
+    const snap = await query.limit(200).get();
     const issues = snap.docs.map((doc) => {
       const data = doc.data();
       return {
@@ -69,7 +67,9 @@ router.get("/", authMiddleware, tenantMiddleware, async (req, res) => {
         ...data,
         createdAt: data.createdAt ? data.createdAt.toDate().toISOString() : null,
       };
-    });
+    })
+    .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
+    .slice(0, 50);
 
     res.json({ issues });
   } catch (err) {
