@@ -144,6 +144,71 @@ final pollsProvider = StreamProvider.autoDispose<List<Poll>>((ref) {
 
 // --- Events Provider (DEPRECATED: Use eventsProvider in events_provider.dart) ---
 
+// --- All Polls Provider (active + closed, for admin governance views) ---
+final allPollsProvider = StreamProvider.autoDispose<List<Poll>>((ref) {
+  final user = ref.watch(authProvider).value;
+  if (user == null) return Stream.value([]);
+
+  return FirebaseFirestore.instance
+      .collection('polls')
+      .where('society_id', isEqualTo: user.societyId)
+      .snapshots()
+      .map((snapshot) {
+    final polls = snapshot.docs
+        .map((doc) => Poll.fromMap(doc.data(), doc.id))
+        .toList();
+    polls.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return polls;
+  });
+});
+
+// --- Meetings / AGM Provider (mirrors pollsProvider pattern) ---
+class Meeting {
+  final String id;
+  final String title;
+  final String type; // e.g. AGM, Committee, Emergency
+  final String agenda;
+  final DateTime date;
+  final String status; // scheduled, completed, cancelled
+
+  Meeting({
+    required this.id,
+    required this.title,
+    required this.type,
+    required this.agenda,
+    required this.date,
+    required this.status,
+  });
+
+  factory Meeting.fromMap(Map<String, dynamic> map, String id) {
+    return Meeting(
+      id: id,
+      title: map['title'] ?? '',
+      type: map['type'] ?? 'Committee',
+      agenda: map['agenda'] ?? '',
+      date: (map['date'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      status: map['status'] ?? 'scheduled',
+    );
+  }
+}
+
+final meetingsProvider = StreamProvider.autoDispose<List<Meeting>>((ref) {
+  final user = ref.watch(authProvider).value;
+  if (user == null) return Stream.value([]);
+
+  return FirebaseFirestore.instance
+      .collection('meetings')
+      .where('society_id', isEqualTo: user.societyId)
+      .snapshots()
+      .map((snapshot) {
+    final meetings = snapshot.docs
+        .map((doc) => Meeting.fromMap(doc.data(), doc.id))
+        .toList();
+    meetings.sort((a, b) => b.date.compareTo(a.date));
+    return meetings;
+  });
+});
+
 // --- Committee Provider ---
 final committeeProvider = StreamProvider.autoDispose<List<CommitteeMember>>((ref) {
   final user = ref.watch(authProvider).value;
@@ -227,6 +292,37 @@ class CommunityActions {
 
   static Future<void> addEvent(String title, String description, DateTime date, String location, String societyId) async {
     // DEPRECATED: Use EventsNotifier.addEvent instead for API consistency
+  }
+
+  static Future<void> setPollActive(String pollId, bool isActive) async {
+    await FirebaseFirestore.instance.collection('polls').doc(pollId).update({
+      'isActive': isActive,
+    });
+  }
+
+  // --- Meeting / AGM Actions ---
+  static Future<void> createMeeting({
+    required String title,
+    required String type,
+    required String agenda,
+    required DateTime date,
+    required String societyId,
+  }) async {
+    await FirebaseFirestore.instance.collection('meetings').add({
+      'society_id': societyId,
+      'title': title,
+      'type': type,
+      'agenda': agenda,
+      'date': Timestamp.fromDate(date),
+      'status': 'scheduled',
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  static Future<void> setMeetingStatus(String meetingId, String status) async {
+    await FirebaseFirestore.instance.collection('meetings').doc(meetingId).update({
+      'status': status,
+    });
   }
 
   static Future<void> addCommitteeMember(String name, String role, String societyId, {String? avatarUrl, String? phone}) async {

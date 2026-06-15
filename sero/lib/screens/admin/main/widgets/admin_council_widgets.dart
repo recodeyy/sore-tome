@@ -4,6 +4,9 @@ import 'package:sero/app/theme.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sero/providers/shared/auth_provider.dart';
 import 'package:sero/providers/shared/community_providers.dart';
+import 'package:sero/screens/admin/governance/polls_dashboard_screen.dart';
+import 'package:sero/screens/admin/governance/events_dashboard_screen.dart';
+import 'package:sero/screens/admin/governance/meetings_dashboard_screen.dart';
 
 class AdminCouncilTools extends ConsumerWidget {
   const AdminCouncilTools({super.key});
@@ -49,6 +52,53 @@ class AdminCouncilTools extends ConsumerWidget {
                   label: 'Member',
                   color: const Color(0xFF8B5CF6),
                   onTap: () => _showAddMember(context, societyId),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'GOVERNANCE',
+              style: GoogleFonts.outfit(
+                color: const Color(0xFF64748B),
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 1.2,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                _ToolButton(
+                  icon: Icons.how_to_vote_rounded,
+                  label: 'Polls',
+                  color: kPrimaryGreen,
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const PollsDashboardScreen()),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                _ToolButton(
+                  icon: Icons.celebration_rounded,
+                  label: 'Events',
+                  color: kPrimaryBlue,
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const EventsDashboardScreen()),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                _ToolButton(
+                  icon: Icons.groups_rounded,
+                  label: 'Meetings',
+                  color: const Color(0xFF7C3AED),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const MeetingsDashboardScreen()),
+                  ),
                 ),
               ],
             ),
