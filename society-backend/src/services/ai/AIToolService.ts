@@ -33,6 +33,71 @@ const ComplaintSchema = z.object({
 
 export type ToolAction = "create_notice" | "log_expense" | "create_complaint";
 
+// ── Canonical Cross-Role Model (Prompt Pack §4 / §13) ─────────────────────────
+export type CanonicalRole =
+  | "super_admin"
+  | "main_admin"
+  | "admin"
+  | "secretary"
+  | "treasurer"
+  | "committee_member"
+  | "facility_manager"
+  | "security_manager"
+  | "guard"
+  | "staff"
+  | "resident_owner"
+  | "resident_tenant"
+  | "auditor";
+
+export const CANONICAL_ROLES: CanonicalRole[] = [
+  "super_admin", "main_admin", "admin", "secretary", "treasurer",
+  "committee_member", "facility_manager", "security_manager", "guard",
+  "staff", "resident_owner", "resident_tenant", "auditor",
+];
+
+/**
+ * Data-driven tool → allowed-roles registry.
+ * `checkPermissions(role, tool)` derives true/false strictly from this map.
+ * Covers existing write tools + obvious cross-role read tools.
+ */
+export const TOOL_PERMISSIONS: Record<string, CanonicalRole[]> = {
+  // ── Write / proposal tools ──────────────────────────────────────────────
+  create_notice: ["super_admin", "main_admin", "admin", "secretary"],
+  log_expense: ["super_admin", "main_admin", "admin", "treasurer"],
+  create_complaint: [
+    "super_admin", "main_admin", "admin", "secretary",
+    "committee_member", "facility_manager", "security_manager",
+    "staff", "resident_owner", "resident_tenant",
+  ],
+  // ── Read tools ──────────────────────────────────────────────────────────
+  get_dues: [
+    "super_admin", "main_admin", "admin", "treasurer", "auditor",
+    "resident_owner", "resident_tenant",
+  ],
+  get_complaint_status: [
+    "super_admin", "main_admin", "admin", "secretary",
+    "committee_member", "facility_manager", "security_manager",
+    "staff", "resident_owner", "resident_tenant",
+  ],
+  get_booking_availability: [
+    "super_admin", "main_admin", "admin", "facility_manager",
+    "committee_member", "resident_owner", "resident_tenant",
+  ],
+};
+
+/** Map any legacy/aliased role string to a canonical role for permission checks. */
+export function normalizeRole(role: string): CanonicalRole | string {
+  switch (role) {
+    case "resident":
+    case "owner":
+      return "resident_owner";
+    case "tenant":
+      return "resident_tenant";
+    default:
+      return role;
+  }
+}
+
 // ... (NoticeSchema, ExpenseSchema, ComplaintSchema remain same)
 
 export class AIToolService {
@@ -307,16 +372,25 @@ export class AIToolService {
     return analysis;
   }
 
+  /**
+   * Pure, data-driven authorization check derived from TOOL_PERMISSIONS.
+   * Returns true/false; does not throw. Used for registry/tests.
+   */
+  public isToolAllowed(role: string, tool: string): boolean {
+    const allowed = TOOL_PERMISSIONS[tool];
+    if (!allowed) return false; // unknown tool → denied
+    return allowed.includes(normalizeRole(role) as CanonicalRole);
+  }
+
+  /** List of tool IDs a given role is permitted to call. */
+  public getToolsForRole(role: string): string[] {
+    return Object.keys(TOOL_PERMISSIONS).filter((tool) => this.isToolAllowed(role, tool));
+  }
+
+  /** Enforcing guard used in the execution path. Throws on denial. */
   private checkPermissions(tool: string, role: string) {
-    if (tool === "create_notice" && !["admin", "main_admin", "secretary"].includes(role)) {
-      throw new Error("Only Secretary or Admin can post notices.");
-    }
-    if (tool === "log_expense" && !["admin", "main_admin", "treasurer"].includes(role)) {
-      throw new Error("Only Treasurer or Admin can log expenses.");
-    }
-    // Residents are allowed to create complaints
-    if (tool === "create_complaint" && !["admin", "main_admin", "secretary", "resident"].includes(role)) {
-       throw new Error("Not authorized to report issues.");
+    if (!this.isToolAllowed(role, tool)) {
+      throw new Error(`Not authorized: role '${role}' cannot use tool '${tool}'.`);
     }
   }
 

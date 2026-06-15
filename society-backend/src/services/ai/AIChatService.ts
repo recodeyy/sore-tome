@@ -9,7 +9,7 @@ import { ParserService } from "./ParserService";
 import { AIRateLimitingService } from "./AIRateLimitingService";
 import { ChatPromptTemplate, MessagesPlaceholder } from "@langchain/core/prompts";
 import { HumanMessage, AIMessage, SystemMessage } from "@langchain/core/messages";
-import { AIToolService, ToolAction } from "./AIToolService";
+import { AIToolService, ToolAction, normalizeRole } from "./AIToolService";
 import { db } from "../../shared/Database";
 
 export class AIChatService {
@@ -293,16 +293,20 @@ export class AIChatService {
       }
     }
     
-    // AI V3.15: Persona-Based Intelligence
-    const isAdmin = ["admin", "main_admin", "secretary", "treasurer"].includes(userRole);
-    const persona = isAdmin 
-      ? "Sero Society Intelligence (Admin Mode). You have high-clearance access to society data." 
+    // AI V3.15: Persona-Based Intelligence (cross-role aware)
+    const canonicalRole = normalizeRole(userRole);
+    const allowedTools = AIToolService.getInstance().getToolsForRole(userRole);
+    const isAdmin = ["super_admin", "main_admin", "admin", "secretary", "treasurer"].includes(canonicalRole as string);
+    const persona = isAdmin
+      ? "Sero Society Intelligence (Admin Mode). You have high-clearance access to society data."
       : "Sero Resident Concierge. You are a helpful assistant for society residents.";
 
     const systemPrompt = `
       You are ${persona}.
-      Your specific role is: ${userRole}.
-      
+      Your specific role is: ${canonicalRole}.
+      Tools you are permitted to use: ${allowedTools.length ? allowedTools.join(", ") : "none"}.
+      Never propose an action for a tool outside this list.
+
       Use the following context to answer if relevant.
       Context: ${ragContext}
       

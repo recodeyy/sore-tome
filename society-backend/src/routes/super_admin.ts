@@ -471,4 +471,106 @@ router.post("/reports", async (req: Request, res: Response) => {
   }
 });
 
+// --- Subscription plan CRUD & assignment ------------------------------------
+
+router.post("/plans", async (req: Request, res: Response) => {
+  try {
+    const { code, name, priceMinor, currency, interval, features, isActive } = req.body || {};
+    const data = await SuperAdminService.createPlan({ code, name, priceMinor, currency, interval, features, isActive });
+    return res.status(201).json({ success: true, data });
+  } catch (error: any) {
+    return sendError(res, "POST /super-admin/plans", error);
+  }
+});
+
+router.patch("/plans/:planId", async (req: Request, res: Response) => {
+  try {
+    const data = await SuperAdminService.updatePlan((req.params.planId as string), req.body || {});
+    if (!data) {
+      return res.status(404).json({ success: false, error: { code: "PLAN_NOT_FOUND", message: "Plan not found" } });
+    }
+    return res.json({ success: true, data });
+  } catch (error: any) {
+    return sendError(res, "PATCH /super-admin/plans/:planId", error);
+  }
+});
+
+router.post("/plans/:planId/deactivate", async (req: Request, res: Response) => {
+  try {
+    const data = await SuperAdminService.deactivatePlan((req.params.planId as string));
+    if (!data) {
+      return res.status(404).json({ success: false, error: { code: "PLAN_NOT_FOUND", message: "Plan not found" } });
+    }
+    return res.json({ success: true, data });
+  } catch (error: any) {
+    return sendError(res, "POST /super-admin/plans/:planId/deactivate", error);
+  }
+});
+
+router.post("/societies/:societyId/assign-plan", async (req: Request, res: Response) => {
+  try {
+    const data = await SuperAdminService.assignPlan({
+      societyId: (req.params.societyId as string),
+      planId: String(req.body?.planId || ""),
+      effectiveDate: req.body?.effectiveDate,
+      actorId: actorId(req),
+      reason: req.body?.reason,
+    });
+    return res.json({ success: true, data });
+  } catch (error: any) {
+    return sendError(res, "POST /super-admin/societies/:societyId/assign-plan", error);
+  }
+});
+
+router.post("/plans/:planId/proration-preview", async (req: Request, res: Response) => {
+  try {
+    const data = await SuperAdminService.prorationPreview({
+      planId: (req.params.planId as string),
+      renewsAt: req.body?.renewsAt,
+      cycleDays: req.body?.cycleDays,
+      asOf: req.body?.asOf,
+    });
+    return res.json({ success: true, data });
+  } catch (error: any) {
+    return sendError(res, "POST /super-admin/plans/:planId/proration-preview", error);
+  }
+});
+
+// --- Society lifecycle: KYC + archive/offboard ------------------------------
+
+router.post("/societies/:societyId/kyc-review", async (req: Request, res: Response) => {
+  try {
+    const data = await SuperAdminService.reviewSocietyKyc({
+      societyId: (req.params.societyId as string),
+      applicationId: req.body?.applicationId,
+      decision: req.body?.decision,
+      reason: req.body?.reason,
+      actorId: actorId(req),
+    });
+    return res.status(201).json({ success: true, data });
+  } catch (error: any) {
+    return sendError(res, "POST /super-admin/societies/:societyId/kyc-review", error);
+  }
+});
+
+router.post("/societies/:societyId/archive", async (req: Request, res: Response) => {
+  try {
+    const reason = req.body?.reason || "Archived by Super Admin";
+    await SuperAdminService.archiveSociety((req.params.societyId as string), actorId(req), reason);
+    return res.json({ success: true, message: "Society archived" });
+  } catch (error: any) {
+    return sendError(res, "POST /super-admin/societies/:societyId/archive", error);
+  }
+});
+
+router.post("/societies/:societyId/offboard", async (req: Request, res: Response) => {
+  try {
+    const reason = req.body?.reason || "Offboarded by Super Admin";
+    await SuperAdminService.offboardSociety((req.params.societyId as string), actorId(req), reason);
+    return res.json({ success: true, message: "Society offboarded" });
+  } catch (error: any) {
+    return sendError(res, "POST /super-admin/societies/:societyId/offboard", error);
+  }
+});
+
 export default router;
