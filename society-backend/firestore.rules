@@ -1,0 +1,42 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Global function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // ❗ PRO FIX: Strict Tenant Isolation
+    // Matches the snake_case 'society_id' used in our JWT claims and schemas.
+    function isSameSociety(data) {
+      return data.society_id == request.auth.token.society_id;
+    }
+
+    // Tenant Isolation Pattern: All collections must be partitioned by society_id
+    match /{collection}/{docId} {
+      
+      allow read: if isAuthenticated() 
+        && (resource == null || isSameSociety(resource.data));
+
+      allow create: if isAuthenticated() 
+        && isSameSociety(request.resource.data);
+
+      allow update, delete: if isAuthenticated() 
+        && isSameSociety(resource.data);
+      
+      // Sub-collections inherit the same tenant protection
+      match /{subCollection}/{subDocId} {
+        allow read, write: if isAuthenticated() 
+          && isSameSociety(get(/databases/$(database)/documents/$(collection)/$(docId)).data);
+      }
+    }
+
+    // Special case for society_settings (Doc ID is society_id)
+    match /society_settings/{society_id} {
+      allow read: if isAuthenticated() && request.auth.token.society_id == society_id;
+      allow write: if isAuthenticated() && request.auth.token.society_id == society_id && request.auth.token.role in ['admin', 'main_admin'];
+    }
+  }
+}
+
