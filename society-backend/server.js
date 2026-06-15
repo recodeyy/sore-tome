@@ -18,35 +18,30 @@ Sentry.init({
 });
 
 const express = require("express");
-const rateLimit = require("express-rate-limit");
 const helmet = require("helmet");
 const cors = require("cors");
 const { initFirebase } = require("./config/firebase");
-const standardLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, 
-  max: 100, 
-  message: { error: "Too many requests from this IP, please try again after 15 minutes" },
-  standardHeaders: true,
-  legacyHeaders: false,
-  validate: { default: false },
+const { createRateLimiter } = require("./middleware/rateLimiter");
+
+const standardLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  prefix: "std",
+  message: { error: "Too many requests, please try again after 15 minutes" },
 });
 
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, 
-  max: 5, 
+const authLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  prefix: "auth",
   message: { error: "Too many login/signup attempts, please try again after 15 minutes" },
-  standardHeaders: true,
-  legacyHeaders: false,
-  validate: { default: false },
 });
 
-const aiLimiter = rateLimit({
-  windowMs: 1 * 60 * 1000, 
-  max: 10, 
+const aiLimiter = createRateLimiter({
+  windowMs: 1 * 60 * 1000,
+  max: 10,
+  prefix: "ai",
   message: { error: "AI request limit reached. Please wait a moment." },
-  standardHeaders: true,
-  legacyHeaders: false,
-  validate: { default: false },
 });
 
 // ─── Init Firebase ─────────────────────────────────────────────────────────────
@@ -82,11 +77,9 @@ app.use(express.json({
     }
   }
 })); // Prevents payload-based DoS
-app.use("/auth/login", authLimiter);
-app.use("/auth/register", authLimiter);
 
 // ─── CORS Configuration ──────────────────────────────────────────────────────
-const allowedOrigins = (process.env.CORS_ORIGINS || "http://localhost:3000,http://localhost:3001").split(",");
+const allowedOrigins = (process.env.CORS_ORIGINS || process.env.ALLOWED_ORIGINS || "http://localhost:3000,http://localhost:3001").split(",");
 app.use(cors({
   origin: (origin, callback) => {
     // Allow requests with no origin (like mobile apps or curl)
@@ -105,11 +98,18 @@ app.use(cors({
 // ─── API Versioning & Routing ─────────────────────────────────────────────────
 const v1Router = express.Router();
 
+// Auth limiter must sit on the real mount path; routes live under /auth here,
+// and this router is mounted at both /api/v1 and / (legacy), so both are covered.
+v1Router.use("/auth/login", authLimiter);
+v1Router.use("/auth/register", authLimiter);
 v1Router.use("/auth", require("./routes/auth"));
 v1Router.use("/users", standardLimiter, require("./routes/users"));
 v1Router.use("/notices", standardLimiter, require("./routes/notices"));
 v1Router.use("/issues", standardLimiter, require("./routes/issues"));
+v1Router.use("/complaints", standardLimiter, require("./src/routes/complaints").default);
 v1Router.use("/funds", standardLimiter, require("./routes/funds"));
+v1Router.use("/finance", standardLimiter, require("./src/routes/finance").default);
+v1Router.use("/amenities", standardLimiter, require("./src/routes/amenities").default);
 v1Router.use("/rules", standardLimiter, require("./routes/rules"));
 v1Router.use("/events", standardLimiter, require("./routes/events"));
 v1Router.use("/visitors", standardLimiter, require("./routes/visitors"));
@@ -121,6 +121,24 @@ v1Router.use("/admin", standardLimiter, require("./src/routes/admin_dashboard").
 v1Router.use("/admin", standardLimiter, require("./src/routes/admin_access").default);
 v1Router.use("/channels", standardLimiter, require("./routes/channels"));
 v1Router.use("/admin", standardLimiter, require("./routes/admin_flags"));
+
+// Phase 4 — Postgres-backed governance/communication modules.
+// Mounted at distinct paths so legacy Firestore routes keep serving the live
+// Flutter app until the client contract is cut over (separate deliverable).
+v1Router.use("/notices-v2", standardLimiter, require("./src/routes/notices_pg").default);
+v1Router.use("/polls-v2", standardLimiter, require("./src/routes/polls_pg").default);
+v1Router.use("/events-v2", standardLimiter, require("./src/routes/events_pg").default);
+v1Router.use("/rules-v2", standardLimiter, require("./src/routes/rules_pg").default);
+v1Router.use("/meetings", standardLimiter, require("./src/routes/meetings").default);
+v1Router.use("/channels-v2", standardLimiter, require("./src/routes/channels_pg").default);
+
+// Phase 5 — Staff / parking / assets (Postgres).
+v1Router.use("/staff-v2", standardLimiter, require("./src/routes/staff_pg").default);
+v1Router.use("/parking", standardLimiter, require("./src/routes/parking_pg").default);
+v1Router.use("/assets", standardLimiter, require("./src/routes/assets_pg").default);
+
+// Phase 2 — Society structure (Postgres).
+v1Router.use("/structure", standardLimiter, require("./src/routes/structure_pg").default);
 
 // 🚀 MOUNT V1
 app.use("/api/v1", v1Router);
