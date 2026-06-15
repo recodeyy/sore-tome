@@ -52,6 +52,8 @@ const { VisitorCronJob } = require("./src/services/cron/VisitorCronJob");
 const { FinanceReportCronJob } = require("./src/services/cron/FinanceReportCronJob");
 VisitorCronJob.init();
 FinanceReportCronJob.init();
+// Outbox → EventBus publisher feeds the /realtime/sse gateway.
+require("./src/services/realtime/OutboxPublisher").startOutboxPublisher();
 
 const app = express();
 
@@ -141,6 +143,7 @@ v1Router.use("/assets", standardLimiter, require("./src/routes/assets_pg").defau
 v1Router.use("/structure", standardLimiter, require("./src/routes/structure_pg").default);
 v1Router.use("/members-v2", standardLimiter, require("./src/routes/members_pg").default);
 v1Router.use("/reports", standardLimiter, require("./src/routes/reports_pg").default);
+v1Router.use("/realtime", require("./src/routes/realtime").default);
 
 // 🚀 MOUNT V1
 app.use("/api/v1", v1Router);

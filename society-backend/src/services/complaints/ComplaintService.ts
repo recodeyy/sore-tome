@@ -3,6 +3,7 @@ import { logger } from "../../shared/Logger";
 import { withTx } from "../finance/ledger";
 import { assertTransition, isReopen, type ComplaintStatus } from "./ComplaintStateMachine";
 import { computeDueAtWithPauses, type SlaConfig } from "../sla/SlaCalculator";
+import { OutboxService } from "../outbox/OutboxService";
 
 /**
  * Phase 4 complaints workflow (capabilities 59–69).
@@ -140,6 +141,13 @@ export const ComplaintService = {
          VALUES ($1, $2, NULL, 'open', $3, 'created')`,
         [societyId, rows[0].id, createdBy || null]
       );
+
+      await OutboxService.emit(client, {
+        societyId,
+        topic: `society:${societyId}`,
+        type: "complaint.created",
+        payload: { id: rows[0].id, ref },
+      });
 
       logger.info({ societyId, complaintId: rows[0].id, ref, priority, dueAt: due }, "Complaint created");
       return rows[0];
