@@ -97,7 +97,7 @@ router.get("/", authMiddleware, tenantMiddleware, async (req: Request, res: Resp
 // GET /meetings/:id — detail (agenda, attendance count, resolutions, minutes, action items)
 router.get("/:id", authMiddleware, tenantMiddleware, async (req: Request, res: Response) => {
   try {
-    const detail = await MeetingService.getMeeting(societyOf(req), req.params.id);
+    const detail = await MeetingService.getMeeting(societyOf(req), (req.params.id as string));
     if (!detail) return res.status(404).json({ error: "Meeting not found" });
     res.json(detail);
   } catch (err: any) {
@@ -120,7 +120,7 @@ router.post("/", authMiddleware, tenantMiddleware, canManageContent, validate(Cr
 // POST /meetings/:id/agenda — add an agenda item (admin)
 router.post("/:id/agenda", authMiddleware, tenantMiddleware, canManageContent, validate(AddAgendaSchema), async (req: Request, res: Response) => {
   try {
-    const item = await MeetingService.addAgendaItem(societyOf(req), req.params.id, req.body);
+    const item = await MeetingService.addAgendaItem(societyOf(req), (req.params.id as string), req.body);
     res.status(201).json({ agendaItem: item });
   } catch (err: any) {
     if (err.code === "NOT_FOUND") return res.status(404).json({ error: "Meeting not found" });
@@ -132,7 +132,7 @@ router.post("/:id/agenda", authMiddleware, tenantMiddleware, canManageContent, v
 // POST /meetings/:id/attendance — mark self present/absent (any auth user)
 router.post("/:id/attendance", authMiddleware, tenantMiddleware, validate(AttendanceSchema), async (req: Request, res: Response) => {
   try {
-    const att = await MeetingService.recordAttendance(societyOf(req), req.params.id, userOf(req).uid, req.body.present);
+    const att = await MeetingService.recordAttendance(societyOf(req), (req.params.id as string), userOf(req).uid, req.body.present);
     res.status(201).json({ attendance: att });
   } catch (err: any) {
     if (err.code === "NOT_FOUND") return res.status(404).json({ error: "Meeting not found" });
@@ -144,7 +144,7 @@ router.post("/:id/attendance", authMiddleware, tenantMiddleware, validate(Attend
 // POST /meetings/:id/proxy — grant own vote to a proxy holder (any auth user)
 router.post("/:id/proxy", authMiddleware, tenantMiddleware, validate(ProxySchema), async (req: Request, res: Response) => {
   try {
-    const proxy = await MeetingService.grantProxy(societyOf(req), req.params.id, userOf(req).uid, req.body.proxyHolderId);
+    const proxy = await MeetingService.grantProxy(societyOf(req), (req.params.id as string), userOf(req).uid, req.body.proxyHolderId);
     res.status(201).json({ proxy });
   } catch (err: any) {
     if (err.code === "NOT_FOUND") return res.status(404).json({ error: "Meeting not found" });
@@ -156,7 +156,7 @@ router.post("/:id/proxy", authMiddleware, tenantMiddleware, validate(ProxySchema
 // GET /meetings/:id/quorum — present (incl. proxies) vs required
 router.get("/:id/quorum", authMiddleware, tenantMiddleware, async (req: Request, res: Response) => {
   try {
-    const status = await MeetingService.quorumStatus(societyOf(req), req.params.id);
+    const status = await MeetingService.quorumStatus(societyOf(req), (req.params.id as string));
     res.json(status);
   } catch (err: any) {
     if (err.code === "NOT_FOUND") return res.status(404).json({ error: "Meeting not found" });
@@ -168,7 +168,7 @@ router.get("/:id/quorum", authMiddleware, tenantMiddleware, async (req: Request,
 // POST /meetings/:id/resolutions — add a resolution (admin)
 router.post("/:id/resolutions", authMiddleware, tenantMiddleware, canManageContent, validate(ResolutionSchema), async (req: Request, res: Response) => {
   try {
-    const resolution = await MeetingService.addResolution(societyOf(req), req.params.id, req.body);
+    const resolution = await MeetingService.addResolution(societyOf(req), (req.params.id as string), req.body);
     res.status(201).json({ resolution });
   } catch (err: any) {
     if (err.code === "NOT_FOUND") return res.status(404).json({ error: "Meeting not found" });
@@ -181,7 +181,7 @@ router.post("/:id/resolutions", authMiddleware, tenantMiddleware, canManageConte
 router.post("/resolutions/:rid/outcome", authMiddleware, tenantMiddleware, canManageContent, validate(ResolutionOutcomeSchema), async (req: Request, res: Response) => {
   try {
     const resolution = await MeetingService.recordResolutionOutcome(
-      societyOf(req), req.params.rid, req.body.outcome, req.body.votesFor || 0, req.body.votesAgainst || 0
+      societyOf(req), (req.params.rid as string), req.body.outcome, req.body.votesFor || 0, req.body.votesAgainst || 0
     );
     res.json({ resolution });
   } catch (err: any) {
@@ -194,7 +194,7 @@ router.post("/resolutions/:rid/outcome", authMiddleware, tenantMiddleware, canMa
 // POST /meetings/:id/minutes — record minutes (admin)
 router.post("/:id/minutes", authMiddleware, tenantMiddleware, canManageContent, validate(MinutesSchema), async (req: Request, res: Response) => {
   try {
-    const minutes = await MeetingService.addMinutes(societyOf(req), req.params.id, req.body, userOf(req).uid);
+    const minutes = await MeetingService.addMinutes(societyOf(req), (req.params.id as string), req.body, userOf(req).uid);
     res.status(201).json({ minutes });
   } catch (err: any) {
     if (err.code === "NOT_FOUND") return res.status(404).json({ error: "Meeting not found" });
@@ -206,7 +206,7 @@ router.post("/:id/minutes", authMiddleware, tenantMiddleware, canManageContent, 
 // POST /meetings/:id/action-items — create an action item (admin)
 router.post("/:id/action-items", authMiddleware, tenantMiddleware, canManageContent, validate(ActionItemSchema), async (req: Request, res: Response) => {
   try {
-    const actionItem = await MeetingService.addActionItem(societyOf(req), req.params.id, req.body);
+    const actionItem = await MeetingService.addActionItem(societyOf(req), (req.params.id as string), req.body);
     res.status(201).json({ actionItem });
   } catch (err: any) {
     if (err.code === "NOT_FOUND") return res.status(404).json({ error: "Meeting not found" });
@@ -218,7 +218,7 @@ router.post("/:id/action-items", authMiddleware, tenantMiddleware, canManageCont
 // PATCH /meetings/action-items/:aid — update completion status (admin)
 router.patch("/action-items/:aid", authMiddleware, tenantMiddleware, canManageContent, validate(ActionItemUpdateSchema), async (req: Request, res: Response) => {
   try {
-    const actionItem = await MeetingService.updateActionItem(societyOf(req), req.params.aid, req.body.status);
+    const actionItem = await MeetingService.updateActionItem(societyOf(req), (req.params.aid as string), req.body.status);
     res.json({ actionItem });
   } catch (err: any) {
     if (err.code === "NOT_FOUND") return res.status(404).json({ error: "Action item not found" });
@@ -230,7 +230,7 @@ router.patch("/action-items/:aid", authMiddleware, tenantMiddleware, canManageCo
 // POST /meetings/:id/start — scheduled -> in_progress (admin)
 router.post("/:id/start", authMiddleware, tenantMiddleware, canManageContent, async (req: Request, res: Response) => {
   try {
-    const meeting = await MeetingService.startMeeting(societyOf(req), req.params.id);
+    const meeting = await MeetingService.startMeeting(societyOf(req), (req.params.id as string));
     res.json({ meeting });
   } catch (err: any) {
     if (err.code === "NOT_FOUND") return res.status(404).json({ error: "Meeting not found" });
@@ -243,7 +243,7 @@ router.post("/:id/start", authMiddleware, tenantMiddleware, canManageContent, as
 // POST /meetings/:id/complete — in_progress -> completed (admin)
 router.post("/:id/complete", authMiddleware, tenantMiddleware, canManageContent, async (req: Request, res: Response) => {
   try {
-    const meeting = await MeetingService.completeMeeting(societyOf(req), req.params.id);
+    const meeting = await MeetingService.completeMeeting(societyOf(req), (req.params.id as string));
     res.json({ meeting });
   } catch (err: any) {
     if (err.code === "NOT_FOUND") return res.status(404).json({ error: "Meeting not found" });
@@ -256,7 +256,7 @@ router.post("/:id/complete", authMiddleware, tenantMiddleware, canManageContent,
 // POST /meetings/:id/cancel — scheduled -> cancelled (admin)
 router.post("/:id/cancel", authMiddleware, tenantMiddleware, canManageContent, async (req: Request, res: Response) => {
   try {
-    const meeting = await MeetingService.cancelMeeting(societyOf(req), req.params.id);
+    const meeting = await MeetingService.cancelMeeting(societyOf(req), (req.params.id as string));
     res.json({ meeting });
   } catch (err: any) {
     if (err.code === "NOT_FOUND") return res.status(404).json({ error: "Meeting not found" });

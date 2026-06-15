@@ -71,7 +71,7 @@ router.get("/", authMiddleware, tenantMiddleware, async (req, res) => {
 
 // Get one member (with family + committee + kyc)
 router.get("/:id", authMiddleware, tenantMiddleware, async (req, res) => {
-  try { res.json({ member: await MemberService.getMember(societyOf(req), req.params.id) }); }
+  try { res.json({ member: await MemberService.getMember(societyOf(req), (req.params.id as string)) }); }
   catch (e: any) { map(res, e, "Failed to get member"); }
 });
 
@@ -83,32 +83,32 @@ router.post("/", authMiddleware, tenantMiddleware, validate(RegisterSchema), asy
 
 // Lifecycle transition
 router.post("/:id/transition", authMiddleware, tenantMiddleware, canManageContent, validate(TransitionSchema), async (req, res) => {
-  try { res.json({ member: await MemberService.transition(societyOf(req), req.params.id, req.body.status) }); }
+  try { res.json({ member: await MemberService.transition(societyOf(req), (req.params.id as string), req.body.status) }); }
   catch (e: any) { map(res, e, "Failed to transition member"); }
 });
 
 // Family members
 router.post("/:id/family", authMiddleware, tenantMiddleware, validate(FamilySchema), async (req, res) => {
-  try { res.status(201).json({ family: await MemberService.addFamilyMember(societyOf(req), req.params.id, req.body) }); }
+  try { res.status(201).json({ family: await MemberService.addFamilyMember(societyOf(req), (req.params.id as string), req.body) }); }
   catch (e: any) { map(res, e, "Failed to add family member"); }
 });
 
 // Committee role
 router.post("/:id/committee", authMiddleware, tenantMiddleware, canManageContent, validate(CommitteeSchema), async (req, res) => {
-  try { res.status(201).json({ committee: await MemberService.addCommitteeRole(societyOf(req), req.params.id, req.body) }); }
+  try { res.status(201).json({ committee: await MemberService.addCommitteeRole(societyOf(req), (req.params.id as string), req.body) }); }
   catch (e: any) { map(res, e, "Failed to add committee role"); }
 });
 
 // KYC upload
 router.post("/:id/kyc", authMiddleware, tenantMiddleware, validate(KycSchema), async (req, res) => {
-  try { res.status(201).json({ kyc: await MemberService.addKyc(societyOf(req), req.params.id, req.body) }); }
+  try { res.status(201).json({ kyc: await MemberService.addKyc(societyOf(req), (req.params.id as string), req.body) }); }
   catch (e: any) { map(res, e, "Failed to add KYC document"); }
 });
 
 // KYC review
 router.post("/kyc/:id/review", authMiddleware, tenantMiddleware, canManageContent, validate(KycReviewSchema), async (req, res) => {
   try {
-    res.json({ kyc: await MemberService.reviewKyc(societyOf(req), req.params.id, req.body.decision, req.body.reason, userOf(req)) });
+    res.json({ kyc: await MemberService.reviewKyc(societyOf(req), (req.params.id as string), req.body.decision, req.body.reason, userOf(req)) });
   } catch (e: any) { map(res, e, "Failed to review KYC document"); }
 });
 

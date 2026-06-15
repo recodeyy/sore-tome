@@ -1,5 +1,6 @@
 import { Pool, PoolConfig } from "pg";
 import { logger } from "../shared/Logger";
+import { requestContextStore } from "./RequestContext";
 
 class Database {
   private static instance: Database;
@@ -46,13 +47,19 @@ class Database {
   }
 
   public getPool(): Pool {
-    const originalQuery = this.pool.query.bind(this.pool);
-
-    // V3.14: Observability Wrapper (Slow Query Tracking)
+    // V3.14: Observability Wrapper (Slow Query Tracking) + RLS Context Injection
     this.pool.query = (async (text: any, params: any) => {
       const start = Date.now();
+      const client = await this.pool.connect();
       try {
-        const result = await originalQuery(text, params);
+        const context = requestContextStore.getStore();
+        if (context && context.societyId) {
+          await client.query(`SET app.society_id = $1`, [context.societyId]);
+        } else {
+          await client.query(`SET app.society_id = ''`);
+        }
+        
+        const result = await client.query(text, params);
         const duration = Date.now() - start;
 
         if (duration > 500) {
@@ -63,8 +70,8 @@ class Database {
         }
 
         return result;
-      } catch (err) {
-        throw err;
+      } finally {
+        client.release();
       }
     }) as any;
 

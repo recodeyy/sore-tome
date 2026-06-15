@@ -222,15 +222,15 @@ export class AIToolService {
     const cached = await this.redis.get(cacheKey);
     if (cached) return JSON.parse(cached);
 
-    const stats = await this.getSocietyStats(targetSocietyId);
-    const finance = await this.analyzeExpenses(targetSocietyId);
+    const stats = await this.getSocietyStats(societyId);
+    const finance = await this.analyzeExpenses(societyId);
     
     // Get latest processed AI jobs
     const db = getDb();
     // V3.12: Fetch without orderBy to avoid composite index requirement
     // We fetch a larger batch and sort in-memory
     const jobsSnap = await db.collection("ai_jobs")
-      .where("society_id", "==", targetSocietyId)
+      .where("society_id", "==", societyId)
       .limit(10) 
       .get();
 
@@ -276,7 +276,7 @@ export class AIToolService {
     const db = getDb();
     // V4.0: Optimized Indexed Query
     const transSnap = await db.collection("transactions")
-      .where("society_id", "==", targetSocietyId)
+      .where("society_id", "==", societyId)
       .where("type", "==", "debit")
       .get();
 

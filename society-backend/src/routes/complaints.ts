@@ -53,7 +53,7 @@ router.get("/analytics", authMiddleware, tenantMiddleware, canManageContent, asy
 router.get("/:id", authMiddleware, tenantMiddleware, async (req: Request, res: Response) => {
   try {
     const includeInternal = isAdminRole(req);
-    const detail = await ComplaintService.getComplaint(societyOf(req), req.params.id, includeInternal);
+    const detail = await ComplaintService.getComplaint(societyOf(req), (req.params.id as string), includeInternal);
     if (!detail) return res.status(404).json({ error: "Complaint not found" });
     // Resident may only view their own complaint (mask existence otherwise).
     if (!isAdminRole(req) && detail.complaint.created_by !== userOf(req).uid) {
@@ -81,7 +81,7 @@ router.post("/", authMiddleware, tenantMiddleware, validate(CreateComplaintSchem
 router.post("/:id/assign", authMiddleware, tenantMiddleware, canManageContent, validate(AssignComplaintSchema), async (req: Request, res: Response) => {
   try {
     const c = await ComplaintService.assign(
-      societyOf(req), req.params.id, req.body.assigneeId, req.body.assigneeType, userOf(req).uid, req.body.reason
+      societyOf(req), (req.params.id as string), req.body.assigneeId, req.body.assigneeType, userOf(req).uid, req.body.reason
     );
     res.json({ complaint: c });
   } catch (err: any) {
@@ -94,7 +94,7 @@ router.post("/:id/assign", authMiddleware, tenantMiddleware, canManageContent, v
 // PATCH /complaints/:id/status — admin drives the state machine
 router.patch("/:id/status", authMiddleware, tenantMiddleware, canManageContent, validate(ComplaintStatusSchema), async (req: Request, res: Response) => {
   try {
-    const c = await ComplaintService.changeStatus(societyOf(req), req.params.id, req.body.status, userOf(req).uid, req.body.note);
+    const c = await ComplaintService.changeStatus(societyOf(req), (req.params.id as string), req.body.status, userOf(req).uid, req.body.note);
     res.json({ complaint: c });
   } catch (err: any) {
     if (err.code === "NOT_FOUND") return res.status(404).json({ error: "Complaint not found" });
@@ -107,7 +107,7 @@ router.patch("/:id/status", authMiddleware, tenantMiddleware, canManageContent, 
 // POST /complaints/:id/sla-pause — pause/resume SLA clock (admin)
 router.post("/:id/sla-pause", authMiddleware, tenantMiddleware, canManageContent, validate(ComplaintSlaPauseSchema), async (req: Request, res: Response) => {
   try {
-    const r = await ComplaintService.setSlaPause(societyOf(req), req.params.id, req.body.pause, req.body.reason);
+    const r = await ComplaintService.setSlaPause(societyOf(req), (req.params.id as string), req.body.pause, req.body.reason);
     res.json(r);
   } catch (err: any) {
     if (err.code === "NOT_FOUND") return res.status(404).json({ error: "Complaint not found" });
@@ -121,7 +121,7 @@ router.post("/:id/comments", authMiddleware, tenantMiddleware, validate(Complain
   try {
     // Only admins/assignees may post internal notes.
     const visibility = req.body.visibility === "internal" && isAdminRole(req) ? "internal" : "resident";
-    const comment = await ComplaintService.addComment(societyOf(req), req.params.id, {
+    const comment = await ComplaintService.addComment(societyOf(req), (req.params.id as string), {
       body: req.body.body, visibility, authorId: userOf(req).uid, authorName: userOf(req).name,
     });
     res.status(201).json({ comment });
@@ -135,7 +135,7 @@ router.post("/:id/comments", authMiddleware, tenantMiddleware, validate(Complain
 // POST /complaints/:id/feedback — resident CSAT, once only
 router.post("/:id/feedback", authMiddleware, tenantMiddleware, validate(ComplaintFeedbackSchema), async (req: Request, res: Response) => {
   try {
-    const feedback = await ComplaintService.submitFeedback(societyOf(req), req.params.id, req.body.rating, req.body.comment, userOf(req).uid);
+    const feedback = await ComplaintService.submitFeedback(societyOf(req), (req.params.id as string), req.body.rating, req.body.comment, userOf(req).uid);
     res.status(201).json({ feedback });
   } catch (err: any) {
     if (err.code === "NOT_FOUND") return res.status(404).json({ error: "Complaint not found" });
@@ -150,12 +150,12 @@ router.post("/:id/feedback", authMiddleware, tenantMiddleware, validate(Complain
 router.get("/:id/attachments", authMiddleware, tenantMiddleware, async (req: Request, res: Response) => {
   try {
     if (!isAdminRole(req)) {
-      const detail = await ComplaintService.getComplaint(societyOf(req), req.params.id, false);
+      const detail = await ComplaintService.getComplaint(societyOf(req), (req.params.id as string), false);
       if (!detail || detail.complaint.created_by !== userOf(req).uid) {
         return res.status(404).json({ error: "Complaint not found" });
       }
     }
-    const attachments = await ComplaintService.listAttachments(societyOf(req), req.params.id);
+    const attachments = await ComplaintService.listAttachments(societyOf(req), (req.params.id as string));
     res.json({ attachments });
   } catch (err: any) {
     if (err.code === "NOT_FOUND") return res.status(404).json({ error: "Complaint not found" });
@@ -169,7 +169,7 @@ router.post("/:id/attachments", authMiddleware, tenantMiddleware, async (req: Re
   try {
     const { fileUrl, mime, kind } = req.body || {};
     if (!fileUrl || typeof fileUrl !== "string") return res.status(400).json({ error: "fileUrl is required" });
-    const attachment = await ComplaintService.addAttachment(societyOf(req), req.params.id, {
+    const attachment = await ComplaintService.addAttachment(societyOf(req), (req.params.id as string), {
       fileUrl, mime, kind, uploadedBy: userOf(req).uid,
     });
     res.status(201).json({ attachment });

@@ -84,7 +84,7 @@ router.post("/", authMiddleware, tenantMiddleware, adminOnly, validate(CreateAme
 // GET /amenities/:id/bookings — confirmed bookings for an amenity
 router.get("/:id/bookings", authMiddleware, tenantMiddleware, async (req: Request, res: Response) => {
   try {
-    const bookings = await BookingService.list(societyOf(req), req.params.id);
+    const bookings = await BookingService.list(societyOf(req), (req.params.id as string));
     res.json({ bookings });
   } catch (err: any) {
     logger.error({ error: err.message }, "List bookings failed");
@@ -96,7 +96,7 @@ router.get("/:id/bookings", authMiddleware, tenantMiddleware, async (req: Reques
 router.post("/:id/book", authMiddleware, tenantMiddleware, validate(BookAmenitySchema), async (req: Request, res: Response) => {
   try {
     const booking = await BookingService.book(societyOf(req), {
-      amenityId: req.params.id,
+      amenityId: (req.params.id as string),
       memberId: req.body.memberId || (req as any).user?.uid,
       startAt: req.body.startAt,
       endAt: req.body.endAt,
@@ -113,7 +113,7 @@ router.post("/:id/book", authMiddleware, tenantMiddleware, validate(BookAmenityS
 // DELETE /amenities/bookings/:bookingId — cancel a booking
 router.delete("/bookings/:bookingId", authMiddleware, tenantMiddleware, async (req: Request, res: Response) => {
   try {
-    const booking = await BookingService.cancel(societyOf(req), req.params.bookingId);
+    const booking = await BookingService.cancel(societyOf(req), (req.params.bookingId as string));
     res.json({ booking });
   } catch (err: any) {
     if (err.code === "NOT_FOUND") return res.status(404).json({ error: "Booking not found" });
@@ -125,7 +125,7 @@ router.delete("/bookings/:bookingId", authMiddleware, tenantMiddleware, async (r
 // POST /amenities/:id/blackouts — register a blackout (admin)
 router.post("/:id/blackouts", authMiddleware, tenantMiddleware, canManageContent, validate(BlackoutSchema), async (req: Request, res: Response) => {
   try {
-    const blackout = await BookingService.addBlackout(societyOf(req), req.params.id, req.body);
+    const blackout = await BookingService.addBlackout(societyOf(req), (req.params.id as string), req.body);
     res.status(201).json({ blackout });
   } catch (err: any) {
     handleEnhErr(err, res, "Failed to add blackout");
@@ -135,7 +135,7 @@ router.post("/:id/blackouts", authMiddleware, tenantMiddleware, canManageContent
 // PATCH /amenities/:id/pricing — set pricing/hours/approval/cap (admin)
 router.patch("/:id/pricing", authMiddleware, tenantMiddleware, canManageContent, validate(PricingSchema), async (req: Request, res: Response) => {
   try {
-    const amenity = await BookingService.setPricing(societyOf(req), req.params.id, req.body);
+    const amenity = await BookingService.setPricing(societyOf(req), (req.params.id as string), req.body);
     res.json({ amenity });
   } catch (err: any) {
     handleEnhErr(err, res, "Failed to set pricing");
@@ -146,7 +146,7 @@ router.patch("/:id/pricing", authMiddleware, tenantMiddleware, canManageContent,
 router.post("/:id/request", authMiddleware, tenantMiddleware, validate(BookAmenitySchema), async (req: Request, res: Response) => {
   try {
     const booking = await BookingService.requestBooking(societyOf(req), {
-      amenityId: req.params.id,
+      amenityId: (req.params.id as string),
       memberId: req.body.memberId || (req as any).user?.uid,
       startAt: req.body.startAt,
       endAt: req.body.endAt,
@@ -160,7 +160,7 @@ router.post("/:id/request", authMiddleware, tenantMiddleware, validate(BookAmeni
 // POST /amenities/bookings/:id/approve (admin)
 router.post("/bookings/:id/approve", authMiddleware, tenantMiddleware, canManageContent, async (req: Request, res: Response) => {
   try {
-    const booking = await BookingService.approveBooking(societyOf(req), req.params.id);
+    const booking = await BookingService.approveBooking(societyOf(req), (req.params.id as string));
     res.json({ booking });
   } catch (err: any) {
     handleEnhErr(err, res, "Failed to approve booking");
@@ -170,7 +170,7 @@ router.post("/bookings/:id/approve", authMiddleware, tenantMiddleware, canManage
 // POST /amenities/bookings/:id/reject (admin)
 router.post("/bookings/:id/reject", authMiddleware, tenantMiddleware, canManageContent, async (req: Request, res: Response) => {
   try {
-    const booking = await BookingService.rejectBooking(societyOf(req), req.params.id);
+    const booking = await BookingService.rejectBooking(societyOf(req), (req.params.id as string));
     res.json({ booking });
   } catch (err: any) {
     handleEnhErr(err, res, "Failed to reject booking");
@@ -180,7 +180,7 @@ router.post("/bookings/:id/reject", authMiddleware, tenantMiddleware, canManageC
 // POST /amenities/bookings/:id/cancel (auth)
 router.post("/bookings/:id/cancel", authMiddleware, tenantMiddleware, validate(CancelSchema), async (req: Request, res: Response) => {
   try {
-    const booking = await BookingService.cancelBooking(societyOf(req), req.params.id, req.body.withRefund);
+    const booking = await BookingService.cancelBooking(societyOf(req), (req.params.id as string), req.body.withRefund);
     res.json({ booking });
   } catch (err: any) {
     handleEnhErr(err, res, "Failed to cancel booking");
@@ -190,7 +190,7 @@ router.post("/bookings/:id/cancel", authMiddleware, tenantMiddleware, validate(C
 // POST /amenities/bookings/:id/no-show (admin)
 router.post("/bookings/:id/no-show", authMiddleware, tenantMiddleware, canManageContent, async (req: Request, res: Response) => {
   try {
-    const booking = await BookingService.markNoShow(societyOf(req), req.params.id);
+    const booking = await BookingService.markNoShow(societyOf(req), (req.params.id as string));
     res.json({ booking });
   } catch (err: any) {
     handleEnhErr(err, res, "Failed to mark no-show");
@@ -200,7 +200,7 @@ router.post("/bookings/:id/no-show", authMiddleware, tenantMiddleware, canManage
 // POST /amenities/bookings/:id/reschedule (auth)
 router.post("/bookings/:id/reschedule", authMiddleware, tenantMiddleware, validate(RescheduleSchema), async (req: Request, res: Response) => {
   try {
-    const booking = await BookingService.rescheduleBooking(societyOf(req), req.params.id, req.body);
+    const booking = await BookingService.rescheduleBooking(societyOf(req), (req.params.id as string), req.body);
     res.json({ booking });
   } catch (err: any) {
     handleEnhErr(err, res, "Failed to reschedule booking");
@@ -210,7 +210,7 @@ router.post("/bookings/:id/reschedule", authMiddleware, tenantMiddleware, valida
 // POST /amenities/:id/reviews (auth)
 router.post("/:id/reviews", authMiddleware, tenantMiddleware, validate(ReviewSchema), async (req: Request, res: Response) => {
   try {
-    const review = await BookingService.addReview(societyOf(req), req.params.id, {
+    const review = await BookingService.addReview(societyOf(req), (req.params.id as string), {
       ...req.body,
       memberId: req.body.memberId || (req as any).user?.uid,
     });
@@ -223,7 +223,7 @@ router.post("/:id/reviews", authMiddleware, tenantMiddleware, validate(ReviewSch
 // GET /amenities/:id/reviews (auth)
 router.get("/:id/reviews", authMiddleware, tenantMiddleware, async (req: Request, res: Response) => {
   try {
-    const result = await BookingService.listReviews(societyOf(req), req.params.id);
+    const result = await BookingService.listReviews(societyOf(req), (req.params.id as string));
     res.json(result);
   } catch (err: any) {
     handleEnhErr(err, res, "Failed to list reviews");
@@ -234,7 +234,7 @@ router.get("/:id/reviews", authMiddleware, tenantMiddleware, async (req: Request
 router.get("/:id/analytics", authMiddleware, tenantMiddleware, canManageContent, validate(AnalyticsSchema), async (req: Request, res: Response) => {
   try {
     const result = await BookingService.analytics(
-      societyOf(req), req.params.id,
+      societyOf(req), (req.params.id as string),
       String(req.query.fromAt), String(req.query.toAt)
     );
     res.json(result);

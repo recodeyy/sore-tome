@@ -37,7 +37,7 @@ router.get("/", authMiddleware, tenantMiddleware, async (req, res) => {
 });
 router.get("/:id", authMiddleware, tenantMiddleware, async (req, res) => {
   try {
-    const a = await AssetService.getAsset(societyOf(req), req.params.id);
+    const a = await AssetService.getAsset(societyOf(req), (req.params.id as string));
     if (!a) return res.status(404).json({ error: "Asset not found" });
     res.json(a);
   } catch (e: any) { map(res, e, "Failed to get asset"); }
@@ -69,11 +69,11 @@ router.post("/work-orders", authMiddleware, tenantMiddleware, canManageContent, 
   catch (e: any) { map(res, e, "Failed to create work order"); }
 });
 router.post("/work-orders/:id/start", authMiddleware, tenantMiddleware, canManageContent, async (req, res) => {
-  try { res.json({ workOrder: await AssetService.startWorkOrder(societyOf(req), req.params.id) }); }
+  try { res.json({ workOrder: await AssetService.startWorkOrder(societyOf(req), (req.params.id as string)) }); }
   catch (e: any) { map(res, e, "Failed to start work order"); }
 });
 router.post("/work-orders/:id/complete", authMiddleware, tenantMiddleware, canManageContent, validate(CompleteSchema), async (req, res) => {
-  try { res.json({ workOrder: await AssetService.completeWorkOrder(societyOf(req), req.params.id, req.body) }); }
+  try { res.json({ workOrder: await AssetService.completeWorkOrder(societyOf(req), (req.params.id as string), req.body) }); }
   catch (e: any) { map(res, e, "Failed to complete work order"); }
 });
 

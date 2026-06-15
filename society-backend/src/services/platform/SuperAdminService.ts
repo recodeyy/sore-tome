@@ -363,6 +363,19 @@ export class SuperAdminService {
     return rows[0] ?? null;
   }
 
+  static async stopCurrentImpersonation(actorId: string) {
+    const rows = await queryRows(
+      `
+        UPDATE impersonation_sessions
+        SET status = 'ended', ended_at = NOW()
+        WHERE actor_id = $1 AND status = 'active'
+        RETURNING *
+      `,
+      [actorId]
+    );
+    return rows[0] ?? null;
+  }
+
   static async auditLogs(limitInput?: unknown) {
     const limit = clampLimit(limitInput, 50);
     return queryRows(
@@ -374,5 +387,208 @@ export class SuperAdminService {
       `,
       [limit]
     );
+  }
+
+  static async societyActivity(societyId: string, limitInput?: unknown) {
+    const limit = clampLimit(limitInput, 50);
+    return queryRows(
+      `
+        SELECT id, action_id, tool_id, user_id, society_id, action, status, error_message, created_at
+        FROM ai_audit_logs_partitioned
+        WHERE society_id = $1
+        ORDER BY created_at DESC
+        LIMIT $2
+      `,
+      [societyId, limit]
+    );
+  }
+
+  static async suspendSociety(societyId: string, actorId: string, reason: string) {
+    await queryRows(
+      `
+        UPDATE society_subscriptions
+        SET status = 'suspended',
+            updated_at = NOW()
+        WHERE society_id = $1
+      `,
+      [societyId]
+    );
+    await queryRows(
+      `
+        INSERT INTO society_status_history (society_id, from_status, to_status, actor_id, reason)
+        VALUES ($1, 'active', 'suspended', $2, $3)
+      `,
+      [societyId, actorId, reason]
+    );
+  }
+
+  static async reactivateSociety(societyId: string, actorId: string, reason: string) {
+    await queryRows(
+      `
+        UPDATE society_subscriptions
+        SET status = 'active',
+            updated_at = NOW()
+        WHERE society_id = $1
+      `,
+      [societyId]
+    );
+    await queryRows(
+      `
+        INSERT INTO society_status_history (society_id, from_status, to_status, actor_id, reason)
+        VALUES ($1, 'suspended', 'active', $2, $3)
+      `,
+      [societyId, actorId, reason]
+    );
+  }
+
+  static async approveSociety(societyId: string, actorId: string, reason: string) {
+    const app = await queryOne<any>(
+      `SELECT id FROM society_applications WHERE society_id = $1 AND status = 'pending'`,
+      [societyId],
+      null
+    );
+    if (app) {
+      await this.reviewApplication(app.id, "approve", actorId, reason);
+    }
+    const plan = await queryOne<any>(
+      `SELECT id FROM subscription_plans WHERE is_active = true ORDER BY price_minor ASC LIMIT 1`,
+      [],
+      null
+    );
+    if (plan) {
+      await queryRows(
+        `
+          INSERT INTO society_subscriptions (society_id, plan_id, status, renews_at, effective_date)
+          VALUES ($1, $2, 'active', NOW() + interval '30 days', NOW())
+          ON CONFLICT (society_id) 
+          DO UPDATE SET status = 'active', plan_id = $2, renews_at = NOW() + interval '30 days', updated_at = NOW()
+        `,
+        [societyId, plan.id]
+      );
+    }
+  }
+
+  static async rejectSociety(societyId: string, actorId: string, reason: string) {
+    const app = await queryOne<any>(
+      `SELECT id FROM society_applications WHERE society_id = $1 AND status = 'pending'`,
+      [societyId],
+      null
+    );
+    if (app) {
+      await this.reviewApplication(app.id, "reject", actorId, reason);
+    }
+  }
+
+  static async requestSocietyInformation(societyId: string, actorId: string, reason: string, requestedFields: string[]) {
+    await queryRows(
+      `
+        INSERT INTO society_status_history (society_id, from_status, to_status, actor_id, reason)
+        VALUES ($1, 'pending', 'pending_info', $2, $3)
+      `,
+      [societyId, actorId, `${reason} (Requested: ${requestedFields.join(", ")})`]
+    );
+  }
+
+  static async assignTicket(ticketId: string, assigneeId: string, reason: string, actorId: string) {
+    const rows = await queryRows(
+      `
+        UPDATE support_tickets
+        SET assignee_id = $2,
+            status = 'in_progress',
+            updated_at = NOW(),
+            version = version + 1
+        WHERE id = $1
+        RETURNING *
+      `,
+      [ticketId, assigneeId]
+    );
+    await queryRows(
+      `
+        INSERT INTO support_ticket_comments (ticket_id, author_id, body, internal)
+        VALUES ($1, $2, $3, true)
+      `,
+      [ticketId, actorId, `Ticket assigned to ${assigneeId}. Reason: ${reason}`]
+    );
+    return rows[0] ?? null;
+  }
+
+  static async addInternalNote(ticketId: string, note: string, actorId: string) {
+    await queryRows(
+      `
+        INSERT INTO support_ticket_comments (ticket_id, author_id, body, internal)
+        VALUES ($1, $2, $3, true)
+      `,
+      [ticketId, actorId, note]
+    );
+  }
+
+  static async resolveTicket(ticketId: string, resolution: string, actorId: string) {
+    const rows = await queryRows(
+      `
+        UPDATE support_tickets
+        SET status = 'resolved',
+            updated_at = NOW(),
+            version = version + 1
+        WHERE id = $1
+        RETURNING *
+      `,
+      [ticketId]
+    );
+    await queryRows(
+      `
+        INSERT INTO support_ticket_comments (ticket_id, author_id, body, internal)
+        VALUES ($1, $2, $3, true)
+      `,
+      [ticketId, actorId, `Resolved. Resolution: ${resolution}`]
+    );
+    return rows[0] ?? null;
+  }
+
+  static async getFeatures() {
+    return queryRows(`SELECT id, key, name, default_enabled, created_at FROM platform_features ORDER BY name ASC`);
+  }
+
+  static async getAnnouncements() {
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS platform_announcements (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        title TEXT NOT NULL,
+        body TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    return queryRows(`SELECT id, title, body, created_at FROM platform_announcements ORDER BY created_at DESC`);
+  }
+
+  static async createAnnouncement(title: string, body: string, actorId: string) {
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS platform_announcements (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        title TEXT NOT NULL,
+        body TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    const rows = await queryRows(
+      `
+        INSERT INTO platform_announcements (title, body)
+        VALUES ($1, $2)
+        RETURNING *
+      `,
+      [title, body]
+    );
+    return rows[0];
+  }
+
+  static async requestReport(payload: any, actorId: string) {
+    const rows = await queryRows(
+      `
+        INSERT INTO report_jobs (society_id, kind, status, params, requested_by)
+        VALUES ($1, $2, 'queued', $3, $4)
+        RETURNING *
+      `,
+      [payload.societyId || "platform", payload.kind || "custom", JSON.stringify(payload.params || {}), actorId]
+    );
+    return rows[0];
   }
 }

@@ -143,6 +143,7 @@ v1Router.use("/assets", standardLimiter, require("./src/routes/assets_pg").defau
 // Phase 2 — Society structure (Postgres).
 v1Router.use("/structure", standardLimiter, require("./src/routes/structure_pg").default);
 v1Router.use("/members-v2", standardLimiter, require("./src/routes/members_pg").default);
+v1Router.use("/society", standardLimiter, require("./src/routes/society_pg").default);
 v1Router.use("/reports", standardLimiter, require("./src/routes/reports_pg").default);
 v1Router.use("/audit", standardLimiter, require("./src/routes/audit_pg").default);
 v1Router.use("/realtime", require("./src/routes/realtime").default);

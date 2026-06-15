@@ -45,7 +45,7 @@ router.post("/wings", authMiddleware, tenantMiddleware, canManageContent, valida
   catch (e: any) { map(res, e, "Failed to create wing"); }
 });
 router.patch("/wings/:id", authMiddleware, tenantMiddleware, canManageContent, validate(WingPatchSchema), async (req, res) => {
-  try { res.json({ wing: await StructureService.updateWing(societyOf(req), req.params.id, req.body) }); }
+  try { res.json({ wing: await StructureService.updateWing(societyOf(req), (req.params.id as string), req.body) }); }
   catch (e: any) { map(res, e, "Failed to update wing"); }
 });
 
@@ -84,19 +84,19 @@ router.post("/units", authMiddleware, tenantMiddleware, canManageContent, valida
   catch (e: any) { map(res, e, "Failed to create unit"); }
 });
 router.patch("/units/:id", authMiddleware, tenantMiddleware, canManageContent, validate(UnitPatchSchema), async (req, res) => {
-  try { res.json({ unit: await StructureService.updateUnit(societyOf(req), req.params.id, req.body) }); }
+  try { res.json({ unit: await StructureService.updateUnit(societyOf(req), (req.params.id as string), req.body) }); }
   catch (e: any) { map(res, e, "Failed to update unit"); }
 });
 router.get("/units/:id/occupancy", authMiddleware, tenantMiddleware, async (req, res) => {
-  try { res.json({ history: await StructureService.unitOccupancyHistory(societyOf(req), req.params.id) }); }
+  try { res.json({ history: await StructureService.unitOccupancyHistory(societyOf(req), (req.params.id as string)) }); }
   catch (e: any) { map(res, e, "Failed to get occupancy history"); }
 });
 router.post("/units/:id/occupancy", authMiddleware, tenantMiddleware, canManageContent, validate(OccupancySchema), async (req, res) => {
-  try { res.status(201).json({ occupancy: await StructureService.setOccupancy(societyOf(req), req.params.id, req.body) }); }
+  try { res.status(201).json({ occupancy: await StructureService.setOccupancy(societyOf(req), (req.params.id as string), req.body) }); }
   catch (e: any) { map(res, e, "Failed to set occupancy"); }
 });
 router.post("/units/:id/vacate", authMiddleware, tenantMiddleware, canManageContent, validate(VacateSchema), async (req, res) => {
-  try { res.json(await StructureService.vacateUnit(societyOf(req), req.params.id, req.body.relation)); }
+  try { res.json(await StructureService.vacateUnit(societyOf(req), (req.params.id as string), req.body.relation)); }
   catch (e: any) { map(res, e, "Failed to vacate unit"); }
 });
 

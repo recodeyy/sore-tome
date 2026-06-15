@@ -51,11 +51,11 @@ router.post("/allocations", authMiddleware, tenantMiddleware, canManageContent, 
   catch (e: any) { map(res, e, "Failed to allocate slot"); }
 });
 router.post("/allocations/:id/release", authMiddleware, tenantMiddleware, canManageContent, async (req, res) => {
-  try { res.json(await ParkingService.release(societyOf(req), req.params.id)); }
+  try { res.json(await ParkingService.release(societyOf(req), (req.params.id as string))); }
   catch (e: any) { map(res, e, "Failed to release allocation"); }
 });
 router.post("/allocations/:id/transfer", authMiddleware, tenantMiddleware, canManageContent, validate(TransferSchema), async (req, res) => {
-  try { res.json({ allocation: await ParkingService.transfer(societyOf(req), req.params.id, req.body.toSlotId, userOf(req).uid) }); }
+  try { res.json({ allocation: await ParkingService.transfer(societyOf(req), (req.params.id as string), req.body.toSlotId, userOf(req).uid) }); }
   catch (e: any) { map(res, e, "Failed to transfer allocation"); }
 });
 
@@ -85,7 +85,7 @@ router.post("/violations", authMiddleware, tenantMiddleware, canManageContent, v
   catch (e: any) { map(res, e, "Failed to record violation"); }
 });
 router.post("/violations/:id/resolve", authMiddleware, tenantMiddleware, canManageContent, validate(ResolveViolationSchema), async (req, res) => {
-  try { res.json({ violation: await ParkingService.resolveViolation(societyOf(req), req.params.id, req.body.status) }); }
+  try { res.json({ violation: await ParkingService.resolveViolation(societyOf(req), (req.params.id as string), req.body.status) }); }
   catch (e: any) { map(res, e, "Failed to resolve violation"); }
 });
 

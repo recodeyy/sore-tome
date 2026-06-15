@@ -18,13 +18,13 @@ const TemplateSchema = z.object({ body: z.object({
   name: s.max(80),
   kind: kind.optional(),
   format: z.enum(["pdf", "excel", "csv"]).optional(),
-  config: z.record(z.any()).optional(),
+  config: z.record(z.string(), z.any()).optional(),
 }).strict() });
 
 const JobSchema = z.object({ body: z.object({
   templateId: z.string().uuid().optional(),
   kind: kind.optional(),
-  params: z.record(z.any()).optional(),
+  params: z.record(z.string(), z.any()).optional(),
 }).strict() });
 
 const ScheduleSchema = z.object({ body: z.object({
@@ -67,7 +67,7 @@ router.get("/jobs", authMiddleware, tenantMiddleware, async (req, res) => {
   } catch (e: any) { map(res, e, "Failed to list jobs"); }
 });
 router.get("/jobs/:id", authMiddleware, tenantMiddleware, async (req, res) => {
-  try { res.json({ job: await ReportService.getJob(societyOf(req), req.params.id) }); }
+  try { res.json({ job: await ReportService.getJob(societyOf(req), (req.params.id as string)) }); }
   catch (e: any) { map(res, e, "Failed to get job"); }
 });
 router.post("/jobs", authMiddleware, tenantMiddleware, canManageContent, validate(JobSchema), async (req, res) => {
@@ -81,7 +81,7 @@ router.post("/jobs", authMiddleware, tenantMiddleware, canManageContent, validat
 // Generation (capability 91): execute a job, producing a downloadable artifact.
 router.post("/jobs/:id/generate", authMiddleware, tenantMiddleware, canManageContent, validate(GenerateSchema), async (req, res) => {
   try {
-    const job = await ReportService.generateJob(societyOf(req), req.params.id, {
+    const job = await ReportService.generateJob(societyOf(req), (req.params.id as string), {
       retentionDays: req.body.retentionDays,
     });
     res.json({ job });
@@ -90,7 +90,7 @@ router.post("/jobs/:id/generate", authMiddleware, tenantMiddleware, canManageCon
 
 router.get("/jobs/:id/artifact", authMiddleware, tenantMiddleware, async (req, res) => {
   try {
-    const art = await ReportService.getArtifact(societyOf(req), req.params.id);
+    const art = await ReportService.getArtifact(societyOf(req), (req.params.id as string));
     res.setHeader("Content-Type", art.contentType);
     res.setHeader("Content-Disposition", `attachment; filename="${art.fileName}"`);
     res.send(art.content);

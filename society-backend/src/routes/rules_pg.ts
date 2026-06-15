@@ -93,7 +93,7 @@ router.get("/documents", authMiddleware, tenantMiddleware, async (req: Request, 
 // GET /documents/:id — document detail with versions
 router.get("/documents/:id", authMiddleware, tenantMiddleware, async (req: Request, res: Response) => {
   try {
-    const detail = await RuleService.getDocument(societyOf(req), req.params.id);
+    const detail = await RuleService.getDocument(societyOf(req), (req.params.id as string));
     if (!detail) return res.status(404).json({ error: "Document not found" });
     res.json(detail);
   } catch (err: any) {
@@ -116,7 +116,7 @@ router.post("/documents", authMiddleware, tenantMiddleware, canManageContent, va
 // POST /documents/:id/versions — attach a new file revision (admin)
 router.post("/documents/:id/versions", authMiddleware, tenantMiddleware, canManageContent, validate(AddDocumentVersionSchema), async (req: Request, res: Response) => {
   try {
-    const result = await RuleService.addDocumentVersion(societyOf(req), req.params.id, {
+    const result = await RuleService.addDocumentVersion(societyOf(req), (req.params.id as string), {
       ...req.body,
       uploadedBy: userOf(req).uid,
     });
@@ -131,7 +131,7 @@ router.post("/documents/:id/versions", authMiddleware, tenantMiddleware, canMana
 // GET /:id — rule detail with versions
 router.get("/:id", authMiddleware, tenantMiddleware, async (req: Request, res: Response) => {
   try {
-    const detail = await RuleService.getRule(societyOf(req), req.params.id);
+    const detail = await RuleService.getRule(societyOf(req), (req.params.id as string));
     if (!detail) return res.status(404).json({ error: "Rule not found" });
     res.json(detail);
   } catch (err: any) {
@@ -154,7 +154,7 @@ router.post("/", authMiddleware, tenantMiddleware, canManageContent, validate(Cr
 // PUT /:id — update rule (snapshots prior version) (admin)
 router.put("/:id", authMiddleware, tenantMiddleware, canManageContent, validate(UpdateRuleSchema), async (req: Request, res: Response) => {
   try {
-    const rule = await RuleService.updateRule(societyOf(req), req.params.id, req.body, userOf(req).uid);
+    const rule = await RuleService.updateRule(societyOf(req), (req.params.id as string), req.body, userOf(req).uid);
     res.json({ rule });
   } catch (err: any) {
     if (err.code === "NOT_FOUND") return res.status(404).json({ error: "Rule not found" });
@@ -166,7 +166,7 @@ router.put("/:id", authMiddleware, tenantMiddleware, canManageContent, validate(
 // POST /:id/activate — draft/archived -> active (admin)
 router.post("/:id/activate", authMiddleware, tenantMiddleware, canManageContent, async (req: Request, res: Response) => {
   try {
-    const rule = await RuleService.activate(societyOf(req), req.params.id);
+    const rule = await RuleService.activate(societyOf(req), (req.params.id as string));
     res.json({ rule });
   } catch (err: any) {
     if (err.code === "NOT_FOUND") return res.status(404).json({ error: "Rule not found" });
@@ -179,7 +179,7 @@ router.post("/:id/activate", authMiddleware, tenantMiddleware, canManageContent,
 // POST /:id/archive — -> archived (admin)
 router.post("/:id/archive", authMiddleware, tenantMiddleware, canManageContent, async (req: Request, res: Response) => {
   try {
-    const rule = await RuleService.archive(societyOf(req), req.params.id);
+    const rule = await RuleService.archive(societyOf(req), (req.params.id as string));
     res.json({ rule });
   } catch (err: any) {
     if (err.code === "NOT_FOUND") return res.status(404).json({ error: "Rule not found" });

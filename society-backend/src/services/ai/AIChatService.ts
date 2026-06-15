@@ -10,6 +10,7 @@ import { AIRateLimitingService } from "./AIRateLimitingService";
 import { ChatPromptTemplate, MessagesPlaceholder } from "@langchain/core/prompts";
 import { HumanMessage, AIMessage, SystemMessage } from "@langchain/core/messages";
 import { AIToolService, ToolAction } from "./AIToolService";
+import { db } from "../../shared/Database";
 
 export class AIChatService {
   private static instance: AIChatService;
@@ -81,10 +82,11 @@ export class AIChatService {
     base64Image?: string,
     contextData?: any,
     userRole: string = "resident",
-    history: any[] = []
+    history: any[] = [],
+    conversationId?: string
   ): Promise<any> {
     const requestId = `chat_json_${Date.now()}`;
-    const context = { requestId, userId, societyId, userRole };
+    const context = { requestId, userId, societyId, userRole, conversationId };
 
     // ✅ BUG-07 FIX: Enforce per-user/per-society sliding-window rate limit
     const rateLimiter = AIRateLimitingService.getInstance();
@@ -186,10 +188,11 @@ export class AIChatService {
     societyId: string, 
     userMessage: string, 
     res: Response,
-    base64Image?: string
+    base64Image?: string,
+    conversationId?: string
   ) {
     const requestId = `chat_sse_${Date.now()}`;
-    const context = { requestId, userId, societyId };
+    const context = { requestId, userId, societyId, conversationId };
 
     // ✅ BUG-19 FIX: Streaming does not support image/OCR — reject early with a clear message
     if (base64Image) {
@@ -277,8 +280,18 @@ export class AIChatService {
     }));
 
     // Combine local DB history with optional manual history from UI (UI takes priority for current session)
-    const dbHistory = await this.memory.getShortTermHistory(userId, societyId);
-    const combinedHistory = manualHistory.length > 0 ? manualHistory : dbHistory;
+    let combinedHistory = manualHistory;
+    if (combinedHistory.length === 0) {
+      if (context.conversationId) {
+        const dbMsgs = await this.getConversationMessages(context.conversationId, userId, societyId);
+        combinedHistory = dbMsgs.map(m => ({
+          role: m.role === "user" ? "human" : m.role === "assistant" ? "ai" : m.role,
+          content: m.text_content
+        }));
+      } else {
+        combinedHistory = await this.memory.getShortTermHistory(userId, societyId);
+      }
+    }
     
     // AI V3.15: Persona-Based Intelligence
     const isAdmin = ["admin", "main_admin", "secretary", "treasurer"].includes(userRole);
@@ -326,7 +339,13 @@ export class AIChatService {
     await this.memory.addShortTermMessage(userId, societyId, { role: "human", content: input });
     await this.memory.addShortTermMessage(userId, societyId, { role: "ai", content: safeOutput });
 
-    // 3. Cache Result (if safe)
+    // 3. Save to Persistent DB (PostgreSQL) if conversationId is provided
+    if (context.conversationId) {
+      await this.addMessage(context.conversationId, "user", input);
+      await this.addMessage(context.conversationId, "assistant", safeOutput);
+    }
+
+    // 4. Cache Result (if safe)
     await this.cache.set(input, safeOutput, societyId, context);
 
     return safeOutput;
@@ -337,6 +356,131 @@ export class AIChatService {
     res.write(`data: ${JSON.stringify({ content: text })}\n\n`);
     res.write("data: [DONE]\n\n");
     res.end();
+  }
+
+  // PostgreSQL AI Conversations persistence CRUD helpers
+  public async createConversation(userId: string, societyId: string, title: string, language: string = "english"): Promise<any> {
+    const query = `
+      INSERT INTO ai_conversations (user_id, society_id, title, language_preference)
+      VALUES ($1, $2, $3, $4)
+      RETURNING *
+    `;
+    const res = await db.query(query, [userId, societyId, title, language]);
+    return res.rows[0];
+  }
+
+  public async listConversations(userId: string, societyId: string, options?: { limit?: number; offset?: number; search?: string }): Promise<any[]> {
+    let query = `
+      SELECT * FROM ai_conversations
+      WHERE user_id = $1 AND society_id = $2 AND is_archived = false
+    `;
+    const params: any[] = [userId, societyId];
+    
+    if (options?.search) {
+      params.push(`%${options.search}%`);
+      query += ` AND title ILIKE $${params.length}`;
+    }
+    
+    query += ` ORDER BY updated_at DESC`;
+    
+    if (options?.limit !== undefined) {
+      params.push(options.limit);
+      query += ` LIMIT $${params.length}`;
+    }
+    if (options?.offset !== undefined) {
+      params.push(options.offset);
+      query += ` OFFSET $${params.length}`;
+    }
+
+    const res = await db.query(query, params);
+    return res.rows;
+  }
+
+  public async addMessage(conversationId: string, role: string, text: string, metaJson: any = {}): Promise<any> {
+    const query = `
+      INSERT INTO ai_messages (conversation_id, role, text_content, meta_json)
+      VALUES ($1, $2, $3, $4)
+      RETURNING *
+    `;
+    const res = await db.query(query, [conversationId, role, text, JSON.stringify(metaJson)]);
+    
+    // Touch updated_at for conversation
+    await db.query(`UPDATE ai_conversations SET updated_at = NOW() WHERE id = $1`, [conversationId]);
+    
+    return res.rows[0];
+  }
+
+  public async getConversationMessages(conversationId: string, userId: string, societyId: string): Promise<any[]> {
+    const conv = await this.getConversation(conversationId, userId, societyId);
+    if (!conv) return [];
+
+    const query = `
+      SELECT * FROM ai_messages
+      WHERE conversation_id = $1
+      ORDER BY created_at ASC
+    `;
+    const res = await db.query(query, [conversationId]);
+    return res.rows;
+  }
+
+  public async getConversation(conversationId: string, userId: string, societyId: string): Promise<any> {
+    const query = `
+      SELECT * FROM ai_conversations
+      WHERE id = $1 AND user_id = $2 AND society_id = $3
+    `;
+    const res = await db.query(query, [conversationId, userId, societyId]);
+    return res.rows[0] || null;
+  }
+
+  public async updateConversation(
+    conversationId: string, 
+    userId: string, 
+    societyId: string, 
+    updates: { title?: string; is_archived?: boolean; language_preference?: string }
+  ): Promise<any> {
+    const conv = await this.getConversation(conversationId, userId, societyId);
+    if (!conv) return null;
+
+    const fields: string[] = [];
+    const params: any[] = [conversationId];
+    let count = 2;
+
+    if (updates.title !== undefined) {
+      fields.push(`title = $${count++}`);
+      params.push(updates.title);
+    }
+    if (updates.is_archived !== undefined) {
+      fields.push(`is_archived = $${count++}`);
+      params.push(updates.is_archived);
+    }
+    if (updates.language_preference !== undefined) {
+      fields.push(`language_preference = $${count++}`);
+      params.push(updates.language_preference);
+    }
+
+    if (fields.length === 0) return conv;
+
+    const query = `
+      UPDATE ai_conversations
+      SET ${fields.join(", ")}, updated_at = NOW()
+      WHERE id = $1
+      RETURNING *
+    `;
+    const res = await db.query(query, params);
+    return res.rows[0];
+  }
+
+  public async deleteConversation(conversationId: string, userId: string, societyId: string): Promise<any> {
+    const conv = await this.getConversation(conversationId, userId, societyId);
+    if (!conv) return null;
+
+    const query = `
+      DELETE FROM ai_conversations
+      WHERE id = $1
+      RETURNING *
+    `;
+    const res = await db.query(query, [conversationId]);
+    return res.rows[0];
   }
 }
 

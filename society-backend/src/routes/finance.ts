@@ -32,7 +32,7 @@ router.get("/invoices", authMiddleware, tenantMiddleware, async (req: Request, r
 // GET /finance/invoices/:id — one invoice with its lines
 router.get("/invoices/:id", authMiddleware, tenantMiddleware, async (req: Request, res: Response) => {
   try {
-    const invoice = await FinanceService.getInvoice(societyOf(req), req.params.id);
+    const invoice = await FinanceService.getInvoice(societyOf(req), (req.params.id as string));
     if (!invoice) return res.status(404).json({ error: "Invoice not found" });
     res.json({ invoice });
   } catch (err: any) {
@@ -56,7 +56,7 @@ router.post("/invoices", authMiddleware, tenantMiddleware, canManageFunds, valid
 // POST /finance/invoices/:id/publish — publish draft, post to ledger
 router.post("/invoices/:id/publish", authMiddleware, tenantMiddleware, canManageFunds, async (req: Request, res: Response) => {
   try {
-    const invoice = await FinanceService.publishInvoice(societyOf(req), req.params.id);
+    const invoice = await FinanceService.publishInvoice(societyOf(req), (req.params.id as string));
     res.json({ invoice });
   } catch (err: any) {
     if (err.code === "NOT_FOUND") return res.status(404).json({ error: "Invoice not found" });
@@ -69,7 +69,7 @@ router.post("/invoices/:id/publish", authMiddleware, tenantMiddleware, canManage
 // POST /finance/invoices/:id/late-fee — apply a configurable late fee (idempotent)
 router.post("/invoices/:id/late-fee", authMiddleware, tenantMiddleware, canManageFunds, async (req: Request, res: Response) => {
   try {
-    const result = await FinanceService.applyLateFee(societyOf(req), req.params.id, req.body);
+    const result = await FinanceService.applyLateFee(societyOf(req), (req.params.id as string), req.body);
     res.json(result);
   } catch (err: any) {
     if (err.code === "NOT_FOUND") return res.status(404).json({ error: "Invoice not found" });
@@ -82,7 +82,7 @@ router.post("/invoices/:id/late-fee", authMiddleware, tenantMiddleware, canManag
 // POST /finance/invoices/:id/late-fee/waive — waive an applied late fee
 router.post("/invoices/:id/late-fee/waive", authMiddleware, tenantMiddleware, canManageFunds, async (req: Request, res: Response) => {
   try {
-    const result = await FinanceService.waiveLateFee(societyOf(req), req.params.id, { reason: req.body.reason, waivedBy: (req as any).user?.uid });
+    const result = await FinanceService.waiveLateFee(societyOf(req), (req.params.id as string), { reason: req.body.reason, waivedBy: (req as any).user?.uid });
     res.json(result);
   } catch (err: any) {
     if (err.code === "NOT_FOUND") return res.status(404).json({ error: "Invoice not found" });
@@ -119,7 +119,7 @@ router.post("/recurring-billing", authMiddleware, tenantMiddleware, canManageFun
 // POST /finance/receipts/:id/void — void (and optionally reissue) a receipt
 router.post("/receipts/:id/void", authMiddleware, tenantMiddleware, canManageFunds, async (req: Request, res: Response) => {
   try {
-    const result = await FinanceService.voidReceipt(societyOf(req), req.params.id, { reason: req.body.reason, reissue: req.body.reissue, voidedBy: (req as any).user?.uid });
+    const result = await FinanceService.voidReceipt(societyOf(req), (req.params.id as string), { reason: req.body.reason, reissue: req.body.reissue, voidedBy: (req as any).user?.uid });
     res.json(result);
   } catch (err: any) {
     if (err.code === "NOT_FOUND") return res.status(404).json({ error: "Receipt not found" });
@@ -168,7 +168,7 @@ router.post("/expenses", authMiddleware, tenantMiddleware, canManageFunds, valid
 // POST /finance/expenses/:id/decision — approve/reject (maker-checker)
 router.post("/expenses/:id/decision", authMiddleware, tenantMiddleware, canManageFunds, validate(DecideExpenseSchema), async (req: Request, res: Response) => {
   try {
-    const expense = await ExpenseService.decide(societyOf(req), req.params.id, (req as any).user?.uid, req.body.decision, req.body.comment);
+    const expense = await ExpenseService.decide(societyOf(req), (req.params.id as string), (req as any).user?.uid, req.body.decision, req.body.comment);
     res.json({ expense });
   } catch (err: any) {
     if (err.code === "NOT_FOUND") return res.status(404).json({ error: "Expense not found" });
@@ -257,7 +257,7 @@ router.post("/reconciliation/imports", authMiddleware, tenantMiddleware, canMana
 // POST /finance/reconciliation/imports/:id/auto-match — auto-match lines to payments
 router.post("/reconciliation/imports/:id/auto-match", authMiddleware, tenantMiddleware, canManageFunds, async (req: Request, res: Response) => {
   try {
-    const data = await ReconciliationService.autoMatch(societyOf(req), req.params.id);
+    const data = await ReconciliationService.autoMatch(societyOf(req), (req.params.id as string));
     res.json({ success: true, data });
   } catch (err: any) {
     reconErr(res, err, "Auto-match failed");
@@ -267,7 +267,7 @@ router.post("/reconciliation/imports/:id/auto-match", authMiddleware, tenantMidd
 // POST /finance/reconciliation/lines/:id/match — manually match a line to a payment
 router.post("/reconciliation/lines/:id/match", authMiddleware, tenantMiddleware, canManageFunds, async (req: Request, res: Response) => {
   try {
-    const data = await ReconciliationService.manualMatch(societyOf(req), req.params.id, req.body.paymentId);
+    const data = await ReconciliationService.manualMatch(societyOf(req), (req.params.id as string), req.body.paymentId);
     res.json({ success: true, data });
   } catch (err: any) {
     reconErr(res, err, "Manual match failed");
@@ -277,7 +277,7 @@ router.post("/reconciliation/lines/:id/match", authMiddleware, tenantMiddleware,
 // GET /finance/reconciliation/imports/:id/summary — reconciliation summary
 router.get("/reconciliation/imports/:id/summary", authMiddleware, tenantMiddleware, async (req: Request, res: Response) => {
   try {
-    const data = await ReconciliationService.summary(societyOf(req), req.params.id);
+    const data = await ReconciliationService.summary(societyOf(req), (req.params.id as string));
     res.json({ success: true, data });
   } catch (err: any) {
     reconErr(res, err, "Reconciliation summary failed");

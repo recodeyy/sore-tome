@@ -31,7 +31,7 @@ const router = Router();
  */
 router.post("/chat", authMiddleware, tenantMiddleware, async (req: Request, res: Response) => {
   try {
-    const { message, base64Image, stream = false, context: contextData } = req.body;
+    const { message, base64Image, stream = false, context: contextData, conversationId } = req.body;
     const userId = (req as any).user?.uid || "anonymous";
     const societyId = (req as any).societyId;
 
@@ -51,14 +51,14 @@ router.post("/chat", authMiddleware, tenantMiddleware, async (req: Request, res:
 
     // SSE Streaming Mode
     if (stream === true || req.headers.accept === "text/event-stream") {
-      return aiService.chatStreaming(userId, societyId, message || "", res);
+      return aiService.chatStreaming(userId, societyId, message || "", res, undefined, conversationId);
     }
 
     // JSON Mode (Flutter/default)
     const { history = [] } = req.body;
     const userRole = (req as any).user?.role || "resident";
     
-    const result = await aiService.chatNonStreaming(userId, societyId, message || "", base64Image, contextData, userRole, history);
+    const result = await aiService.chatNonStreaming(userId, societyId, message || "", base64Image, contextData, userRole, history, conversationId);
     return res.status(200).json(result);
 
   } catch (error: any) {
@@ -313,16 +313,106 @@ router.get("/stats", authMiddleware, tenantMiddleware, async (req: Request, res:
 });
 
 /**
- * GET /ai/finance-analysis
+ * POST /ai/conversations
  */
-router.get("/finance-analysis", authMiddleware, tenantMiddleware, async (req: Request, res: Response) => {
+router.post("/conversations", authMiddleware, tenantMiddleware, async (req: Request, res: Response) => {
   try {
+    const userId = (req as any).user?.uid;
     const societyId = (req as any).societyId;
-    const toolService = AIToolService.getInstance();
-    const analysis = await toolService.analyzeExpenses(societyId);
-    return res.status(200).json(analysis);
+    const { title, language } = req.body;
+
+    const aiService = AIChatService.getInstance();
+    const conv = await aiService.createConversation(userId, societyId, title, language);
+    return res.status(201).json({ success: true, data: conv });
   } catch (error: any) {
-    return res.status(500).json({ error: "Failed to perform financial analysis" });
+    return res.status(500).json({ error: error.message || "Failed to create conversation" });
+  }
+});
+
+/**
+ * GET /ai/conversations
+ */
+router.get("/conversations", authMiddleware, tenantMiddleware, async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user?.uid;
+    const societyId = (req as any).societyId;
+    const { limit, offset, search } = req.query;
+
+    const aiService = AIChatService.getInstance();
+    const list = await aiService.listConversations(userId, societyId, {
+      limit: limit ? Number(limit) : undefined,
+      offset: offset ? Number(offset) : undefined,
+      search: search as string | undefined
+    });
+    return res.status(200).json({ success: true, data: list });
+  } catch (error: any) {
+    return res.status(500).json({ error: error.message || "Failed to fetch conversations" });
+  }
+});
+
+/**
+ * GET /ai/conversations/:id
+ */
+router.get("/conversations/:id", authMiddleware, tenantMiddleware, async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user?.uid;
+    const societyId = (req as any).societyId;
+    const conversationId = req.params.id as string;
+
+    const aiService = AIChatService.getInstance();
+    const messages = await aiService.getConversationMessages(conversationId, userId, societyId);
+    return res.status(200).json({ success: true, data: messages });
+  } catch (error: any) {
+    return res.status(500).json({ error: error.message || "Failed to fetch conversation messages" });
+  }
+});
+
+/**
+ * PATCH /ai/conversations/:id
+ */
+router.patch("/conversations/:id", authMiddleware, tenantMiddleware, async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user?.uid;
+    const societyId = (req as any).societyId;
+    const conversationId = req.params.id as string;
+    const { title, is_archived, language_preference } = req.body;
+
+    const aiService = AIChatService.getInstance();
+    const updated = await aiService.updateConversation(conversationId, userId, societyId, {
+      title,
+      is_archived,
+      language_preference
+    });
+
+    if (!updated) {
+      return res.status(404).json({ error: "Conversation not found or unauthorized" });
+    }
+
+    return res.status(200).json({ success: true, data: updated });
+  } catch (error: any) {
+    return res.status(500).json({ error: error.message || "Failed to update conversation" });
+  }
+});
+
+/**
+ * DELETE /ai/conversations/:id
+ */
+router.delete("/conversations/:id", authMiddleware, tenantMiddleware, async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user?.uid;
+    const societyId = (req as any).societyId;
+    const conversationId = req.params.id as string;
+
+    const aiService = AIChatService.getInstance();
+    const deleted = await aiService.deleteConversation(conversationId, userId, societyId);
+
+    if (!deleted) {
+      return res.status(404).json({ error: "Conversation not found or unauthorized" });
+    }
+
+    return res.status(200).json({ success: true, data: deleted });
+  } catch (error: any) {
+    return res.status(500).json({ error: error.message || "Failed to delete conversation" });
   }
 });
 

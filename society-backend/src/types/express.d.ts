@@ -11,6 +11,8 @@ declare global {
         society_id: string;
       } | any;
       requestId?: string;
+      file?: any;
+      files?: any;
     }
   }
 }

@@ -26,15 +26,19 @@ export const StaffService = {
       name: string; role?: string; department?: string; isContractor?: boolean;
       phone?: string; userId?: string; joiningDate?: string; assignedAreas?: string[];
       monthlyWageMinor?: number; kycExpiresAt?: string;
+      permissions?: string[]; overtimeRateMinor?: number; standardShiftMinutes?: number; lateGraceMinutes?: number;
     }
   ) {
     const { rows } = await db.query(
       `INSERT INTO staff (society_id, name, role, department, is_contractor, phone, user_id,
-                          joining_date, assigned_areas, monthly_wage_minor, kyc_expires_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+                          joining_date, assigned_areas, monthly_wage_minor, kyc_expires_at,
+                          permissions, overtime_rate_minor, standard_shift_minutes, late_grace_minutes)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,
       [societyId, input.name, input.role || null, input.department || null, input.isContractor || false,
        input.phone || null, input.userId || null, input.joiningDate || null,
-       input.assignedAreas || [], input.monthlyWageMinor || 0, input.kycExpiresAt || null]
+       input.assignedAreas || [], input.monthlyWageMinor || 0, input.kycExpiresAt || null,
+       input.permissions || [], input.overtimeRateMinor || 0,
+       input.standardShiftMinutes ?? 480, input.lateGraceMinutes ?? 0]
     );
     logger.info({ societyId, staffId: rows[0].id }, "Staff created");
     return rows[0];
@@ -344,4 +348,220 @@ export const StaffService = {
     );
     return rows[0];
   },
+
+  // ---- 71 Permissions / restricted app access --------------------------
+  async setPermissions(societyId: string, staffId: string, permissions: string[]) {
+    const { rows } = await db.query(
+      `UPDATE staff SET permissions = $3, version = version + 1, updated_at = now()
+        WHERE id = $1 AND society_id = $2 RETURNING *`,
+      [staffId, societyId, permissions]
+    );
+    if (!rows[0]) throw err("Staff not found", "NOT_FOUND");
+    return rows[0];
+  },
+
+  /** Returns true if the staff member holds the given permission key. */
+  async hasPermission(societyId: string, staffId: string, permission: string): Promise<boolean> {
+    const { rows } = await db.query(
+      `SELECT 1 FROM staff WHERE id = $1 AND society_id = $2 AND $3 = ANY(permissions)`,
+      [staffId, societyId, permission]
+    );
+    return rows.length > 0;
+  },
+
+  // ---- 76 Holidays + overtime / late-arrival calculations --------------
+  async addHoliday(societyId: string, holidayDate: string, name: string) {
+    const { rows } = await db.query(
+      `INSERT INTO society_holidays (society_id, holiday_date, name) VALUES ($1,$2,$3)
+       ON CONFLICT (society_id, holiday_date) DO UPDATE SET name = EXCLUDED.name RETURNING *`,
+      [societyId, holidayDate, name]
+    );
+    return rows[0];
+  },
+
+  /**
+   * Recompute overtime/late/holiday for a completed attendance row using the
+   * staff baseline (standard shift, grace) and the holiday calendar, against an
+   * optional shift start expressed in minutes-from-midnight.
+   */
+  async computeOvertimeAndLate(
+    societyId: string,
+    attendanceId: string,
+    opts: { shiftStartMinutes?: number } = {}
+  ) {
+    return withTx(async (client) => {
+      const a = await client.query(
+        `SELECT * FROM attendance_entries WHERE id = $1 AND society_id = $2 FOR UPDATE`,
+        [attendanceId, societyId]
+      );
+      const att = a.rows[0];
+      if (!att) throw err("Attendance not found", "NOT_FOUND");
+      if (!att.check_out_at) throw err("Attendance not checked out", "INVALID_STATE");
+      const s = await client.query(
+        `SELECT standard_shift_minutes, late_grace_minutes FROM staff WHERE id = $1 AND society_id = $2`,
+        [att.staff_id, societyId]
+      );
+      const std = Number(s.rows[0]?.standard_shift_minutes ?? 480);
+      const grace = Number(s.rows[0]?.late_grace_minutes ?? 0);
+
+      const hol = await client.query(
+        `SELECT 1 FROM society_holidays WHERE society_id = $1 AND holiday_date = $2`,
+        [societyId, att.work_date]
+      );
+      const isHoliday = hol.rows.length > 0;
+
+      const worked = Number(att.worked_minutes);
+      const overtime = Math.max(0, worked - std);
+
+      let late = 0;
+      if (opts.shiftStartMinutes != null && att.check_in_at) {
+        const ci = new Date(att.check_in_at);
+        const minutesIntoDay = ci.getUTCHours() * 60 + ci.getUTCMinutes();
+        late = Math.max(0, minutesIntoDay - opts.shiftStartMinutes - grace);
+      }
+
+      const upd = await client.query(
+        `UPDATE attendance_entries
+            SET overtime_minutes = $3, late_minutes = $4, is_holiday = $5, updated_at = now()
+          WHERE id = $1 AND society_id = $2 RETURNING *`,
+        [attendanceId, societyId, overtime, late, isHoliday]
+      );
+      return upd.rows[0];
+    });
+  },
+
+  // ---- 77 KYC / contracts / training / certifications ------------------
+  async addDocument(
+    societyId: string,
+    input: {
+      staffId: string; docType: "kyc" | "contract" | "training" | "certification";
+      title: string; reference?: string; fileUrl?: string; issuedOn?: string; expiresOn?: string;
+    },
+    createdBy?: string
+  ) {
+    const owns = await db.query(`SELECT id FROM staff WHERE id = $1 AND society_id = $2`, [input.staffId, societyId]);
+    if (!owns.rows[0]) throw err("Staff not found", "NOT_FOUND");
+    const { rows } = await db.query(
+      `INSERT INTO staff_documents (society_id, staff_id, doc_type, title, reference, file_url, issued_on, expires_on, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+      [societyId, input.staffId, input.docType, input.title, input.reference || null,
+       input.fileUrl || null, input.issuedOn || null, input.expiresOn || null, createdBy || null]
+    );
+    return rows[0];
+  },
+
+  async listDocuments(societyId: string, staffId: string) {
+    const { rows } = await db.query(
+      `SELECT * FROM staff_documents WHERE society_id = $1 AND staff_id = $2 ORDER BY created_at DESC`,
+      [societyId, staffId]
+    );
+    return rows;
+  },
+
+  /** Documents (and staff KYC) expiring within `days` days, or already expired. */
+  async expiringDocuments(societyId: string, withinDays = 30) {
+    const { rows } = await db.query(
+      `SELECT d.*, st.name AS staff_name,
+              (d.expires_on < CURRENT_DATE) AS is_expired
+         FROM staff_documents d
+         JOIN staff st ON st.id = d.staff_id
+        WHERE d.society_id = $1 AND d.status <> 'revoked'
+          AND d.expires_on IS NOT NULL
+          AND d.expires_on <= (CURRENT_DATE + ($2::int * INTERVAL '1 day'))
+        ORDER BY d.expires_on ASC`,
+      [societyId, withinDays]
+    );
+    return rows;
+  },
+
+  // ---- 79 Reports (aggregations) ---------------------------------------
+  /** Attendance summary per staff for a YYYY-MM period. */
+  async attendanceReport(societyId: string, period: string) {
+    const { rows } = await db.query(
+      `SELECT st.id AS staff_id, st.name,
+              count(a.*) FILTER (WHERE a.status = 'present')::int AS present_days,
+              count(a.*) FILTER (WHERE a.status = 'absent')::int AS absent_days,
+              count(a.*) FILTER (WHERE a.status = 'half_day')::int AS half_days,
+              count(a.*) FILTER (WHERE a.status = 'on_leave')::int AS leave_days,
+              COALESCE(sum(a.worked_minutes),0)::int AS worked_minutes,
+              COALESCE(sum(a.overtime_minutes),0)::int AS overtime_minutes,
+              COALESCE(sum(a.late_minutes),0)::int AS late_minutes
+         FROM staff st
+         LEFT JOIN attendance_entries a
+           ON a.staff_id = st.id AND a.society_id = st.society_id
+          AND to_char(a.work_date, 'YYYY-MM') = $2
+        WHERE st.society_id = $1
+        GROUP BY st.id, st.name
+        ORDER BY st.name ASC`,
+      [societyId, period]
+    );
+    return rows;
+  },
+
+  /** Leave report: requests grouped by status for a year. */
+  async leaveReport(societyId: string, year: number) {
+    const { rows } = await db.query(
+      `SELECT lr.status, count(*)::int AS requests, COALESCE(sum(lr.days),0)::numeric AS total_days
+         FROM leave_requests lr
+        WHERE lr.society_id = $1 AND EXTRACT(YEAR FROM lr.from_date) = $2
+        GROUP BY lr.status ORDER BY lr.status`,
+      [societyId, year]
+    );
+    return rows;
+  },
+
+  /** Payroll report: per-run totals. */
+  async payrollReport(societyId: string) {
+    const { rows } = await db.query(
+      `SELECT period, status, gross_minor, deductions_minor, net_minor
+         FROM payroll_runs WHERE society_id = $1 ORDER BY period DESC`,
+      [societyId]
+    );
+    return rows;
+  },
+
+  /** Overtime report: total OT minutes/value per staff for a period. */
+  async overtimeReport(societyId: string, period: string) {
+    const { rows } = await db.query(
+      `SELECT st.id AS staff_id, st.name,
+              COALESCE(sum(a.overtime_minutes),0)::int AS overtime_minutes,
+              (COALESCE(sum(a.overtime_minutes),0) * st.overtime_rate_minor / 60)::bigint AS overtime_value_minor
+         FROM staff st
+         LEFT JOIN attendance_entries a
+           ON a.staff_id = st.id AND a.society_id = st.society_id
+          AND to_char(a.work_date, 'YYYY-MM') = $2
+        WHERE st.society_id = $1
+        GROUP BY st.id, st.name, st.overtime_rate_minor
+        HAVING COALESCE(sum(a.overtime_minutes),0) > 0
+        ORDER BY overtime_minutes DESC`,
+      [societyId, period]
+    );
+    return rows;
+  },
+
+  /** Staffing summary: counts by status/department/contractor. */
+  async staffingReport(societyId: string) {
+    const { rows } = await db.query(
+      `SELECT count(*)::int AS total,
+              count(*) FILTER (WHERE status = 'active')::int AS active,
+              count(*) FILTER (WHERE status = 'suspended')::int AS suspended,
+              count(*) FILTER (WHERE status = 'terminated')::int AS terminated,
+              count(*) FILTER (WHERE is_contractor)::int AS contractors
+         FROM staff WHERE society_id = $1`,
+      [societyId]
+    );
+    return rows[0];
+  },
 };
+
+/** CSV-safe export: escapes formula-injection and quotes fields. */
+export function toCsv(rows: Record<string, any>[]): string {
+  if (rows.length === 0) return "";
+  const cols = Object.keys(rows[0]);
+  const esc = (v: any) => {
+    let s = v == null ? "" : String(v);
+    if (/^[=+\-@]/.test(s)) s = "'" + s; // neutralize CSV injection
+    return `"${s.replace(/"/g, '""')}"`;
+  };
+  return [cols.join(","), ...rows.map((r) => cols.map((c) => esc(r[c])).join(","))].join("\n");
+}

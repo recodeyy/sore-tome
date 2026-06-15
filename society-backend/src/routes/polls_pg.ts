@@ -86,7 +86,7 @@ router.get("/", authMiddleware, tenantMiddleware, async (req: Request, res: Resp
 // GET /polls/:id — detail with options + whether requester has voted
 router.get("/:id", authMiddleware, tenantMiddleware, async (req: Request, res: Response) => {
   try {
-    const detail = await PollService.getPoll(societyOf(req), req.params.id, {
+    const detail = await PollService.getPoll(societyOf(req), (req.params.id as string), {
       voterId: userOf(req).uid,
       unitId: userOf(req).unitId,
     });
@@ -111,7 +111,7 @@ router.post("/", authMiddleware, tenantMiddleware, canManageContent, validate(Cr
 // POST /polls/:id/open — draft -> open (admin)
 router.post("/:id/open", authMiddleware, tenantMiddleware, canManageContent, async (req: Request, res: Response) => {
   try {
-    const poll = await PollService.open(societyOf(req), req.params.id);
+    const poll = await PollService.open(societyOf(req), (req.params.id as string));
     res.json({ poll });
   } catch (err: any) {
     errToHttp(res, err, "Failed to open poll");
@@ -121,7 +121,7 @@ router.post("/:id/open", authMiddleware, tenantMiddleware, canManageContent, asy
 // POST /polls/:id/close — open -> closed (admin)
 router.post("/:id/close", authMiddleware, tenantMiddleware, canManageContent, async (req: Request, res: Response) => {
   try {
-    const poll = await PollService.close(societyOf(req), req.params.id);
+    const poll = await PollService.close(societyOf(req), (req.params.id as string));
     res.json({ poll });
   } catch (err: any) {
     errToHttp(res, err, "Failed to close poll");
@@ -131,7 +131,7 @@ router.post("/:id/close", authMiddleware, tenantMiddleware, canManageContent, as
 // POST /polls/:id/vote — any authenticated user casts one eligible vote
 router.post("/:id/vote", authMiddleware, tenantMiddleware, validate(VoteSchema), async (req: Request, res: Response) => {
   try {
-    const vote = await PollService.castVote(societyOf(req), req.params.id, {
+    const vote = await PollService.castVote(societyOf(req), (req.params.id as string), {
       optionId: req.body.optionId,
       voterId: userOf(req).uid,
       unitId: req.body.unitId || userOf(req).unitId,
@@ -145,7 +145,7 @@ router.post("/:id/vote", authMiddleware, tenantMiddleware, validate(VoteSchema),
 // GET /polls/:id/results — tallies respecting results_visibility
 router.get("/:id/results", authMiddleware, tenantMiddleware, async (req: Request, res: Response) => {
   try {
-    const results = await PollService.results(societyOf(req), req.params.id, isAdminRole(req));
+    const results = await PollService.results(societyOf(req), (req.params.id as string), isAdminRole(req));
     res.json(results);
   } catch (err: any) {
     errToHttp(res, err, "Failed to get poll results");

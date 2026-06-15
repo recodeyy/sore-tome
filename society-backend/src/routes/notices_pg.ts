@@ -96,7 +96,7 @@ router.get("/unread/count", authMiddleware, tenantMiddleware, async (req: Reques
 // GET /notices/:id — detail with audiences + read stats
 router.get("/:id", authMiddleware, tenantMiddleware, async (req: Request, res: Response) => {
   try {
-    const detail = await NoticeService.getNotice(societyOf(req), req.params.id);
+    const detail = await NoticeService.getNotice(societyOf(req), (req.params.id as string));
     if (!detail) return res.status(404).json({ error: "Notice not found" });
     res.json(detail);
   } catch (err: any) {
@@ -122,7 +122,7 @@ router.post("/", authMiddleware, tenantMiddleware, canManageContent, validate(Cr
 // PUT /notices/:id — edit (bumps version + snapshot)
 router.put("/:id", authMiddleware, tenantMiddleware, canManageContent, validate(UpdateNoticeSchema), async (req: Request, res: Response) => {
   try {
-    const notice = await NoticeService.updateNotice(societyOf(req), req.params.id, req.body, userOf(req).uid);
+    const notice = await NoticeService.updateNotice(societyOf(req), (req.params.id as string), req.body, userOf(req).uid);
     res.json({ notice });
   } catch (err: any) {
     return errToStatus(err, res, "Failed to update notice");
@@ -132,7 +132,7 @@ router.put("/:id", authMiddleware, tenantMiddleware, canManageContent, validate(
 // POST /notices/:id/audiences — replace audience targeting set
 router.post("/:id/audiences", authMiddleware, tenantMiddleware, canManageContent, validate(SetAudiencesSchema), async (req: Request, res: Response) => {
   try {
-    const audiences = await NoticeService.setAudiences(societyOf(req), req.params.id, req.body.audiences);
+    const audiences = await NoticeService.setAudiences(societyOf(req), (req.params.id as string), req.body.audiences);
     res.json({ audiences });
   } catch (err: any) {
     return errToStatus(err, res, "Failed to set audiences");
@@ -142,7 +142,7 @@ router.post("/:id/audiences", authMiddleware, tenantMiddleware, canManageContent
 // POST /notices/:id/schedule — schedule for future publication
 router.post("/:id/schedule", authMiddleware, tenantMiddleware, canManageContent, validate(ScheduleSchema), async (req: Request, res: Response) => {
   try {
-    const notice = await NoticeService.schedule(societyOf(req), req.params.id, req.body.publishAt);
+    const notice = await NoticeService.schedule(societyOf(req), (req.params.id as string), req.body.publishAt);
     res.json({ notice });
   } catch (err: any) {
     return errToStatus(err, res, "Failed to schedule notice");
@@ -152,7 +152,7 @@ router.post("/:id/schedule", authMiddleware, tenantMiddleware, canManageContent,
 // POST /notices/:id/publish — publish now (or keep scheduled if future)
 router.post("/:id/publish", authMiddleware, tenantMiddleware, canManageContent, async (req: Request, res: Response) => {
   try {
-    const notice = await NoticeService.publish(societyOf(req), req.params.id, userOf(req).uid);
+    const notice = await NoticeService.publish(societyOf(req), (req.params.id as string), userOf(req).uid);
     res.json({ notice });
   } catch (err: any) {
     return errToStatus(err, res, "Failed to publish notice");
@@ -162,7 +162,7 @@ router.post("/:id/publish", authMiddleware, tenantMiddleware, canManageContent, 
 // POST /notices/:id/unpublish — revert to draft
 router.post("/:id/unpublish", authMiddleware, tenantMiddleware, canManageContent, async (req: Request, res: Response) => {
   try {
-    const notice = await NoticeService.unpublish(societyOf(req), req.params.id);
+    const notice = await NoticeService.unpublish(societyOf(req), (req.params.id as string));
     res.json({ notice });
   } catch (err: any) {
     return errToStatus(err, res, "Failed to unpublish notice");
@@ -172,7 +172,7 @@ router.post("/:id/unpublish", authMiddleware, tenantMiddleware, canManageContent
 // POST /notices/:id/archive — archive (terminal)
 router.post("/:id/archive", authMiddleware, tenantMiddleware, canManageContent, async (req: Request, res: Response) => {
   try {
-    const notice = await NoticeService.archive(societyOf(req), req.params.id);
+    const notice = await NoticeService.archive(societyOf(req), (req.params.id as string));
     res.json({ notice });
   } catch (err: any) {
     return errToStatus(err, res, "Failed to archive notice");
@@ -182,7 +182,7 @@ router.post("/:id/archive", authMiddleware, tenantMiddleware, canManageContent, 
 // POST /notices/:id/read — any authenticated user records a read receipt
 router.post("/:id/read", authMiddleware, tenantMiddleware, async (req: Request, res: Response) => {
   try {
-    const read = await NoticeService.markRead(societyOf(req), req.params.id, userOf(req).uid);
+    const read = await NoticeService.markRead(societyOf(req), (req.params.id as string), userOf(req).uid);
     res.status(201).json({ read });
   } catch (err: any) {
     return errToStatus(err, res, "Failed to mark notice read");
@@ -192,7 +192,7 @@ router.post("/:id/read", authMiddleware, tenantMiddleware, async (req: Request, 
 // POST /notices/:id/ack — acknowledge (only if ack_required)
 router.post("/:id/ack", authMiddleware, tenantMiddleware, async (req: Request, res: Response) => {
   try {
-    const read = await NoticeService.acknowledge(societyOf(req), req.params.id, userOf(req).uid);
+    const read = await NoticeService.acknowledge(societyOf(req), (req.params.id as string), userOf(req).uid);
     res.status(201).json({ read });
   } catch (err: any) {
     return errToStatus(err, res, "Failed to acknowledge notice");

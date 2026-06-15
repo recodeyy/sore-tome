@@ -72,7 +72,7 @@ router.post("/", authMiddleware, tenantMiddleware, canManageContent, validate(Cr
 // POST /channels-v2/:id/members — add a member (admin)
 router.post("/:id/members", authMiddleware, tenantMiddleware, canManageContent, validate(AddMemberSchema), async (req: Request, res: Response) => {
   try {
-    const member = await ChannelService.addMember(societyOf(req), req.params.id, req.body.userId, req.body.role);
+    const member = await ChannelService.addMember(societyOf(req), (req.params.id as string), req.body.userId, req.body.role);
     res.status(201).json({ member });
   } catch (err: any) {
     if (err.code === "NOT_FOUND") return res.status(404).json({ error: "Channel not found" });
@@ -84,7 +84,7 @@ router.post("/:id/members", authMiddleware, tenantMiddleware, canManageContent, 
 // GET /channels-v2/:id/messages — cursor-paginated messages
 router.get("/:id/messages", authMiddleware, tenantMiddleware, async (req: Request, res: Response) => {
   try {
-    const result = await ChannelService.listMessages(societyOf(req), req.params.id, {
+    const result = await ChannelService.listMessages(societyOf(req), (req.params.id as string), {
       limit: req.query.limit ? Number(req.query.limit) : undefined,
       cursor: typeof req.query.cursor === "string" ? req.query.cursor : undefined,
       includeDeleted: isAdminRole(req) && req.query.includeDeleted === "true",
@@ -100,7 +100,7 @@ router.get("/:id/messages", authMiddleware, tenantMiddleware, async (req: Reques
 // POST /channels-v2/:id/messages — post a message (read-only channels: admins only)
 router.post("/:id/messages", authMiddleware, tenantMiddleware, validate(PostMessageSchema), async (req: Request, res: Response) => {
   try {
-    const message = await ChannelService.postMessage(societyOf(req), req.params.id, {
+    const message = await ChannelService.postMessage(societyOf(req), (req.params.id as string), {
       body: req.body.body,
       authorId: userOf(req).uid,
       authorName: userOf(req).name,
@@ -120,7 +120,7 @@ router.post("/:id/messages", authMiddleware, tenantMiddleware, validate(PostMess
 // POST /channels-v2/:id/read — mark read
 router.post("/:id/read", authMiddleware, tenantMiddleware, validate(ReadSchema), async (req: Request, res: Response) => {
   try {
-    const receipt = await ChannelService.markRead(societyOf(req), req.params.id, userOf(req).uid, req.body.lastReadMessageId);
+    const receipt = await ChannelService.markRead(societyOf(req), (req.params.id as string), userOf(req).uid, req.body.lastReadMessageId);
     res.json({ receipt });
   } catch (err: any) {
     if (err.code === "NOT_FOUND") return res.status(404).json({ error: "Channel not found" });
@@ -132,7 +132,7 @@ router.post("/:id/read", authMiddleware, tenantMiddleware, validate(ReadSchema),
 // GET /channels-v2/:id/unread — unread count for the caller
 router.get("/:id/unread", authMiddleware, tenantMiddleware, async (req: Request, res: Response) => {
   try {
-    const count = await ChannelService.unreadCount(societyOf(req), req.params.id, userOf(req).uid);
+    const count = await ChannelService.unreadCount(societyOf(req), (req.params.id as string), userOf(req).uid);
     res.json({ count });
   } catch (err: any) {
     logger.error({ error: err.message }, "Unread count failed");
@@ -143,7 +143,7 @@ router.get("/:id/unread", authMiddleware, tenantMiddleware, async (req: Request,
 // POST /channels-v2/messages/:messageId/report — abuse report (any member)
 router.post("/messages/:messageId/report", authMiddleware, tenantMiddleware, validate(ReportSchema), async (req: Request, res: Response) => {
   try {
-    const report = await ChannelService.reportMessage(societyOf(req), req.params.messageId, userOf(req).uid, req.body.reason);
+    const report = await ChannelService.reportMessage(societyOf(req), (req.params.messageId as string), userOf(req).uid, req.body.reason);
     res.status(201).json({ report });
   } catch (err: any) {
     if (err.code === "NOT_FOUND") return res.status(404).json({ error: "Message not found" });

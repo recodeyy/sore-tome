@@ -50,6 +50,77 @@ router.get("/overview", async (_req: Request, res: Response) => {
   }
 });
 
+router.get("/dashboard", async (_req: Request, res: Response) => {
+  try {
+    const overview = await SuperAdminService.overview();
+    return res.json({
+      success: true,
+      data: {
+        adminName: "Super Admin",
+        metrics: [
+          {
+            key: "total_societies",
+            label: "Total Societies",
+            value: String((overview.societies as any).total || 0),
+            trend: "Live",
+          },
+          {
+            key: "pending_approvals",
+            label: "Pending Approvals",
+            value: String((overview.applications as any).pending_approvals || 0),
+            trend: "Queue",
+          },
+          {
+            key: "active_users",
+            label: "Active Users",
+            value: String((overview.users as any).active_users || 0),
+            trend: "MAU",
+          },
+          {
+            key: "monthly_revenue",
+            label: "Monthly Revenue",
+            value: `₹${Number((overview.revenue as any).mrr_minor || 0) / 100}`,
+            trend: "MRR",
+          },
+          {
+            key: "open_support",
+            label: "Open Support Tickets",
+            value: String((overview.support as any).open_tickets || 0),
+            trend: "SLA",
+          },
+          {
+            key: "system_health",
+            label: "System Health",
+            value: (overview.systemHealth as any).status || "unknown",
+            trend: "Now",
+          },
+        ],
+        revenue: overview.revenue,
+        support: overview.support,
+        platformHealth: [
+          { label: "API", status: (overview.systemHealth as any).api || "unknown" },
+          { label: "Database", status: (overview.systemHealth as any).database || "unknown" },
+          { label: "Queue", status: (overview.systemHealth as any).queue || "unknown" },
+          { label: "AI Providers", status: (overview.systemHealth as any).aiProviders || "unknown" },
+        ],
+        activityTrend: [
+          { label: "DAU", value: (overview.adoption as any).dau || 0 },
+          { label: "MAU", value: (overview.adoption as any).mau || 0 },
+        ],
+        onboardingFunnel: [
+          { label: "Pending", count: (overview.applications as any).pending_approvals || 0, completionRate: 0 },
+          { label: "Approved", count: (overview.applications as any).approved || 0, completionRate: 100 },
+        ],
+        recentActivity: [],
+        failedJobs: 0,
+        aiUsage: { spend: 0 },
+      },
+    });
+  } catch (error: any) {
+    return sendError(res, "GET /super-admin/dashboard", error);
+  }
+});
+
 router.get("/societies", async (req: Request, res: Response) => {
   try {
     const data = await SuperAdminService.societies({
@@ -66,7 +137,7 @@ router.get("/societies", async (req: Request, res: Response) => {
 
 router.get("/societies/:societyId", async (req: Request, res: Response) => {
   try {
-    const data = await SuperAdminService.societyDetail(req.params.societyId);
+    const data = await SuperAdminService.societyDetail((req.params.societyId as string));
     if (!data) {
       return res.status(404).json({
         success: false,
@@ -98,7 +169,7 @@ router.post("/applications/:id/review", async (req: Request, res: Response) => {
       });
     }
     const data = await SuperAdminService.reviewApplication(
-      req.params.id,
+      (req.params.id as string),
       action,
       actorId(req),
       req.body?.reason
@@ -133,6 +204,24 @@ router.get("/revenue", async (_req: Request, res: Response) => {
   }
 });
 
+router.get("/analytics/revenue", async (_req: Request, res: Response) => {
+  try {
+    const data = await SuperAdminService.overview();
+    return res.json({ success: true, data: data.revenue });
+  } catch (error: any) {
+    return sendError(res, "GET /super-admin/analytics/revenue", error);
+  }
+});
+
+router.get("/support/analytics", async (_req: Request, res: Response) => {
+  try {
+    const data = await SuperAdminService.overview();
+    return res.json({ success: true, data: data.support });
+  } catch (error: any) {
+    return sendError(res, "GET /super-admin/support/analytics", error);
+  }
+});
+
 router.get("/support/tickets", async (req: Request, res: Response) => {
   try {
     const data = await SuperAdminService.supportTickets((req.query.status as string) || "open");
@@ -151,8 +240,8 @@ router.patch("/societies/:societyId/features/:featureKey", async (req: Request, 
       });
     }
     const data = await SuperAdminService.setFeatureOverride(
-      req.params.societyId,
-      req.params.featureKey,
+      (req.params.societyId as string),
+      (req.params.featureKey as string),
       req.body.enabled,
       actorId(req)
     );
@@ -177,9 +266,24 @@ router.post("/impersonation/start", async (req: Request, res: Response) => {
   }
 });
 
+router.post("/impersonation/sessions", async (req: Request, res: Response) => {
+  try {
+    const data = await SuperAdminService.startImpersonation({
+      actorId: actorId(req),
+      targetUserId: String(req.body?.userId || req.body?.targetUserId || ""),
+      societyId: req.body?.societyId,
+      reason: String(req.body?.reason || ""),
+      durationMinutes: Number(req.body?.durationMinutes || 15),
+    });
+    return res.status(201).json({ success: true, data });
+  } catch (error: any) {
+    return sendError(res, "POST /super-admin/impersonation/sessions", error);
+  }
+});
+
 router.post("/impersonation/:id/stop", async (req: Request, res: Response) => {
   try {
-    const data = await SuperAdminService.stopImpersonation(req.params.id, actorId(req));
+    const data = await SuperAdminService.stopImpersonation((req.params.id as string), actorId(req));
     if (!data) {
       return res.status(404).json({
         success: false,
@@ -189,6 +293,21 @@ router.post("/impersonation/:id/stop", async (req: Request, res: Response) => {
     return res.json({ success: true, data });
   } catch (error: any) {
     return sendError(res, "POST /super-admin/impersonation/:id/stop", error);
+  }
+});
+
+router.post("/impersonation/sessions/current/stop", async (req: Request, res: Response) => {
+  try {
+    const data = await SuperAdminService.stopCurrentImpersonation(actorId(req));
+    if (!data) {
+      return res.status(404).json({
+        success: false,
+        error: { code: "IMPERSONATION_NOT_FOUND", message: "No active impersonation session found for super admin" },
+      });
+    }
+    return res.json({ success: true, data });
+  } catch (error: any) {
+    return sendError(res, "POST /super-admin/impersonation/sessions/current/stop", error);
   }
 });
 
@@ -207,6 +326,148 @@ router.get("/system-health", async (_req: Request, res: Response) => {
     return res.json({ success: true, data: data.systemHealth });
   } catch (error: any) {
     return sendError(res, "GET /super-admin/system-health", error);
+  }
+});
+
+router.get("/societies/:societyId/activity", async (req: Request, res: Response) => {
+  try {
+    const data = await SuperAdminService.societyActivity((req.params.societyId as string), req.query.limit as string);
+    return res.json({ success: true, data });
+  } catch (error: any) {
+    return sendError(res, "GET /super-admin/societies/:societyId/activity", error);
+  }
+});
+
+router.post("/societies/:societyId/approve", async (req: Request, res: Response) => {
+  try {
+    const reason = req.body?.reason || "Approved by Super Admin";
+    await SuperAdminService.approveSociety((req.params.societyId as string), actorId(req), reason);
+    return res.json({ success: true, message: "Society approved" });
+  } catch (error: any) {
+    return sendError(res, "POST /super-admin/societies/:societyId/approve", error);
+  }
+});
+
+router.post("/societies/:societyId/reject", async (req: Request, res: Response) => {
+  try {
+    const reason = req.body?.reason;
+    if (!reason?.trim()) {
+      return res.status(400).json({ success: false, error: { code: "VALIDATION_FAILED", message: "reason is required" } });
+    }
+    await SuperAdminService.rejectSociety((req.params.societyId as string), actorId(req), reason);
+    return res.json({ success: true, message: "Society rejected" });
+  } catch (error: any) {
+    return sendError(res, "POST /super-admin/societies/:societyId/reject", error);
+  }
+});
+
+router.post("/societies/:societyId/request-information", async (req: Request, res: Response) => {
+  try {
+    const reason = req.body?.reason || "";
+    const requestedFields = req.body?.requestedFields || [];
+    await SuperAdminService.requestSocietyInformation((req.params.societyId as string), actorId(req), reason, requestedFields);
+    return res.json({ success: true, message: "Information requested" });
+  } catch (error: any) {
+    return sendError(res, "POST /super-admin/societies/:societyId/request-information", error);
+  }
+});
+
+router.post("/societies/:societyId/suspend", async (req: Request, res: Response) => {
+  try {
+    const reason = req.body?.reason || "Suspended by Super Admin";
+    await SuperAdminService.suspendSociety((req.params.societyId as string), actorId(req), reason);
+    return res.json({ success: true, message: "Society suspended" });
+  } catch (error: any) {
+    return sendError(res, "POST /super-admin/societies/:societyId/suspend", error);
+  }
+});
+
+router.post("/societies/:societyId/reactivate", async (req: Request, res: Response) => {
+  try {
+    const reason = req.body?.reason || "Reactivated by Super Admin";
+    await SuperAdminService.reactivateSociety((req.params.societyId as string), actorId(req), reason);
+    return res.json({ success: true, message: "Society reactivated" });
+  } catch (error: any) {
+    return sendError(res, "POST /super-admin/societies/:societyId/reactivate", error);
+  }
+});
+
+router.post("/support/tickets/:ticketId/assign", async (req: Request, res: Response) => {
+  try {
+    const { assigneeId, reason } = req.body;
+    if (!assigneeId || !reason) {
+      return res.status(400).json({ success: false, error: { code: "VALIDATION_FAILED", message: "assigneeId and reason are required" } });
+    }
+    const data = await SuperAdminService.assignTicket((req.params.ticketId as string), assigneeId, reason, actorId(req));
+    return res.json({ success: true, data });
+  } catch (error: any) {
+    return sendError(res, "POST /super-admin/support/tickets/:ticketId/assign", error);
+  }
+});
+
+router.post("/support/tickets/:ticketId/internal-note", async (req: Request, res: Response) => {
+  try {
+    const { note } = req.body;
+    if (!note) {
+      return res.status(400).json({ success: false, error: { code: "VALIDATION_FAILED", message: "note is required" } });
+    }
+    await SuperAdminService.addInternalNote((req.params.ticketId as string), note, actorId(req));
+    return res.json({ success: true, message: "Internal note added" });
+  } catch (error: any) {
+    return sendError(res, "POST /super-admin/support/tickets/:ticketId/internal-note", error);
+  }
+});
+
+router.post("/support/tickets/:ticketId/resolve", async (req: Request, res: Response) => {
+  try {
+    const { resolution } = req.body;
+    if (!resolution) {
+      return res.status(400).json({ success: false, error: { code: "VALIDATION_FAILED", message: "resolution is required" } });
+    }
+    const data = await SuperAdminService.resolveTicket((req.params.ticketId as string), resolution, actorId(req));
+    return res.json({ success: true, data });
+  } catch (error: any) {
+    return sendError(res, "POST /super-admin/support/tickets/:ticketId/resolve", error);
+  }
+});
+
+router.get("/features", async (_req: Request, res: Response) => {
+  try {
+    const data = await SuperAdminService.getFeatures();
+    return res.json({ success: true, data });
+  } catch (error: any) {
+    return sendError(res, "GET /super-admin/features", error);
+  }
+});
+
+router.get("/announcements", async (_req: Request, res: Response) => {
+  try {
+    const data = await SuperAdminService.getAnnouncements();
+    return res.json({ success: true, data });
+  } catch (error: any) {
+    return sendError(res, "GET /super-admin/announcements", error);
+  }
+});
+
+router.post("/announcements", async (req: Request, res: Response) => {
+  try {
+    const { title, body } = req.body;
+    if (!title || !body) {
+      return res.status(400).json({ success: false, error: { code: "VALIDATION_FAILED", message: "title and body are required" } });
+    }
+    const data = await SuperAdminService.createAnnouncement(title, body, actorId(req));
+    return res.json({ success: true, data });
+  } catch (error: any) {
+    return sendError(res, "POST /super-admin/announcements", error);
+  }
+});
+
+router.post("/reports", async (req: Request, res: Response) => {
+  try {
+    const data = await SuperAdminService.requestReport(req.body, actorId(req));
+    return res.json({ success: true, data });
+  } catch (error: any) {
+    return sendError(res, "POST /super-admin/reports", error);
   }
 });
 

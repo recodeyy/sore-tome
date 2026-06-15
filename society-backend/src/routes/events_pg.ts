@@ -63,7 +63,7 @@ router.get("/", authMiddleware, tenantMiddleware, async (req: Request, res: Resp
 // GET /events/v2/:id — event detail with RSVP counts
 router.get("/:id", authMiddleware, tenantMiddleware, async (req: Request, res: Response) => {
   try {
-    const detail = await EventService.getEvent(societyOf(req), req.params.id);
+    const detail = await EventService.getEvent(societyOf(req), (req.params.id as string));
     if (!detail) return res.status(404).json({ error: "Event not found" });
     res.json(detail);
   } catch (err: any) {
@@ -86,7 +86,7 @@ router.post("/", authMiddleware, tenantMiddleware, canManageContent, validate(Cr
 // POST /events/v2/:id/publish — publish a draft event (admin)
 router.post("/:id/publish", authMiddleware, tenantMiddleware, canManageContent, async (req: Request, res: Response) => {
   try {
-    const event = await EventService.publish(societyOf(req), req.params.id);
+    const event = await EventService.publish(societyOf(req), (req.params.id as string));
     res.json({ event });
   } catch (err: any) {
     if (err.code === "NOT_FOUND") return res.status(404).json({ error: "Event not found" });
@@ -99,7 +99,7 @@ router.post("/:id/publish", authMiddleware, tenantMiddleware, canManageContent, 
 // POST /events/v2/:id/cancel — cancel an event (admin)
 router.post("/:id/cancel", authMiddleware, tenantMiddleware, canManageContent, async (req: Request, res: Response) => {
   try {
-    const event = await EventService.cancel(societyOf(req), req.params.id);
+    const event = await EventService.cancel(societyOf(req), (req.params.id as string));
     res.json({ event });
   } catch (err: any) {
     if (err.code === "NOT_FOUND") return res.status(404).json({ error: "Event not found" });
@@ -112,7 +112,7 @@ router.post("/:id/cancel", authMiddleware, tenantMiddleware, canManageContent, a
 // POST /events/v2/:id/rsvp — any authenticated member RSVPs (auto-waitlist when full)
 router.post("/:id/rsvp", authMiddleware, tenantMiddleware, validate(RsvpSchema), async (req: Request, res: Response) => {
   try {
-    const rsvp = await EventService.rsvp(societyOf(req), req.params.id, userOf(req).uid, req.body.guests);
+    const rsvp = await EventService.rsvp(societyOf(req), (req.params.id as string), userOf(req).uid, req.body.guests);
     res.status(201).json({ rsvp });
   } catch (err: any) {
     if (err.code === "NOT_FOUND") return res.status(404).json({ error: "Event not found" });
@@ -126,7 +126,7 @@ router.post("/:id/rsvp", authMiddleware, tenantMiddleware, validate(RsvpSchema),
 // POST /events/v2/:id/rsvp/cancel — cancel own RSVP (promotes oldest waitlisted)
 router.post("/:id/rsvp/cancel", authMiddleware, tenantMiddleware, async (req: Request, res: Response) => {
   try {
-    const result = await EventService.cancelRsvp(societyOf(req), req.params.id, userOf(req).uid);
+    const result = await EventService.cancelRsvp(societyOf(req), (req.params.id as string), userOf(req).uid);
     res.json(result);
   } catch (err: any) {
     if (err.code === "NOT_FOUND") return res.status(404).json({ error: err.message });
@@ -138,7 +138,7 @@ router.post("/:id/rsvp/cancel", authMiddleware, tenantMiddleware, async (req: Re
 // POST /events/v2/:id/attendance — mark attendance for a member (admin)
 router.post("/:id/attendance", authMiddleware, tenantMiddleware, canManageContent, validate(AttendanceSchema), async (req: Request, res: Response) => {
   try {
-    const rsvp = await EventService.markAttended(societyOf(req), req.params.id, req.body.userId, req.body.attended);
+    const rsvp = await EventService.markAttended(societyOf(req), (req.params.id as string), req.body.userId, req.body.attended);
     res.json({ rsvp });
   } catch (err: any) {
     if (err.code === "NOT_FOUND") return res.status(404).json({ error: err.message });
