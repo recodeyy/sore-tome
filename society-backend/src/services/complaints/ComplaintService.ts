@@ -366,6 +366,105 @@ export const ComplaintService = {
     };
   },
 
+  /**
+   * Capability 65 — Escalation ladder WORKER.
+   * Finds breached complaints (due_at < now, not resolved/closed), records an
+   * escalation event + bumps the breach flag. Idempotent: the unique constraint
+   * on (complaint_id, level, due_at_at_escalation) prevents duplicate rows for the
+   * same complaint+level within the same breach window. Returns count escalated.
+   */
+  async runEscalations(societyId?: string) {
+    const params: any[] = [];
+    let scope = ``;
+    if (societyId) {
+      params.push(societyId);
+      scope = ` AND society_id = $1`;
+    }
+    const { rows } = await db.query(
+      `SELECT id, society_id, due_at FROM complaints
+        WHERE due_at IS NOT NULL AND due_at < now()
+          AND status NOT IN ('resolved','closed')${scope}`,
+      params
+    );
+
+    let escalated = 0;
+    for (const c of rows) {
+      await withTx(async (client) => {
+        // One escalation per breach window (per distinct due_at). Re-running the
+        // worker for the same breached due_at is a no-op. The ladder level advances
+        // across distinct breaches (e.g. after a reopen recomputes a new due_at).
+        const existing = await client.query(
+          `SELECT 1 FROM complaint_escalations
+            WHERE complaint_id = $1 AND due_at_at_escalation = $2 LIMIT 1`,
+          [c.id, c.due_at]
+        );
+        if (existing.rows[0]) return; // already escalated for this breach — idempotent
+        const priorLevels = await client.query(
+          `SELECT count(DISTINCT due_at_at_escalation)::int n FROM complaint_escalations
+            WHERE complaint_id = $1`,
+          [c.id]
+        );
+        const level = priorLevels.rows[0].n + 1;
+        const ins = await client.query(
+          `INSERT INTO complaint_escalations
+             (society_id, complaint_id, level, due_at_at_escalation, reason)
+           VALUES ($1,$2,$3,$4,$5)
+           ON CONFLICT (complaint_id, level, due_at_at_escalation) DO NOTHING
+           RETURNING id`,
+          [c.society_id, c.id, level, c.due_at, `sla_breach_level_${level}`]
+        );
+        if (!ins.rows[0]) return; // already escalated at this level — idempotent no-op
+        await client.query(
+          `INSERT INTO complaint_sla_events (society_id, complaint_id, event, reason)
+           VALUES ($1,$2,'escalate',$3)`,
+          [c.society_id, c.id, `level_${level}`]
+        );
+        await client.query(
+          `UPDATE complaints SET sla_breached = true, updated_at = now()
+            WHERE id = $1 AND society_id = $2`,
+          [c.id, c.society_id]
+        );
+        escalated++;
+      });
+    }
+    logger.info({ societyId: societyId || "all", escalated }, "Complaint escalations run");
+    return { scanned: rows.length, escalated };
+  },
+
+  /** Capability 67 — attach evidence to a complaint (tenant-scoped). */
+  async addAttachment(
+    societyId: string,
+    complaintId: string,
+    input: { fileUrl: string; mime?: string; kind?: string; uploadedBy?: string }
+  ) {
+    const owns = await db.query(
+      `SELECT id FROM complaints WHERE id = $1 AND society_id = $2`,
+      [complaintId, societyId]
+    );
+    if (!owns.rows[0]) throw err("Complaint not found", "NOT_FOUND");
+    const { rows } = await db.query(
+      `INSERT INTO complaint_attachments (society_id, complaint_id, file_url, mime, kind, uploaded_by)
+       VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+      [societyId, complaintId, input.fileUrl, input.mime || null, input.kind || null, input.uploadedBy || null]
+    );
+    return rows[0];
+  },
+
+  /** Capability 67 — list a complaint's attachments (tenant-scoped). */
+  async listAttachments(societyId: string, complaintId: string) {
+    const owns = await db.query(
+      `SELECT id FROM complaints WHERE id = $1 AND society_id = $2`,
+      [complaintId, societyId]
+    );
+    if (!owns.rows[0]) throw err("Complaint not found", "NOT_FOUND");
+    const { rows } = await db.query(
+      `SELECT * FROM complaint_attachments
+        WHERE complaint_id = $1 AND society_id = $2 ORDER BY created_at ASC`,
+      [complaintId, societyId]
+    );
+    return rows;
+  },
+
   /** SLA/resolution analytics for dashboards (capability 69). */
   async analytics(societyId: string) {
     const { rows } = await db.query(

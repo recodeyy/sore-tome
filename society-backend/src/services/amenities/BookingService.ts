@@ -257,4 +257,120 @@ export const BookingService = {
     if (!rows[0]) throw aerr("Booking not found or not confirmed", "INVALID_STATE");
     return rows[0];
   },
+
+  /** Reschedule a pending/confirmed booking to a new slot (overlap re-checked by constraint). */
+  async rescheduleBooking(
+    societyId: string,
+    bookingId: string,
+    input: { startAt: string; endAt: string }
+  ) {
+    return withTx(async (client) => {
+      const { rows } = await client.query(
+        `SELECT * FROM amenity_bookings WHERE id = $1 AND society_id = $2 FOR UPDATE`,
+        [bookingId, societyId]
+      );
+      const bk = rows[0];
+      if (!bk) throw aerr("Booking not found", "NOT_FOUND");
+      if (!["confirmed", "pending"].includes(bk.status)) throw aerr(`Booking is ${bk.status}`, "INVALID_STATE");
+      if (!(new Date(input.endAt) > new Date(input.startAt))) throw aerr("End time must be after start time", "INVALID_RANGE");
+      const bl = await client.query(
+        `SELECT 1 FROM amenity_blackouts
+          WHERE amenity_id = $1 AND society_id = $2 AND tstzrange(from_at, to_at) && tstzrange($3, $4) LIMIT 1`,
+        [bk.amenity_id, societyId, input.startAt, input.endAt]
+      );
+      if (bl.rows[0]) throw aerr("Amenity is blacked out for this period", "BLACKOUT");
+      try {
+        const upd = await client.query(
+          `UPDATE amenity_bookings SET start_at = $2, end_at = $3 WHERE id = $1 RETURNING *`,
+          [bookingId, input.startAt, input.endAt]
+        );
+        return upd.rows[0];
+      } catch (err: any) {
+        if (err.code === "23P01") throw aerr("That slot is already booked", "SLOT_TAKEN");
+        if (err.code === "23514") throw aerr("End time must be after start time", "INVALID_RANGE");
+        throw err;
+      }
+    });
+  },
+
+  /** Add a review for an amenity (cap 85). */
+  async addReview(
+    societyId: string,
+    amenityId: string,
+    input: { rating: number; comment?: string; memberId?: string; bookingId?: string }
+  ) {
+    const owns = await db.query(`SELECT id FROM amenities WHERE id = $1 AND society_id = $2`, [amenityId, societyId]);
+    if (!owns.rows[0]) throw aerr("Amenity not found", "NOT_FOUND");
+    const { rows } = await db.query(
+      `INSERT INTO amenity_reviews (society_id, amenity_id, booking_id, member_id, rating, comment)
+       VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+      [societyId, amenityId, input.bookingId || null, input.memberId || null, input.rating, input.comment || null]
+    );
+    return rows[0];
+  },
+
+  /** List reviews for an amenity with average rating (cap 85). */
+  async listReviews(societyId: string, amenityId: string) {
+    const { rows } = await db.query(
+      `SELECT * FROM amenity_reviews WHERE society_id = $1 AND amenity_id = $2 ORDER BY created_at DESC`,
+      [societyId, amenityId]
+    );
+    const avg = rows.length ? rows.reduce((s, r) => s + r.rating, 0) / rows.length : null;
+    return { reviews: rows, count: rows.length, averageRating: avg };
+  },
+
+  /**
+   * Utilization + revenue analytics for an amenity over a window (cap 85).
+   * Utilization = confirmed booked seconds / total operating seconds in window.
+   */
+  async analytics(societyId: string, amenityId: string, fromAt: string, toAt: string) {
+    const am = await db.query(`SELECT * FROM amenities WHERE id = $1 AND society_id = $2`, [amenityId, societyId]);
+    const amenity = am.rows[0];
+    if (!amenity) throw aerr("Amenity not found", "NOT_FOUND");
+
+    const { rows } = await db.query(
+      `SELECT
+         count(*) FILTER (WHERE status = 'confirmed')::int AS confirmed,
+         count(*) FILTER (WHERE status = 'cancelled')::int AS cancelled,
+         count(*) FILTER (WHERE status = 'no_show')::int AS no_show,
+         count(*) FILTER (WHERE status = 'pending')::int AS pending,
+         COALESCE(SUM(EXTRACT(EPOCH FROM (end_at - start_at))) FILTER (WHERE status = 'confirmed'), 0)::bigint AS booked_seconds
+       FROM amenity_bookings
+       WHERE society_id = $1 AND amenity_id = $2 AND start_at >= $3 AND end_at <= $4`,
+      [societyId, amenityId, fromAt, toAt]
+    );
+    const stats = rows[0];
+
+    const pay = await db.query(
+      `SELECT
+         COALESCE(SUM(p.amount_minor) FILTER (WHERE p.status IN ('pending','paid')), 0)::bigint AS revenue_minor,
+         COALESCE(SUM(p.amount_minor) FILTER (WHERE p.status = 'refunded'), 0)::bigint AS refunded_minor
+       FROM booking_payments p
+       JOIN amenity_bookings b ON b.id = p.booking_id
+       WHERE p.society_id = $1 AND b.amenity_id = $2 AND b.start_at >= $3 AND b.end_at <= $4`,
+      [societyId, amenityId, fromAt, toAt]
+    );
+
+    const open = amenity.open_minutes ?? 0;
+    const close = amenity.close_minutes ?? 1440;
+    const days = Math.max(1, Math.ceil((new Date(toAt).getTime() - new Date(fromAt).getTime()) / 86400000));
+    const operatingSeconds = Math.max(1, (close - open) * 60 * days);
+    const booked = Number(stats.booked_seconds);
+
+    return {
+      amenityId,
+      window: { fromAt, toAt },
+      bookings: {
+        confirmed: stats.confirmed,
+        pending: stats.pending,
+        cancelled: stats.cancelled,
+        noShow: stats.no_show,
+      },
+      revenueMinor: Number(pay.rows[0].revenue_minor),
+      refundedMinor: Number(pay.rows[0].refunded_minor),
+      bookedSeconds: booked,
+      operatingSeconds,
+      utilization: Math.min(1, booked / operatingSeconds),
+    };
+  },
 };

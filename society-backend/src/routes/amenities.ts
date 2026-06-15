@@ -35,6 +35,29 @@ const CancelSchema = z.object({
   body: z.object({ withRefund: z.boolean().optional().default(false) }).strict(),
 });
 
+const RescheduleSchema = z.object({
+  body: z.object({
+    startAt: z.string().datetime(),
+    endAt: z.string().datetime(),
+  }).strict(),
+});
+
+const ReviewSchema = z.object({
+  body: z.object({
+    rating: z.number().int().min(1).max(5),
+    comment: z.string().max(1000).optional(),
+    memberId: z.string().optional(),
+    bookingId: z.string().uuid().optional(),
+  }).strict(),
+});
+
+const AnalyticsSchema = z.object({
+  query: z.object({
+    fromAt: z.string().datetime(),
+    toAt: z.string().datetime(),
+  }),
+});
+
 const ENH_CODES: Record<string, number> = {
   BLACKOUT: 409, OUTSIDE_HOURS: 409, LIMIT_REACHED: 409, INVALID_STATE: 409,
   SLOT_TAKEN: 409, INVALID_RANGE: 400, NOT_FOUND: 404,
@@ -171,6 +194,52 @@ router.post("/bookings/:id/no-show", authMiddleware, tenantMiddleware, canManage
     res.json({ booking });
   } catch (err: any) {
     handleEnhErr(err, res, "Failed to mark no-show");
+  }
+});
+
+// POST /amenities/bookings/:id/reschedule (auth)
+router.post("/bookings/:id/reschedule", authMiddleware, tenantMiddleware, validate(RescheduleSchema), async (req: Request, res: Response) => {
+  try {
+    const booking = await BookingService.rescheduleBooking(societyOf(req), req.params.id, req.body);
+    res.json({ booking });
+  } catch (err: any) {
+    handleEnhErr(err, res, "Failed to reschedule booking");
+  }
+});
+
+// POST /amenities/:id/reviews (auth)
+router.post("/:id/reviews", authMiddleware, tenantMiddleware, validate(ReviewSchema), async (req: Request, res: Response) => {
+  try {
+    const review = await BookingService.addReview(societyOf(req), req.params.id, {
+      ...req.body,
+      memberId: req.body.memberId || (req as any).user?.uid,
+    });
+    res.status(201).json({ review });
+  } catch (err: any) {
+    handleEnhErr(err, res, "Failed to add review");
+  }
+});
+
+// GET /amenities/:id/reviews (auth)
+router.get("/:id/reviews", authMiddleware, tenantMiddleware, async (req: Request, res: Response) => {
+  try {
+    const result = await BookingService.listReviews(societyOf(req), req.params.id);
+    res.json(result);
+  } catch (err: any) {
+    handleEnhErr(err, res, "Failed to list reviews");
+  }
+});
+
+// GET /amenities/:id/analytics?fromAt=&toAt= (admin) — utilization + revenue (cap 85)
+router.get("/:id/analytics", authMiddleware, tenantMiddleware, canManageContent, validate(AnalyticsSchema), async (req: Request, res: Response) => {
+  try {
+    const result = await BookingService.analytics(
+      societyOf(req), req.params.id,
+      String(req.query.fromAt), String(req.query.toAt)
+    );
+    res.json(result);
+  } catch (err: any) {
+    handleEnhErr(err, res, "Failed to compute analytics");
   }
 });
 

@@ -146,4 +146,48 @@ router.post("/:id/feedback", authMiddleware, tenantMiddleware, validate(Complain
   }
 });
 
+// GET /complaints/:id/attachments — list evidence (admins, or owning resident)
+router.get("/:id/attachments", authMiddleware, tenantMiddleware, async (req: Request, res: Response) => {
+  try {
+    if (!isAdminRole(req)) {
+      const detail = await ComplaintService.getComplaint(societyOf(req), req.params.id, false);
+      if (!detail || detail.complaint.created_by !== userOf(req).uid) {
+        return res.status(404).json({ error: "Complaint not found" });
+      }
+    }
+    const attachments = await ComplaintService.listAttachments(societyOf(req), req.params.id);
+    res.json({ attachments });
+  } catch (err: any) {
+    if (err.code === "NOT_FOUND") return res.status(404).json({ error: "Complaint not found" });
+    logger.error({ error: err.message }, "List complaint attachments failed");
+    res.status(500).json({ error: "Failed to list attachments" });
+  }
+});
+
+// POST /complaints/:id/attachments — attach evidence
+router.post("/:id/attachments", authMiddleware, tenantMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { fileUrl, mime, kind } = req.body || {};
+    if (!fileUrl || typeof fileUrl !== "string") return res.status(400).json({ error: "fileUrl is required" });
+    const attachment = await ComplaintService.addAttachment(societyOf(req), req.params.id, {
+      fileUrl, mime, kind, uploadedBy: userOf(req).uid,
+    });
+    res.status(201).json({ attachment });
+  } catch (err: any) {
+    if (err.code === "NOT_FOUND") return res.status(404).json({ error: "Complaint not found" });
+    logger.error({ error: err.message }, "Add complaint attachment failed");
+    res.status(500).json({ error: "Failed to add attachment" });
+  }
+});
+
+// POST /complaints/run-escalations — trigger the SLA escalation worker (admin)
+router.post("/run-escalations", authMiddleware, tenantMiddleware, canManageContent, async (req: Request, res: Response) => {
+  try {
+    res.json(await ComplaintService.runEscalations(societyOf(req)));
+  } catch (err: any) {
+    logger.error({ error: err.message }, "Run escalations failed");
+    res.status(500).json({ error: "Failed to run escalations" });
+  }
+});
+
 export default router;

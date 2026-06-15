@@ -17,7 +17,7 @@ Legend: ✅ Done & tested · 🟡 Partial · ⛔ Not started
 | **2 — Society structure & users** | Wings/blocks/floors/units, members, committee, KYC, bulk import | ✅ Mostly done | **Structure, members lifecycle, and CSV/XLSX bulk import (dry-run/validation/dup-detect) ✅ done & tested.** Committee/KYC depth and logo/branding remain 🟡. |
 | **3 — Finance** | Billing, invoices, journal, payments, receipts, expenses, OCR, dues, Razorpay | ✅ Mostly done | Double-entry ledger, invoices, payments, expenses (maker-checker), dues, Razorpay webhook + integration tests. Bank reconciliation ✅ (statement import + auto/manual match). GST credit-notes 🟡. |
 | **4 — Complaints, communication, governance** | Complaints/SLA, notices, channels, polls, meetings, events, rules | ✅ Done | 7 modules, 38 tests. See capability table below. |
-| **5 — Staff, amenities, parking, assets** | Attendance/roster/leave/payroll, booking, parking, asset maintenance | 🟡 Mostly done | Staff ✅, Parking ✅, Assets ✅ (tested). **Amenities 🟡** (basic booking exists; eligibility/pricing/blackouts/approval/refund/calendar pending). |
+| **5 — Staff, amenities, parking, assets** | Attendance/roster/leave/payroll, booking, parking, asset maintenance | ✅ Done | Staff ✅, Parking ✅, Assets ✅, **Amenities ✅** (eligibility/pricing/blackouts/approval/refund/reschedule/reviews/analytics) — all tested. |
 | **6 — AI & reports** | RAG ingestion, AI tool confirmation, scheduled reports & exports | 🟡 Partial | AI chat/RAG/extraction/guardrails exist (pre-existing). Finance report service + cron exist. Generic report templates/scheduled exports/retention ⛔. |
 | **7 — Scale & release hardening** | Load/soak, security tests, backup restore, failure injection, runbooks | ⛔ Not started | No k6 proof of 3k users, no restore evidence, no failure-injection suite, no release gate run. |
 
@@ -38,13 +38,13 @@ Legend: ✅ Done & tested · 🟡 Partial · ⛔ Not started
 - **43–47 Notices CRUD/versions/schedule/publish/audience/reads ✅** · 48 Announcements (multi-channel) 🟡 (notices + FCM) · 49 AI notice writer 🟡 (AI exists) · **50 Channels/read-only/unread ✅ · 51 Moderation/abuse/soft-delete ✅** · **52 Polls ✅ · 53 Vote integrity (atomic) ✅** · **54 Meetings/calendar ✅ · 55 Agenda/attendance/quorum/proxies ✅ · 56 Resolutions/minutes/action items ✅** · **57 Events/RSVP/waitlist ✅** · **58 Rules/documents/versions/full-text search ✅**
 
 ### E. Complaint & SLA management (59–69) — ✅ Done
-- **59 Categories/SLA policy ✅ · 60 Create/edit ✅ · 61 Routing 🟡 (manual+reason; AI routing hook pending) · 62 Assignment ✅ · 63 Priority/override ✅ · 64 SLA pause/resume (business hours) ✅ · 65 Escalation ladder 🟡 (events captured; worker pending) · 66 Internal vs resident notes ✅ · 67 Attachments 🟡 · 68 Status state machine/reopen/duplicate ✅ · 69 CSAT/analytics ✅**
+- **59 Categories/SLA policy ✅ · 60 Create/edit ✅ · 61 Routing 🟡 (manual+reason; AI routing hook pending) · 62 Assignment ✅ · 63 Priority/override ✅ · 64 SLA pause/resume (business hours) ✅ · **65 Escalation ladder ✅** (runEscalations worker: idempotent per breach window, records escalation + sla_event) · 66 Internal vs resident notes ✅ · **67 Attachments ✅** (complaint_attachments, tenant-scoped add/list) · 68 Status state machine/reopen/duplicate ✅ · 69 CSAT/analytics ✅**
 
 ### F. Staff, attendance, roster, payroll (70–79) — ✅ Mostly done
 - **70 Staff CRUD ✅ · 71 Permissions/restricted access 🟡 · 72 Attendance check-in/out (no-dup) ✅ · 73 Shift/roster/conflict ✅ · 74 Leave types/balance/approve (race-safe) ✅ · 75 Payroll run (idempotent + maker-checker) ✅ · 76 Overtime/holiday calc 🟡 (proration done) · 77 KYC/expiry 🟡 (field + reminder hook) · 78 Incidents/disciplinary ✅ · 79 Reports 🟡**
 
-### G. Amenities & bookings (80–85) — 🟡 Partial
-- 80 Amenity CRUD ✅ · 81 Hours/blackouts/holidays ⛔ · 82 Eligibility/pricing/deposit ⛔ · **83 Atomic booking + overlap protection ✅** · 84 Approval/cancel/refund/no-show 🟡 · 85 Calendar/utilization analytics ⛔
+### G. Amenities & bookings (80–85) — ✅ Done
+- **80 Amenity CRUD ✅ · 81 Hours/blackouts/holidays ✅ · 82 Eligibility/pricing/deposit ✅ · 83 Atomic booking + overlap protection ✅ · 84 Approval/cancel/refund/no-show/reschedule ✅ · 85 Reviews + utilization/revenue analytics ✅** (all tested)
 
 ### H. Parking, assets, reporting, audit (86–92) — 🟡 Mostly done
 - **86 Slot inventory/EV/accessible ✅ · 87 Vehicle registry/allocation/transfer/release/waitlist ✅ · 88 Visitor parking/violations/fines ✅** · **89 Asset registry ✅ · 90 PM schedules/work orders (no-dup)/breakdowns/AMC/downtime/parts ✅** · 91 Report templates/scheduled/exports ⛔ · 92 Immutable audit/access logs 🟡 (audit logs exist in Firestore + Postgres partitioning)
