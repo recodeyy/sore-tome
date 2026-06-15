@@ -119,6 +119,7 @@ v1Router.use("/staff", standardLimiter, require("./routes/staff"));
 v1Router.use("/facilities", standardLimiter, require("./routes/facilities"));
 v1Router.use("/polls", standardLimiter, require("./routes/polls"));
 v1Router.use("/ai", aiLimiter, require("./src/routes/ai").default);
+v1Router.use("/super-admin", standardLimiter, require("./src/routes/super_admin").default);
 v1Router.use("/admin", standardLimiter, require("./src/routes/admin_dashboard").default);
 v1Router.use("/admin", standardLimiter, require("./src/routes/admin_access").default);
 v1Router.use("/channels", standardLimiter, require("./routes/channels"));
@@ -144,6 +145,7 @@ v1Router.use("/structure", standardLimiter, require("./src/routes/structure_pg")
 v1Router.use("/members-v2", standardLimiter, require("./src/routes/members_pg").default);
 v1Router.use("/reports", standardLimiter, require("./src/routes/reports_pg").default);
 v1Router.use("/realtime", require("./src/routes/realtime").default);
+v1Router.use("/notifications", standardLimiter, require("./src/routes/notifications_pg").default);
 
 // 🚀 MOUNT V1
 app.use("/api/v1", v1Router);

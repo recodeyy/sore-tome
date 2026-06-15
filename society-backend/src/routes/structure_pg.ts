@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import { z } from "zod";
 import { StructureService } from "../services/structure/StructureService";
+import { BulkImportService } from "../services/structure/BulkImportService";
 import { validate } from "../middleware/validate";
 import { logger } from "../shared/Logger";
 
@@ -97,6 +98,29 @@ router.post("/units/:id/occupancy", authMiddleware, tenantMiddleware, canManageC
 router.post("/units/:id/vacate", authMiddleware, tenantMiddleware, canManageContent, validate(VacateSchema), async (req, res) => {
   try { res.json(await StructureService.vacateUnit(societyOf(req), req.params.id, req.body.relation)); }
   catch (e: any) { map(res, e, "Failed to vacate unit"); }
+});
+
+// --- Bulk import (capability 15) ---
+const ImportSchema = z.object({
+  body: z.object({
+    csv: z.string().optional(),
+    rows: z.array(z.record(z.string(), z.string())).optional(),
+    dryRun: z.boolean().optional(),
+  }).refine((b) => b.csv !== undefined || b.rows !== undefined, { message: "csv or rows is required" }),
+});
+
+router.post("/units/import", authMiddleware, tenantMiddleware, canManageContent, validate(ImportSchema), async (req, res) => {
+  try {
+    const report = await BulkImportService.importUnits(societyOf(req), req.body.csv ?? req.body.rows, { dryRun: !!req.body.dryRun });
+    res.json({ success: true, data: report });
+  } catch (e: any) { map(res, e, "Unit bulk import failed"); }
+});
+
+router.post("/members/import", authMiddleware, tenantMiddleware, canManageContent, validate(ImportSchema), async (req, res) => {
+  try {
+    const report = await BulkImportService.importMembers(societyOf(req), req.body.csv ?? req.body.rows, { dryRun: !!req.body.dryRun });
+    res.json({ success: true, data: report });
+  } catch (e: any) { map(res, e, "Member bulk import failed"); }
 });
 
 export default router;

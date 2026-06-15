@@ -3,6 +3,7 @@ import { FinanceService } from "../services/finance/FinanceService";
 import { ExpenseService } from "../services/finance/ExpenseService";
 import { RazorpayWebhookService } from "../services/payment/RazorpayWebhookService";
 import { FinanceReportService } from "../services/finance/FinanceReportService";
+import { ReconciliationService } from "../services/finance/ReconciliationService";
 import { validate } from "../middleware/validate";
 import { CreateInvoiceSchema, RecordPaymentSchema, CreateExpenseSchema, DecideExpenseSchema } from "../shared/schemas";
 import { logger } from "../shared/Logger";
@@ -159,6 +160,64 @@ router.post("/webhook/razorpay", async (req: Request, res: Response) => {
     if (err.code === "INVALID_SIGNATURE") return res.status(400).json({ error: "Invalid signature" });
     logger.error({ error: err.message }, "Razorpay webhook handling failed");
     res.status(500).json({ error: "Webhook processing failed" });
+  }
+});
+
+// ── Bank reconciliation (capability 40) ──────────────────────────────────────
+function reconErr(res: Response, err: any, log: string) {
+  if (err.code === "NOT_FOUND") return res.status(404).json({ success: false, error: { code: err.code, message: err.message } });
+  if (err.code === "VALIDATION") return res.status(400).json({ success: false, error: { code: err.code, message: err.message } });
+  logger.error({ error: err.message }, log);
+  return res.status(500).json({ success: false, error: { code: err.code || "INTERNAL", message: err.message } });
+}
+
+// POST /finance/reconciliation/accounts — register a bank account
+router.post("/reconciliation/accounts", authMiddleware, tenantMiddleware, canManageFunds, async (req: Request, res: Response) => {
+  try {
+    const data = await ReconciliationService.createAccount(societyOf(req), req.body);
+    res.status(201).json({ success: true, data });
+  } catch (err: any) {
+    reconErr(res, err, "Create bank account failed");
+  }
+});
+
+// POST /finance/reconciliation/imports — import a statement with lines
+router.post("/reconciliation/imports", authMiddleware, tenantMiddleware, canManageFunds, async (req: Request, res: Response) => {
+  try {
+    const data = await ReconciliationService.importStatement(societyOf(req), req.body);
+    res.status(201).json({ success: true, data });
+  } catch (err: any) {
+    reconErr(res, err, "Import statement failed");
+  }
+});
+
+// POST /finance/reconciliation/imports/:id/auto-match — auto-match lines to payments
+router.post("/reconciliation/imports/:id/auto-match", authMiddleware, tenantMiddleware, canManageFunds, async (req: Request, res: Response) => {
+  try {
+    const data = await ReconciliationService.autoMatch(societyOf(req), req.params.id);
+    res.json({ success: true, data });
+  } catch (err: any) {
+    reconErr(res, err, "Auto-match failed");
+  }
+});
+
+// POST /finance/reconciliation/lines/:id/match — manually match a line to a payment
+router.post("/reconciliation/lines/:id/match", authMiddleware, tenantMiddleware, canManageFunds, async (req: Request, res: Response) => {
+  try {
+    const data = await ReconciliationService.manualMatch(societyOf(req), req.params.id, req.body.paymentId);
+    res.json({ success: true, data });
+  } catch (err: any) {
+    reconErr(res, err, "Manual match failed");
+  }
+});
+
+// GET /finance/reconciliation/imports/:id/summary — reconciliation summary
+router.get("/reconciliation/imports/:id/summary", authMiddleware, tenantMiddleware, async (req: Request, res: Response) => {
+  try {
+    const data = await ReconciliationService.summary(societyOf(req), req.params.id);
+    res.json({ success: true, data });
+  } catch (err: any) {
+    reconErr(res, err, "Reconciliation summary failed");
   }
 });
 
