@@ -1,175 +1,189 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:sero/providers/shared/auth_provider.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:sero/services/api_client.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:sero/app/theme.dart';
+import 'package:sero/providers/shared/profile_provider.dart';
 
-class ProfileScreen extends ConsumerStatefulWidget {
+class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
 
   @override
-  ConsumerState<ProfileScreen> createState() => _ProfileScreenState();
-}
-
-class _ProfileScreenState extends ConsumerState<ProfileScreen> {
-  bool _isUploading = false;
-
-  Future<void> _pickAndUploadImage() async {
-    final picker = ImagePicker();
-    final image = await picker.pickImage(source: ImageSource.gallery, imageQuality: 70);
-    
-    if (image == null) return;
-
-    setState(() => _isUploading = true);
-
-    try {
-      final bytes = await image.readAsBytes();
-      final response = await ApiClient.upload(
-        '/users/me/photo',
-        'photo',
-        bytes,
-        'profile_${DateTime.now().millisecondsSinceEpoch}.jpg',
-      );
-
-      if (response.statusCode == 200) {
-        // Refresh auth state to get the new photoUrl
-        ref.invalidate(authProvider);
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Profile photo updated successfully')),
-          );
-        }
-      } else {
-        throw Exception('Upload failed');
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error uploading image: $e')),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isUploading = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final user = ref.watch(authProvider).value;
-
-    if (user == null) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('Profile')),
-        body: const Center(child: Text('Loading user data...')),
-      );
-    }
+  Widget build(BuildContext context, WidgetRef ref) {
+    final profile = ref.watch(profileProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Profile')),
-      body: ListView(
-        padding: const EdgeInsets.all(24.0),
-        children: [
-          Center(
-            child: Stack(
-              children: [
-                CircleAvatar(
-                  radius: 50,
-                  backgroundColor: const Color(0xFF2E7D32).withValues(alpha: 0.1),
-                  backgroundImage: user.photoUrl != null ? NetworkImage(user.photoUrl!) : null,
-                  child: user.photoUrl == null
-                      ? const Icon(Icons.person, size: 50, color: Color(0xFF2E7D32))
-                      : null,
-                ),
-                if (_isUploading)
-                  const Positioned.fill(
-                    child: CircularProgressIndicator(color: Colors.white),
-                  ),
-                Positioned(
-                  bottom: 0,
-                  right: 0,
-                  child: GestureDetector(
-                    onTap: _isUploading ? null : _pickAndUploadImage,
-                    child: Container(
-                      padding: const EdgeInsets.all(4),
-                      decoration: const BoxDecoration(
-                        color: Color(0xFF2E7D32),
-                        shape: BoxShape.circle,
+      backgroundColor: const Color(0xFFF8FAFC),
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Color(0xFF1E293B)),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: Text(
+          'Profile',
+          style: GoogleFonts.outfit(
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+            color: const Color(0xFF1E293B),
+          ),
+        ),
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          children: [
+            // Profile Header
+            Center(
+              child: Column(
+                children: [
+                  Stack(
+                    children: [
+                      Container(
+                        width: 100,
+                        height: 100,
+                        decoration: BoxDecoration(
+                          color: kPrimaryGreen.withOpacity(0.1),
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white, width: 4),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.05),
+                              blurRadius: 10,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: const Icon(Icons.person, color: kPrimaryGreen, size: 50),
                       ),
-                      child: const Icon(Icons.edit, size: 20, color: Colors.white),
+                      Positioned(
+                        bottom: 0,
+                        right: 0,
+                        child: Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: const BoxDecoration(
+                            color: kPrimaryGreen,
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(Icons.check, color: Colors.white, size: 14),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    profile.name,
+                    style: GoogleFonts.outfit(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
+                      color: const Color(0xFF1E293B),
                     ),
                   ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 20),
-          Center(
-            child: Text(user.name, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-          ),
-          Center(
-            child: Text('Status: ${user.status.toUpperCase()}', style: TextStyle(fontSize: 14, color: user.status == 'approved' ? Colors.green : Colors.orange)),
-          ),
-          const SizedBox(height: 30),
-          Card(
-            elevation: 2,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            child: Column(
-              children: [
-                ListTile(
-                  leading: const Icon(Icons.phone),
-                  title: const Text('Phone Number'),
-                  subtitle: Text(user.phone.isNotEmpty ? user.phone : 'Not provided'),
-                ),
-                const Divider(height: 1),
-                ListTile(
-                  leading: const Icon(Icons.home),
-                  title: const Text('Flat Number'),
-                  subtitle: Text(user.flatNumber),
-                ),
-                const Divider(height: 1),
-                ListTile(
-                  leading: const Icon(Icons.shield),
-                  title: const Text('Role Designation'),
-                  subtitle: Text(user.role.toUpperCase()),
-                ),
-                const Divider(height: 1),
-                ListTile(
-                  leading: const Icon(Icons.monetization_on),
-                  title: const Text('Resident Type'),
-                  subtitle: Text(user.residentType.toUpperCase()),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 40),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  const SizedBox(height: 4),
+                  Text(
+                    profile.role,
+                    style: GoogleFonts.outfit(
+                      fontSize: 14,
+                      color: const Color(0xFF64748B),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
               ),
-              onPressed: () {
-                ref.read(authProvider.notifier).logout(); // Logout globally
-                Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false); // Erase stack and push login
-              },
-              icon: const Icon(Icons.logout),
-              label: const Text('SIGN OUT', style: TextStyle(fontWeight: FontWeight.bold)),
             ),
-          )
+
+            const SizedBox(height: 40),
+
+            // Profile Details
+            _buildDetailSection([
+              _buildDetailItem('Name', profile.name, Icons.person_outline),
+              _buildDetailItem('Email', profile.email, Icons.email_outlined),
+              _buildDetailItem('Phone', profile.phone, Icons.phone_outlined),
+              _buildDetailItem('Role', profile.role, Icons.security_outlined),
+              _buildDetailItem('Society', profile.society, Icons.business_outlined),
+            ]),
+
+            const SizedBox(height: 40),
+
+            // Edit Button
+            SizedBox(
+              width: double.infinity,
+              height: 56,
+              child: ElevatedButton(
+                onPressed: () => Navigator.pushNamed(context, '/profile/edit'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: kPrimaryGreen,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  elevation: 4,
+                  shadowColor: kPrimaryGreen.withOpacity(0.3),
+                ),
+                child: Text(
+                  'Edit Profile',
+                  style: GoogleFonts.outfit(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDetailSection(List<Widget> items) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: const Color(0xFFF1F5F9)),
+      ),
+      child: Column(
+        children: items,
+      ),
+    );
+  }
+
+  Widget _buildDetailItem(String label, String value, IconData icon) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF1F5F9),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: const Color(0xFF64748B), size: 20),
+          ),
+          const SizedBox(width: 16),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: GoogleFonts.outfit(
+                  fontSize: 11,
+                  color: const Color(0xFF94A3B8),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                value,
+                style: GoogleFonts.outfit(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: const Color(0xFF1E293B),
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );
   }
 }
-
-
-
-
-
-
-
-
-

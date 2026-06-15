@@ -6,12 +6,16 @@ import 'package:sero/widgets/shared/brand_logo.dart';
 
 class AdminHeader extends StatelessWidget {
   final String category;
-  final VoidCallback onBack;
+  final VoidCallback? onBack;
+  final VoidCallback? onMenu;
+  final bool showMenu;
 
   const AdminHeader({
     super.key,
     required this.category,
-    required this.onBack,
+    this.onBack,
+    this.onMenu,
+    this.showMenu = false,
   });
 
   @override
@@ -29,8 +33,8 @@ class AdminHeader extends StatelessWidget {
           Row(
             children: [
               IconButton(
-                onPressed: onBack,
-                icon: const Icon(Icons.arrow_back_ios_new, size: 20),
+                onPressed: showMenu ? onMenu : onBack,
+                icon: Icon(showMenu ? Icons.menu : Icons.arrow_back_ios_new, size: showMenu ? 24 : 20),
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(),
               ),

@@ -7,6 +7,7 @@ import 'package:sero/models/user.dart';
 
 // Modularized Widgets
 import 'widgets/admin_users_widgets.dart';
+import 'package:sero/widgets/shared/admin_drawer.dart';
 
 class AdminUsersScreen extends ConsumerStatefulWidget {
   const AdminUsersScreen({super.key});
@@ -36,13 +37,18 @@ class _AdminUsersScreenState extends ConsumerState<AdminUsersScreen> {
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FA),
+      drawer: const AdminDrawer(),
       body: DefaultTabController(
         length: 2,
         child: Column(
           children: [
-            AdminHeader(
-              category: "Residents",
-              onBack: () => Navigator.pop(context),
+            Builder(
+              builder: (context) => AdminHeader(
+                category: "Residents",
+                showMenu: true,
+                onMenu: () => Scaffold.of(context).openDrawer(),
+                onBack: () => Navigator.pop(context),
+              ),
             ),
 
             MetricHeroCard(

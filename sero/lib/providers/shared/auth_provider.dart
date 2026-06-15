@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sero/services/api_service.dart';
 import 'package:sero/services/auth_service.dart';
 import 'package:sero/models/user.dart';
+import 'package:sero/config/dev_config.dart';
 
 final authProvider = StateNotifierProvider<AuthNotifier, AsyncValue<UserModel?>>((ref) {
   return AuthNotifier();
@@ -15,6 +16,27 @@ class AuthNotifier extends StateNotifier<AsyncValue<UserModel?>> {
 
   Future<void> _init() async {
     state = const AsyncValue.loading();
+    
+    if (kUseMockData) {
+      // In mock mode, we assume user is already logged in if there's a token
+      final token = await ApiService.getToken();
+      if (token != null) {
+        state = AsyncValue.data(UserModel(
+          id: 'mock-admin-id',
+          name: 'Demo Admin',
+          phone: '+919876543210',
+          flatNumber: 'A-101',
+          block: 'Block A',
+          role: 'main_admin',
+          status: 'approved',
+          societyId: 'mock-society-id',
+        ));
+        return;
+      }
+      state = const AsyncValue.data(null);
+      return;
+    }
+
     final token = await ApiService.getToken();
     if (token != null) {
       try {
@@ -36,6 +58,26 @@ class AuthNotifier extends StateNotifier<AsyncValue<UserModel?>> {
 
   Future<void> login(String phone, String password) async {
     state = const AsyncValue.loading();
+
+    if (kUseMockData) {
+      await Future.delayed(const Duration(milliseconds: 1000)); // Simulate delay
+      
+      final mockUser = UserModel(
+        id: 'mock-admin-id',
+        name: 'Demo Admin',
+        phone: phone,
+        flatNumber: 'A-101',
+        block: 'Block A',
+        role: 'main_admin',
+        status: 'approved',
+        societyId: 'mock-society-id',
+      );
+      
+      await AuthService.saveTokens(token: 'mock-token', refreshToken: 'mock-refresh-token');
+      state = AsyncValue.data(mockUser);
+      return;
+    }
+
     try {
       final res = await ApiService.post('/auth/login', {
         'phone': phone,

@@ -5,6 +5,7 @@ import 'package:sero/providers/shared/auth_provider.dart';
 import 'package:sero/widgets/shared/brand_logo.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:sero/config/dev_config.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -41,11 +42,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   Future<void> _loginResident() async {
     final phone = _phoneCtrl.text.trim();
     final pass = _passCtrl.text.trim();
-    if (phone.isEmpty || pass.isEmpty) return;
+    
+    // In Mock mode, allow login with any credentials or even empty
+    if (!kUseMockData && (phone.isEmpty || pass.isEmpty)) return;
+
+    final loginPhone = kUseMockData ? (phone.isEmpty ? '+919876543210' : '+91$phone') : '+91$phone';
+    final loginPass = kUseMockData ? (pass.isEmpty ? 'password' : pass) : pass;
 
     setState(() => _loading = true);
     try {
-      await ref.read(authProvider.notifier).login('+91$phone', pass);
+      await ref.read(authProvider.notifier).login(loginPhone, loginPass);
       if (!mounted) return;
       Navigator.pushNamedAndRemoveUntil(context, '/home', (_) => false);
     } catch (e) {
@@ -61,11 +67,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   Future<void> _loginAdmin() async {
     final user = _adminUserCtrl.text.trim();
     final pass = _adminPassCtrl.text.trim();
-    if (user.isEmpty || pass.isEmpty) return;
+    
+    // In Mock mode, allow login with any credentials or even empty
+    if (!kUseMockData && (user.isEmpty || pass.isEmpty)) return;
+
+    final loginUser = kUseMockData ? (user.isEmpty ? 'admin' : user) : user;
+    final loginPass = kUseMockData ? (pass.isEmpty ? 'password' : pass) : pass;
 
     setState(() => _loading = true);
     try {
-      await ref.read(authProvider.notifier).login(user, pass);
+      await ref.read(authProvider.notifier).login(loginUser, loginPass);
       if (!mounted) return;
       Navigator.pushNamedAndRemoveUntil(context, '/home', (_) => false);
     } catch (e) {

@@ -8,9 +8,12 @@ import 'package:flutter/foundation.dart';
 import 'package:sero/models/society_record.dart';
 import 'package:sero/models/facility_booking.dart';
 
+import 'package:sero/config/dev_config.dart';
+
 class FirestoreService {
   // ---------- NOTICES ----------
   Future<List<Notice>> getNotices() async {
+    if (kUseMockData) return [];
     final res = await ApiService.get('/notices');
     if (res.statusCode == 200) {
       final data = jsonDecode(res.body);
@@ -123,6 +126,7 @@ class FirestoreService {
 
   // ---------- REAL-TIME STREAMS ----------
   Stream<List<Notice>> getNoticesStream(String societyId) {
+    if (kUseMockData) return Stream.value([]);
     return FirebaseFirestore.instance
         .collection('notices')
         .where('society_id', isEqualTo: societyId)
@@ -135,6 +139,7 @@ class FirestoreService {
   }
 
   Stream<List<Issue>> getIssuesStream(String userId, String societyId) {
+    if (kUseMockData) return Stream.value([]);
     return FirebaseFirestore.instance
         .collection('issues')
         .where('society_id', isEqualTo: societyId)
@@ -148,6 +153,7 @@ class FirestoreService {
   }
 
   Stream<List<Issue>> getAllIssuesStream(String societyId) {
+    if (kUseMockData) return Stream.value([]);
     return FirebaseFirestore.instance
         .collection('issues')
         .where('society_id', isEqualTo: societyId)
@@ -160,6 +166,7 @@ class FirestoreService {
   }
 
   Stream<List<Facility>> getFacilitiesStream(String societyId) {
+    if (kUseMockData) return Stream.value([]);
     return FirebaseFirestore.instance
         .collection('facilities')
         .where('society_id', isEqualTo: societyId)
@@ -170,6 +177,7 @@ class FirestoreService {
   }
 
   Stream<List<SocietyRecord>> getRecordsStream(String societyId) {
+    if (kUseMockData) return Stream.value([]);
     return FirebaseFirestore.instance
         .collection('records')
         .where('society_id', isEqualTo: societyId)
@@ -183,14 +191,17 @@ class FirestoreService {
 
   // ---------- OPERATIONAL ACTIONS ----------
   Future<void> updateIssueStatusAdmin(String id, String status) async {
+    if (kUseMockData) return;
     await FirebaseFirestore.instance.collection('issues').doc(id).update({'status': status});
   }
 
   Future<void> postSocietyRecord(SocietyRecord record) async {
+    if (kUseMockData) return;
     await FirebaseFirestore.instance.collection('records').add(record.toMap());
   }
 
   Stream<List<FundTransaction>> getTransactionsStream(String societyId) {
+    if (kUseMockData) return Stream.value([]);
     return FirebaseFirestore.instance
         .collection('transactions')
         .where('society_id', isEqualTo: societyId)

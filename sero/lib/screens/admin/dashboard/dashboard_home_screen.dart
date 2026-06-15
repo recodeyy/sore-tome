@@ -1,0 +1,477 @@
+import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:sero/app/theme.dart';
+import 'package:sero/data/mock_data.dart';
+import 'package:sero/widgets/common/stat_card.dart';
+import 'package:sero/widgets/common/section_header.dart';
+import 'package:sero/widgets/common/quick_action_button.dart';
+import 'package:sero/screens/admin/admin_more_screen.dart';
+import 'dashboard_revenue_screen.dart';
+import 'dashboard_insights_screen.dart';
+import 'dashboard_notices_screen.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:sero/providers/shared/notification_provider.dart';
+
+/// Dashboard Home Overview — Screen 1 of 4
+/// Shows greeting, today's overview, quick actions, and recent activity.
+class DashboardHomeScreen extends ConsumerWidget {
+  const DashboardHomeScreen({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF8FAFC),
+      body: CustomScrollView(
+        physics: const BouncingScrollPhysics(),
+        slivers: [
+          // ── Top App Bar ──
+          SliverToBoxAdapter(
+            child: Container(
+              decoration: const BoxDecoration(
+                color: Color(0xFF064E3B),
+                borderRadius: BorderRadius.only(
+                  bottomLeft: Radius.circular(24),
+                  bottomRight: Radius.circular(24),
+                ),
+              ),
+              padding: EdgeInsets.only(
+                top: MediaQuery.of(context).padding.top + 12,
+                left: 20,
+                right: 20,
+                bottom: 24,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      GestureDetector(
+                        onTap: () => Scaffold.of(context).openDrawer(),
+                        child: const Icon(Icons.menu, color: Colors.white, size: 24),
+                      ),
+                      Row(
+                        children: [
+                          GestureDetector(
+                            onTap: () => Navigator.pushNamed(context, '/notifications'),
+                            child: Stack(
+                              children: [
+                                const Icon(Icons.notifications_outlined, color: Colors.white, size: 24),
+                                if (ref.watch(notificationProvider.notifier).unreadCount > 0)
+                                  Positioned(
+                                    right: 0,
+                                    top: 0,
+                                    child: Container(
+                                      width: 16,
+                                      height: 16,
+                                      decoration: const BoxDecoration(
+                                        color: Color(0xFFEF4444),
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: Center(
+                                        child: Text(
+                                          ref.watch(notificationProvider.notifier).unreadCount.toString(),
+                                          style: GoogleFonts.outfit(
+                                            fontSize: 8,
+                                            fontWeight: FontWeight.w700,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    'Good Morning, ${MockDashboardData.adminName} 👋',
+                    style: GoogleFonts.outfit(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.white.withValues(alpha: 0.9),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Text(
+                        MockDashboardData.societyName,
+                        style: GoogleFonts.outfit(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      const Icon(Icons.keyboard_arrow_down, color: Colors.white70, size: 20),
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    MockDashboardData.dateLabel,
+                    style: GoogleFonts.outfit(
+                      fontSize: 13,
+                      color: Colors.white.withValues(alpha: 0.6),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // ── Today's Overview ──
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 4),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    "Today's Overview",
+                    style: GoogleFonts.outfit(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF1E293B),
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: () => Navigator.pushNamed(context, '/admin/dashboard/insights'),
+                    child: Text(
+                      'View All',
+                      style: GoogleFonts.outfit(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: kPrimaryGreen,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          SliverPadding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+            sliver: SliverGrid.count(
+              crossAxisCount: 3,
+              mainAxisSpacing: 10,
+              crossAxisSpacing: 10,
+              childAspectRatio: 0.85,
+              children: [
+                StatCard(
+                  value: MockDashboardData.pendingApprovals.toString(),
+                  label: 'Pending\nApprovals',
+                  icon: Icons.pending_actions,
+                  iconColor: const Color(0xFFEA580C),
+                  iconBgColor: const Color(0xFFFFF7ED),
+                  onTap: () => Navigator.pushNamed(context, '/admin/dashboard/insights'),
+                ),
+                StatCard(
+                  value: MockDashboardData.openComplaints.toString(),
+                  label: 'Open\nComplaints',
+                  icon: Icons.report_outlined,
+                  iconColor: const Color(0xFFDC2626),
+                  iconBgColor: const Color(0xFFFEF2F2),
+                  onTap: () => Navigator.pushNamed(context, '/admin/dashboard/insights'),
+                ),
+                StatCard(
+                  value: MockDashboardData.todaysCollection,
+                  label: "Today's\nCollection",
+                  icon: Icons.account_balance_wallet,
+                  iconColor: const Color(0xFF059669),
+                  iconBgColor: const Color(0xFFF0FDF4),
+                  onTap: () => Navigator.pushNamed(context, '/admin/dashboard/revenue'),
+                ),
+              ],
+            ),
+          ),
+          SliverPadding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            sliver: SliverGrid.count(
+              crossAxisCount: 3,
+              mainAxisSpacing: 10,
+              crossAxisSpacing: 10,
+              childAspectRatio: 0.85,
+              children: [
+                StatCard(
+                  value: MockDashboardData.maintenanceDue,
+                  label: 'Maintenance\nDue',
+                  icon: Icons.calendar_today,
+                  iconColor: const Color(0xFF7C3AED),
+                  iconBgColor: const Color(0xFFF5F3FF),
+                  onTap: () => Navigator.pushNamed(context, '/admin/dashboard/revenue'),
+                ),
+                StatCard(
+                  value: MockDashboardData.visitorsToday.toString(),
+                  label: 'Visitors\nToday',
+                  icon: Icons.directions_walk,
+                  iconColor: const Color(0xFF2563EB),
+                  iconBgColor: const Color(0xFFEFF6FF),
+                  onTap: () => Navigator.pushNamed(context, '/admin/dashboard/insights'),
+                ),
+                StatCard(
+                  value: MockDashboardData.staffOnDuty.toString(),
+                  label: 'Staff On\nDuty',
+                  icon: Icons.badge,
+                  iconColor: const Color(0xFF064E3B),
+                  iconBgColor: const Color(0xFFF0FDF4),
+                  onTap: () => Navigator.pushNamed(context, '/admin/dashboard/insights'),
+                ),
+              ],
+            ),
+          ),
+
+          // ── Quick Actions ──
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 4),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Quick Actions',
+                    style: GoogleFonts.outfit(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF1E293B),
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: () {},
+                    child: Text(
+                      'Edit',
+                      style: GoogleFonts.outfit(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: const Color(0xFF64748B),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                   QuickActionButton(
+                     icon: Icons.campaign_outlined,
+                     label: 'Add Notice',
+                     onTap: () => Navigator.pushNamed(context, '/admin/communication/create-notice'),
+                   ),
+                   QuickActionButton(
+                     icon: Icons.poll_outlined,
+                     label: 'New Poll',
+                     bgColor: const Color(0xFF10B981),
+                     onTap: () {}, // Not implemented yet
+                   ),
+                   QuickActionButton(
+                     icon: Icons.person_add_outlined,
+                     label: 'Add Member',
+                     bgColor: const Color(0xFF064E3B),
+                     onTap: () => Navigator.pushNamed(context, '/admin/society/flats'), // Or a direct add member route
+                   ),
+                   QuickActionButton(
+                     icon: Icons.receipt_long_outlined,
+                     label: 'Generate Bill',
+                     bgColor: const Color(0xFF1E3A8A),
+                     onTap: () => Navigator.pushNamed(context, '/admin/finance/generate-bills'),
+                   ),
+                   QuickActionButton(
+                     icon: Icons.more_horiz,
+                     label: 'More',
+                     bgColor: const Color(0xFF475569),
+                     onTap: () {
+                        // Switch to the "More" tab if possible, or just push the more screen
+                        // For simplicity in a stateless widget without access to AdminShell state, 
+                        // we can push or just leave it to the bottom nav.
+                        // Let's assume the user can use bottom nav, but for a "Quick Action" we can push.
+                        Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminMoreScreen()));
+                     },
+                   ),
+                 ],
+              ),
+            ),
+          ),
+
+          // ── Recent Activity ──
+          SliverToBoxAdapter(
+            child: SectionHeader(
+              title: 'Recent Activity',
+              actionText: 'View All',
+              onAction: () => Navigator.pushNamed(context, '/admin/dashboard/notices'),
+            ),
+          ),
+          SliverPadding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+            sliver: MockDashboardData.recentActivity.isEmpty
+                ? SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.all(40.0),
+                      child: Center(
+                        child: Column(
+                          children: [
+                            const Icon(Icons.history, color: Color(0xFF94A3B8), size: 48),
+                            const SizedBox(height: 16),
+                            Text(
+                              'No dashboard data available.',
+                              style: GoogleFonts.outfit(color: const Color(0xFF64748B)),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  )
+                : SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                      (context, index) {
+                        final item = MockDashboardData.recentActivity[index];
+                        return _RecentActivityTile(
+                          icon: _getActivityIcon(item['icon']!),
+                          iconColor: _getActivityColor(item['icon']!),
+                          title: item['title']!,
+                          subtitle: item['subtitle'] ?? '',
+                          amount: item['amount'],
+                          time: item['time']!,
+                        );
+                      },
+                      childCount: MockDashboardData.recentActivity.length,
+                    ),
+                  ),
+          ),
+
+          const SliverToBoxAdapter(child: SizedBox(height: 100)),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () {},
+        backgroundColor: kPrimaryGreen,
+        child: const Icon(Icons.add, color: Colors.white),
+      ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
+    );
+  }
+
+  IconData _getActivityIcon(String type) {
+    switch (type) {
+      case 'payment':
+        return Icons.account_balance_wallet_outlined;
+      case 'complaint':
+        return Icons.error_outline;
+      case 'visitor':
+        return Icons.person_outline;
+      default:
+        return Icons.info_outline;
+    }
+  }
+
+  Color _getActivityColor(String type) {
+    switch (type) {
+      case 'payment':
+        return const Color(0xFF059669);
+      case 'complaint':
+        return const Color(0xFFEA580C);
+      case 'visitor':
+        return const Color(0xFF2563EB);
+      default:
+        return const Color(0xFF64748B);
+    }
+  }
+}
+
+class _RecentActivityTile extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final String title;
+  final String subtitle;
+  final String? amount;
+  final String time;
+
+  const _RecentActivityTile({
+    required this.icon,
+    required this.iconColor,
+    required this.title,
+    required this.subtitle,
+    this.amount,
+    required this.time,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFF1F5F9), width: 1),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: iconColor.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, size: 20, color: iconColor),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: GoogleFonts.outfit(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFF1E293B),
+                  ),
+                ),
+                if (subtitle.isNotEmpty) ...[
+                  const SizedBox(height: 1),
+                  Text(
+                    subtitle,
+                    style: GoogleFonts.outfit(
+                      fontSize: 11,
+                      color: const Color(0xFF94A3B8),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              if (amount != null)
+                Text(
+                  amount!,
+                  style: GoogleFonts.outfit(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: const Color(0xFF059669),
+                  ),
+                ),
+              Text(
+                time,
+                style: GoogleFonts.outfit(
+                  fontSize: 11,
+                  color: const Color(0xFF94A3B8),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
