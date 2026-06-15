@@ -139,6 +139,8 @@ v1Router.use("/assets", standardLimiter, require("./src/routes/assets_pg").defau
 
 // Phase 2 — Society structure (Postgres).
 v1Router.use("/structure", standardLimiter, require("./src/routes/structure_pg").default);
+v1Router.use("/members-v2", standardLimiter, require("./src/routes/members_pg").default);
+v1Router.use("/reports", standardLimiter, require("./src/routes/reports_pg").default);
 
 // 🚀 MOUNT V1
 app.use("/api/v1", v1Router);
