@@ -16,7 +16,7 @@ async function ledgerBalance(society: string) {
 }
 
 afterAll(async () => {
-  for (const t of ["payment_allocations", "payments", "journal_lines", "journal_entries", "invoice_lines", "invoices", "chart_of_accounts"]) {
+  for (const t of ["receipts", "payment_allocations", "payments", "journal_lines", "journal_entries", "invoice_lines", "invoices", "chart_of_accounts"]) {
     await db.query(`DELETE FROM ${t} WHERE society_id = $1`, [SOC]);
   }
   await dbManager.close();

@@ -37,9 +37,15 @@ const map = (res: Response, e: any, fallback: string) => {
   if (e.code === "NOT_FOUND") return res.status(404).json({ error: e.message });
   if (e.code === "INVALID_STATE") return res.status(409).json({ error: e.message });
   if (e.code === "ALREADY_EXISTS") return res.status(409).json({ error: e.message });
+  if (e.code === "EXPIRED") return res.status(410).json({ error: e.message });
+  if (e.code === "GENERATION_FAILED") return res.status(422).json({ error: e.message });
   logger.error({ error: e.message }, fallback);
   return res.status(500).json({ error: fallback });
 };
+
+const GenerateSchema = z.object({ body: z.object({
+  retentionDays: z.number().int().positive().max(3650).optional(),
+}).strict() });
 
 // Templates
 router.get("/templates", authMiddleware, tenantMiddleware, async (req, res) => {
@@ -70,6 +76,25 @@ router.post("/jobs", authMiddleware, tenantMiddleware, canManageContent, validat
       templateId: req.body.templateId, kind: req.body.kind, params: req.body.params, requestedBy: userOf(req),
     }) });
   } catch (e: any) { map(res, e, "Failed to enqueue job"); }
+});
+
+// Generation (capability 91): execute a job, producing a downloadable artifact.
+router.post("/jobs/:id/generate", authMiddleware, tenantMiddleware, canManageContent, validate(GenerateSchema), async (req, res) => {
+  try {
+    const job = await ReportService.generateJob(societyOf(req), req.params.id, {
+      retentionDays: req.body.retentionDays,
+    });
+    res.json({ job });
+  } catch (e: any) { map(res, e, "Failed to generate report"); }
+});
+
+router.get("/jobs/:id/artifact", authMiddleware, tenantMiddleware, async (req, res) => {
+  try {
+    const art = await ReportService.getArtifact(societyOf(req), req.params.id);
+    res.setHeader("Content-Type", art.contentType);
+    res.setHeader("Content-Disposition", `attachment; filename="${art.fileName}"`);
+    res.send(art.content);
+  } catch (e: any) { map(res, e, "Failed to download artifact"); }
 });
 
 // Schedules

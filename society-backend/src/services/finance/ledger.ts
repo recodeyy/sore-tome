@@ -11,6 +11,40 @@ import type { PoolClient } from "pg";
  *   5000 Operating Expense (expense)
  */
 
+/**
+ * Cap 29 — Proration. Computes the prorated charge (integer minor units) for a
+ * partial occupancy within a billing period. Days are inclusive on both ends.
+ * Occupancy is clamped to the period; full occupancy returns the full amount.
+ */
+export function prorateMinor(
+  fullAmountMinor: number,
+  periodStart: string | Date,
+  periodEnd: string | Date,
+  occupancyStart?: string | Date | null,
+  occupancyEnd?: string | Date | null
+): { amountMinor: number; chargedDays: number; periodDays: number } {
+  const day = 86400000;
+  const toUTC = (d: string | Date) => {
+    const x = new Date(d);
+    return Date.UTC(x.getUTCFullYear(), x.getUTCMonth(), x.getUTCDate());
+  };
+  const pStart = toUTC(periodStart);
+  const pEnd = toUTC(periodEnd);
+  if (pEnd < pStart) throw new Error("periodEnd before periodStart");
+  const periodDays = Math.round((pEnd - pStart) / day) + 1;
+
+  const oStart = occupancyStart ? Math.max(pStart, toUTC(occupancyStart)) : pStart;
+  const oEnd = occupancyEnd ? Math.min(pEnd, toUTC(occupancyEnd)) : pEnd;
+  const chargedDays = oEnd < oStart ? 0 : Math.round((oEnd - oStart) / day) + 1;
+
+  // Round to the nearest paise; never exceed the full amount.
+  const amountMinor = Math.min(
+    fullAmountMinor,
+    Math.round((fullAmountMinor * chargedDays) / periodDays)
+  );
+  return { amountMinor, chargedDays, periodDays };
+}
+
 export async function withTx<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {
   const client = await db.connect();
   try {

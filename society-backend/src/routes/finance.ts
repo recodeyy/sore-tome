@@ -66,6 +66,69 @@ router.post("/invoices/:id/publish", authMiddleware, tenantMiddleware, canManage
   }
 });
 
+// POST /finance/invoices/:id/late-fee — apply a configurable late fee (idempotent)
+router.post("/invoices/:id/late-fee", authMiddleware, tenantMiddleware, canManageFunds, async (req: Request, res: Response) => {
+  try {
+    const result = await FinanceService.applyLateFee(societyOf(req), req.params.id, req.body);
+    res.json(result);
+  } catch (err: any) {
+    if (err.code === "NOT_FOUND") return res.status(404).json({ error: "Invoice not found" });
+    if (err.code === "INVALID_STATE") return res.status(409).json({ error: err.message });
+    logger.error({ error: err.message }, "Apply late fee failed");
+    res.status(500).json({ error: "Failed to apply late fee" });
+  }
+});
+
+// POST /finance/invoices/:id/late-fee/waive — waive an applied late fee
+router.post("/invoices/:id/late-fee/waive", authMiddleware, tenantMiddleware, canManageFunds, async (req: Request, res: Response) => {
+  try {
+    const result = await FinanceService.waiveLateFee(societyOf(req), req.params.id, { reason: req.body.reason, waivedBy: (req as any).user?.uid });
+    res.json(result);
+  } catch (err: any) {
+    if (err.code === "NOT_FOUND") return res.status(404).json({ error: "Invoice not found" });
+    logger.error({ error: err.message }, "Waive late fee failed");
+    res.status(500).json({ error: "Failed to waive late fee" });
+  }
+});
+
+// POST /finance/credit-notes — issue an immutable credit note against an invoice
+router.post("/credit-notes", authMiddleware, tenantMiddleware, canManageFunds, async (req: Request, res: Response) => {
+  try {
+    const cn = await FinanceService.createCreditNote(societyOf(req), { ...req.body, createdBy: (req as any).user?.uid });
+    res.status(201).json({ creditNote: cn });
+  } catch (err: any) {
+    if (err.code === "NOT_FOUND") return res.status(404).json({ error: "Invoice not found" });
+    if (err.code === "INVALID_STATE" || err.code === "VALIDATION") return res.status(409).json({ error: err.message });
+    logger.error({ error: err.message }, "Create credit note failed");
+    res.status(500).json({ error: "Failed to create credit note" });
+  }
+});
+
+// POST /finance/recurring-billing — generate the next period's billing run (idempotent)
+router.post("/recurring-billing", authMiddleware, tenantMiddleware, canManageFunds, async (req: Request, res: Response) => {
+  try {
+    const result = await FinanceService.runRecurringBilling(societyOf(req), req.body, (req as any).user?.uid);
+    res.status(result.duplicate ? 200 : 201).json(result);
+  } catch (err: any) {
+    if (err.code === "23505") return res.status(409).json({ error: "Invoice number already exists" });
+    logger.error({ error: err.message }, "Recurring billing failed");
+    res.status(500).json({ error: "Failed to run recurring billing" });
+  }
+});
+
+// POST /finance/receipts/:id/void — void (and optionally reissue) a receipt
+router.post("/receipts/:id/void", authMiddleware, tenantMiddleware, canManageFunds, async (req: Request, res: Response) => {
+  try {
+    const result = await FinanceService.voidReceipt(societyOf(req), req.params.id, { reason: req.body.reason, reissue: req.body.reissue, voidedBy: (req as any).user?.uid });
+    res.json(result);
+  } catch (err: any) {
+    if (err.code === "NOT_FOUND") return res.status(404).json({ error: "Receipt not found" });
+    if (err.code === "INVALID_STATE") return res.status(409).json({ error: err.message });
+    logger.error({ error: err.message }, "Void receipt failed");
+    res.status(500).json({ error: "Failed to void receipt" });
+  }
+});
+
 // POST /finance/payments — record a payment (idempotent)
 router.post("/payments", authMiddleware, tenantMiddleware, canManageFunds, validate(RecordPaymentSchema), async (req: Request, res: Response) => {
   try {
