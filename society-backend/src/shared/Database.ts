@@ -52,25 +52,31 @@ class Database {
       const start = Date.now();
       const client = await this.pool.connect();
       try {
+        // RLS tenant context. set_config(..., false) sets it at SESSION scope on
+        // this checked-out connection, applied BEFORE the wrapped query runs.
         const context = requestContextStore.getStore();
-        if (context && context.societyId) {
-          await client.query(`SET app.society_id = $1`, [context.societyId]);
-        } else {
-          await client.query(`SET app.society_id = ''`);
-        }
-        
+        const societyId = context && context.societyId ? context.societyId : "";
+        await client.query(`SELECT set_config('app.society_id', $1, false)`, [societyId]);
+
         const result = await client.query(text, params);
         const duration = Date.now() - start;
 
         if (duration > 500) {
-          logger.warn({ 
-            duration, 
+          logger.warn({
+            duration,
             query: typeof text === 'string' ? text.substring(0, 200) : 'complex_query'
           }, "⚠️ Slow Database Query Detected");
         }
 
         return result;
       } finally {
+        // Reset tenant context BEFORE returning the connection to the pool so no
+        // pooled client ever carries a stale society_id to its next checkout.
+        try {
+          await client.query(`SELECT set_config('app.society_id', '', false)`);
+        } catch {
+          /* ignore reset failures (e.g. aborted txn / dead conn) — release anyway */
+        }
         client.release();
       }
     }) as any;
