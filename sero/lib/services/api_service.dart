@@ -48,6 +48,26 @@ class ApiService {
     return ApiClient.request('DELETE', endpoint);
   }
 
+  // ─── Envelope helper (new Postgres backend: {success, data, meta}) ─────────
+  /// Unwraps the standard `{ success, data, meta }` envelope returned by the
+  /// new `/api/v1` Postgres-backed endpoints. Throws on non-2xx or
+  /// `success == false`. Returns the raw `data` field (Map or List).
+  static dynamic unwrap(http.Response res) {
+    final dynamic decoded = res.body.isEmpty ? null : jsonDecode(res.body);
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      if (decoded is Map<String, dynamic> && decoded.containsKey('success')) {
+        if (decoded['success'] == true) return decoded['data'];
+        throw Exception(decoded['error'] ?? decoded['message'] ?? 'Request failed');
+      }
+      // Endpoint not (yet) using the envelope — return body as-is.
+      return decoded;
+    }
+    final msg = (decoded is Map)
+        ? (decoded['error'] ?? decoded['message'])
+        : null;
+    throw Exception(msg ?? 'Request failed (${res.statusCode})');
+  }
+
   // ─── Mock Data Selector ───────────────────────────────────────────────────
   static http.Response _getMockResponse(String endpoint, {Map<String, dynamic>? body}) {
     // TODO: Connect to backend and remove mock selector

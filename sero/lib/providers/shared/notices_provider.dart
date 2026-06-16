@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sero/services/api_service.dart';
@@ -37,21 +36,19 @@ class NoticesNotifier extends StateNotifier<AsyncValue<List<Notice>>> {
     }
 
     try {
-      final res = await ApiService.get('/notices');
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
-        final list = (data['notices'] as List).map((x) => Notice.fromMap(x)).toList();
-        
-        state = AsyncValue.data(list);
+      // CUTOVER: real Postgres backend — GET /notices-v2 ({success,data} envelope).
+      final res = await ApiService.get('/notices-v2');
+      final data = ApiService.unwrap(res);
+      final rawList = data is List
+          ? data
+          : (data is Map ? (data['notices'] as List? ?? const []) : const []);
+      final list = rawList.map((x) => Notice.fromMap(x)).toList();
 
-        // 2. Save to Cache
-        if (societyId != null) {
-          await _localDb.saveItems('notices', list.map((x) => x.toMap()).toList());
-        }
-      } else {
-        // If API fails but we have cache, keep cache. If no cache, show error.
-        if (state.hasValue) return;
-        throw jsonDecode(res.body)['error'] ?? 'Failed to fetch notices';
+      state = AsyncValue.data(list);
+
+      // 2. Save to Cache
+      if (societyId != null) {
+        await _localDb.saveItems('notices', list.map((x) => x.toMap()).toList());
       }
     } catch (e, st) {
       if (state.hasValue) {
@@ -64,16 +61,14 @@ class NoticesNotifier extends StateNotifier<AsyncValue<List<Notice>>> {
 
   Future<void> addNotice(String title, String body, String type) async {
     try {
-      final res = await ApiService.post('/notices', {
+      final res = await ApiService.post('/notices-v2', {
         'title': title,
         'body': body,
         'type': type,
       });
-      if (res.statusCode == 201) {
-        fetchNotices();
-      } else {
-        throw jsonDecode(res.body)['error'] ?? 'Failed to post notice';
-      }
+      // unwrap validates success/status; throws on failure.
+      ApiService.unwrap(res);
+      fetchNotices();
     } catch (e) {
       rethrow;
     }
