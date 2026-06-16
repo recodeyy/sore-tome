@@ -416,5 +416,79 @@ router.delete("/conversations/:id", authMiddleware, tenantMiddleware, async (req
   }
 });
 
-export default router;
+// ─── AI INNOVATION ROUTES ───────────────────────────────────────────────────
 
+import { AIInnovationService } from '../services/ai/AIInnovationService';
+
+const innovationRouter = Router();
+innovationRouter.use(authMiddleware);
+innovationRouter.use(tenantMiddleware);
+
+/**
+ * GET /ai/society-pulse
+ * AI-powered society health metrics and autopilot alerts.
+ * Role: admin, super_admin
+ */
+innovationRouter.get('/society-pulse', async (req: Request, res: Response) => {
+  try {
+    const societyId = (req as any).user?.society_id;
+    if (!societyId) return res.status(400).json({ error: 'Society context required' });
+    const pulse = await AIInnovationService.generateSocietyPulse(societyId);
+    return res.json(pulse);
+  } catch (err) {
+    logger.error({ err }, 'GET /ai/society-pulse failed');
+    return res.status(500).json({ error: 'Failed to generate society pulse' });
+  }
+});
+
+/**
+ * GET /ai/complaint-clusters
+ * AI root-cause and duplicate complaint detection.
+ */
+innovationRouter.get('/complaint-clusters', async (req: Request, res: Response) => {
+  try {
+    const societyId = (req as any).user?.society_id;
+    if (!societyId) return res.status(400).json({ error: 'Society context required' });
+    const clusters = await AIInnovationService.detectComplaintClusters(societyId);
+    return res.json({ clusters, generatedAt: new Date() });
+  } catch (err) {
+    logger.error({ err }, 'GET /ai/complaint-clusters failed');
+    return res.status(500).json({ error: 'Failed to detect clusters' });
+  }
+});
+
+/**
+ * GET /ai/financial-anomalies
+ * AI financial leakage and duplicate invoice scanner.
+ * Role: admin, treasurer
+ */
+innovationRouter.get('/financial-anomalies', async (req: Request, res: Response) => {
+  try {
+    const societyId = (req as any).user?.society_id;
+    if (!societyId) return res.status(400).json({ error: 'Society context required' });
+    const anomalies = await AIInnovationService.detectFinancialAnomalies(societyId);
+    return res.json({ anomalies, generatedAt: new Date() });
+  } catch (err) {
+    logger.error({ err }, 'GET /ai/financial-anomalies failed');
+    return res.status(500).json({ error: 'Failed to scan financials' });
+  }
+});
+
+/**
+ * GET /ai/maintenance-predictions
+ * AI predictive maintenance risk scoring.
+ */
+innovationRouter.get('/maintenance-predictions', async (req: Request, res: Response) => {
+  try {
+    const societyId = (req as any).user?.society_id;
+    if (!societyId) return res.status(400).json({ error: 'Society context required' });
+    const predictions = await AIInnovationService.predictMaintenanceNeeds(societyId);
+    return res.json({ predictions, generatedAt: new Date() });
+  } catch (err) {
+    logger.error({ err }, 'GET /ai/maintenance-predictions failed');
+    return res.status(500).json({ error: 'Failed to generate predictions' });
+  }
+});
+
+export { innovationRouter };
+export default router;
