@@ -109,6 +109,7 @@ v1Router.use("/users", standardLimiter, require("./routes/users"));
 v1Router.use("/notices", standardLimiter, require("./routes/notices"));
 v1Router.use("/issues", standardLimiter, require("./routes/issues"));
 v1Router.use("/complaints", standardLimiter, require("./src/routes/complaints").default);
+v1Router.use("/resident", standardLimiter, require("./src/routes/resident_pg").default);
 v1Router.use("/funds", standardLimiter, require("./routes/funds"));
 v1Router.use("/finance", standardLimiter, require("./src/routes/finance").default);
 v1Router.use("/amenities", standardLimiter, require("./src/routes/amenities").default);
@@ -119,6 +120,7 @@ v1Router.use("/staff", standardLimiter, require("./routes/staff"));
 v1Router.use("/facilities", standardLimiter, require("./routes/facilities"));
 v1Router.use("/polls", standardLimiter, require("./routes/polls"));
 v1Router.use("/ai", aiLimiter, require("./src/routes/ai").default);
+v1Router.use("/ai", aiLimiter, require("./src/routes/ai").innovationRouter);
 v1Router.use("/super-admin", standardLimiter, require("./src/routes/super_admin").default);
 v1Router.use("/admin", standardLimiter, require("./src/routes/admin_dashboard").default);
 v1Router.use("/admin", standardLimiter, require("./src/routes/admin_access").default);
@@ -139,6 +141,7 @@ v1Router.use("/channels-v2", standardLimiter, require("./src/routes/channels_pg"
 v1Router.use("/staff-v2", standardLimiter, require("./src/routes/staff_pg").default);
 v1Router.use("/parking", standardLimiter, require("./src/routes/parking_pg").default);
 v1Router.use("/assets", standardLimiter, require("./src/routes/assets_pg").default);
+v1Router.use("/guard", standardLimiter, require("./src/routes/guard_pg").default);
 
 // Phase 2 — Society structure (Postgres).
 v1Router.use("/structure", standardLimiter, require("./src/routes/structure_pg").default);
