@@ -9,7 +9,7 @@ import { ParserService } from "./ParserService";
 import { AIRateLimitingService } from "./AIRateLimitingService";
 import { ChatPromptTemplate, MessagesPlaceholder } from "@langchain/core/prompts";
 import { HumanMessage, AIMessage, SystemMessage } from "@langchain/core/messages";
-import { AIToolService, ToolAction, normalizeRole } from "./AIToolService";
+import { AIToolService, ToolAction, normalizeRole, resolveLanguage, languageName } from "./AIToolService";
 import { db } from "../../shared/Database";
 
 export class AIChatService {
@@ -268,7 +268,8 @@ export class AIChatService {
     fileContent: string = "",
     contextData?: any,
     userRole: string = "resident",
-    manualHistory: any[] = []
+    manualHistory: any[] = [],
+    language?: string
   ) {
     const relatedDocs = await this.vectorStore.hybridSearch(safeInput, societyId, context, 3);
     const ragContext = relatedDocs.map(d => d.pageContent).join("\n---\n");
@@ -304,6 +305,7 @@ export class AIChatService {
     const systemPrompt = `
       You are ${persona}.
       Your specific role is: ${canonicalRole}.
+      Always respond in ${languageName(resolveLanguage(language))}.
       Tools you are permitted to use: ${allowedTools.length ? allowedTools.join(", ") : "none"}.
       Never propose an action for a tool outside this list.
 

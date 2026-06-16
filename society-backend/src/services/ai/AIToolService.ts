@@ -83,7 +83,45 @@ export const TOOL_PERMISSIONS: Record<string, CanonicalRole[]> = {
     "super_admin", "main_admin", "admin", "facility_manager",
     "committee_member", "resident_owner", "resident_tenant",
   ],
+  get_notices: [...CANONICAL_ROLES],
+  get_meeting_schedule: [...CANONICAL_ROLES],
+  get_attendance: [
+    "super_admin", "main_admin", "admin", "secretary",
+    "facility_manager", "security_manager", "staff",
+  ],
+  create_visitor_pass: [
+    "super_admin", "main_admin", "admin", "guard", "security_manager",
+  ],
+  get_parking_status: [
+    "super_admin", "main_admin", "admin",
+    "resident_owner", "resident_tenant",
+  ],
+  approve_member: ["admin", "main_admin", "secretary"],
+  assign_complaint: ["admin", "facility_manager", "security_manager"],
 };
+
+// ── Multilingual support (Prompt Pack: cross-role multilingual handling) ──────
+export const SUPPORTED_LANGUAGES = ["en", "hi", "mr", "gu", "ta", "te", "bn", "kn"] as const;
+export type SupportedLanguage = (typeof SUPPORTED_LANGUAGES)[number];
+
+/** Resolve a (possibly messy) language code to an allow-listed code; fallback to "en". */
+export function resolveLanguage(code?: string | null): SupportedLanguage {
+  if (!code) return "en";
+  const norm = code.trim().toLowerCase().split(/[-_]/)[0];
+  return (SUPPORTED_LANGUAGES as readonly string[]).includes(norm)
+    ? (norm as SupportedLanguage)
+    : "en";
+}
+
+const LANGUAGE_NAMES: Record<SupportedLanguage, string> = {
+  en: "English", hi: "Hindi", mr: "Marathi", gu: "Gujarati",
+  ta: "Tamil", te: "Telugu", bn: "Bengali", kn: "Kannada",
+};
+
+/** Human-readable language name for an allow-listed code. */
+export function languageName(code: SupportedLanguage): string {
+  return LANGUAGE_NAMES[code];
+}
 
 /** Map any legacy/aliased role string to a canonical role for permission checks. */
 export function normalizeRole(role: string): CanonicalRole | string {

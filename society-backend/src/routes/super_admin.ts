@@ -573,4 +573,143 @@ router.post("/societies/:societyId/offboard", async (req: Request, res: Response
   }
 });
 
+// --- Platform configuration: caps 20-23 -------------------------------------
+
+// cap 20: feature rollouts
+router.put("/rollouts/:featureKey", async (req: Request, res: Response) => {
+  try {
+    const data = await SuperAdminService.setRollout({
+      featureKey: (req.params.featureKey as string),
+      cohort: req.body?.cohort,
+      percentage: req.body?.percentage,
+      status: req.body?.status,
+    });
+    return res.json({ success: true, data });
+  } catch (error: any) {
+    return sendError(res, "PUT /super-admin/rollouts/:featureKey", error);
+  }
+});
+
+router.get("/rollouts/:featureKey/evaluate", async (req: Request, res: Response) => {
+  try {
+    const data = await SuperAdminService.evaluateRollout(
+      (req.params.featureKey as string),
+      String(req.query.societyId || "")
+    );
+    return res.json({ success: true, data });
+  } catch (error: any) {
+    return sendError(res, "GET /super-admin/rollouts/:featureKey/evaluate", error);
+  }
+});
+
+// cap 21: white-label profiles
+router.get("/societies/:societyId/white-label", async (req: Request, res: Response) => {
+  try {
+    const data = await SuperAdminService.getWhiteLabel((req.params.societyId as string));
+    return res.json({ success: true, data });
+  } catch (error: any) {
+    return sendError(res, "GET /super-admin/societies/:societyId/white-label", error);
+  }
+});
+
+router.put("/societies/:societyId/white-label", async (req: Request, res: Response) => {
+  try {
+    const data = await SuperAdminService.upsertWhiteLabel({
+      societyId: (req.params.societyId as string),
+      brandName: req.body?.brandName,
+      colors: req.body?.colors,
+      logoUrl: req.body?.logoUrl,
+    });
+    return res.json({ success: true, data });
+  } catch (error: any) {
+    return sendError(res, "PUT /super-admin/societies/:societyId/white-label", error);
+  }
+});
+
+router.post("/societies/:societyId/white-label/publish", async (req: Request, res: Response) => {
+  try {
+    const data = await SuperAdminService.publishWhiteLabel((req.params.societyId as string));
+    if (!data) {
+      return res.status(404).json({ success: false, error: { code: "WHITE_LABEL_NOT_FOUND", message: "White-label profile not found" } });
+    }
+    return res.json({ success: true, data });
+  } catch (error: any) {
+    return sendError(res, "POST /super-admin/societies/:societyId/white-label/publish", error);
+  }
+});
+
+// cap 22: API clients
+router.get("/societies/:societyId/api-clients", async (req: Request, res: Response) => {
+  try {
+    const data = await SuperAdminService.listApiClients((req.params.societyId as string));
+    return res.json({ success: true, data });
+  } catch (error: any) {
+    return sendError(res, "GET /super-admin/societies/:societyId/api-clients", error);
+  }
+});
+
+router.post("/societies/:societyId/api-clients", async (req: Request, res: Response) => {
+  try {
+    const data = await SuperAdminService.createApiClient({
+      societyId: (req.params.societyId as string),
+      name: String(req.body?.name || ""),
+      scopes: req.body?.scopes,
+      quotaPerDay: req.body?.quotaPerDay,
+    });
+    return res.status(201).json({ success: true, data });
+  } catch (error: any) {
+    return sendError(res, "POST /super-admin/societies/:societyId/api-clients", error);
+  }
+});
+
+router.post("/api-clients/:id/revoke", async (req: Request, res: Response) => {
+  try {
+    const data = await SuperAdminService.revokeApiClient((req.params.id as string));
+    if (!data) {
+      return res.status(404).json({ success: false, error: { code: "API_CLIENT_NOT_FOUND", message: "API client not found" } });
+    }
+    return res.json({ success: true, data });
+  } catch (error: any) {
+    return sendError(res, "POST /super-admin/api-clients/:id/revoke", error);
+  }
+});
+
+// cap 23: webhooks + integrations
+router.get("/societies/:societyId/webhooks", async (req: Request, res: Response) => {
+  try {
+    const data = await SuperAdminService.listWebhooks((req.params.societyId as string));
+    return res.json({ success: true, data });
+  } catch (error: any) {
+    return sendError(res, "GET /super-admin/societies/:societyId/webhooks", error);
+  }
+});
+
+router.post("/societies/:societyId/webhooks", async (req: Request, res: Response) => {
+  try {
+    const data = await SuperAdminService.createWebhook({
+      societyId: (req.params.societyId as string),
+      url: String(req.body?.url || ""),
+      events: req.body?.events,
+      secret: req.body?.secret,
+    });
+    return res.status(201).json({ success: true, data });
+  } catch (error: any) {
+    return sendError(res, "POST /super-admin/societies/:societyId/webhooks", error);
+  }
+});
+
+router.put("/societies/:societyId/integrations/:provider", async (req: Request, res: Response) => {
+  try {
+    const data = await SuperAdminService.setIntegration({
+      societyId: (req.params.societyId as string),
+      provider: (req.params.provider as string),
+      config: req.body?.config,
+      status: req.body?.status,
+    });
+    return res.json({ success: true, data });
+  } catch (error: any) {
+    return sendError(res, "PUT /super-admin/societies/:societyId/integrations/:provider", error);
+  }
+});
+
 export default router;

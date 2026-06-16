@@ -1,4 +1,9 @@
+import crypto from "crypto";
 import { db } from "../../shared/Database";
+
+function sha256(value: string): string {
+  return crypto.createHash("sha256").update(value).digest("hex");
+}
 
 type QueryParams = Array<string | number | boolean | null>;
 
@@ -879,6 +884,213 @@ export class SuperAdminService {
         RETURNING *
       `,
       [payload.societyId || "platform", payload.kind || "custom", JSON.stringify(payload.params || {}), actorId]
+    );
+    return rows[0];
+  }
+
+  // --- Platform configuration: caps 20-23 ------------------------------------
+
+  // cap 20: feature rollouts (cohort + percentage gating).
+  static async setRollout(input: {
+    featureKey: string;
+    cohort?: any;
+    percentage?: number;
+    status?: string;
+  }) {
+    if (!input.featureKey?.trim()) {
+      const error = new Error("featureKey is required");
+      (error as any).statusCode = 400;
+      throw error;
+    }
+    const pct = Math.min(Math.max(Math.round(Number(input.percentage) || 0), 0), 100);
+    const rows = await queryRows(
+      `
+        INSERT INTO feature_rollouts (feature_key, cohort, percentage, status, updated_at)
+        VALUES ($1, $2::jsonb, $3, $4, NOW())
+        ON CONFLICT (feature_key)
+        DO UPDATE SET cohort = EXCLUDED.cohort, percentage = EXCLUDED.percentage,
+                      status = EXCLUDED.status, updated_at = NOW()
+        RETURNING *
+      `,
+      [input.featureKey.trim(), JSON.stringify(input.cohort || {}), pct, input.status || "draft"]
+    );
+    return rows[0];
+  }
+
+  static async evaluateRollout(featureKey: string, societyId: string) {
+    const rollout = await queryOne<any>(
+      `SELECT feature_key, cohort, percentage, status FROM feature_rollouts WHERE feature_key = $1`,
+      [featureKey],
+      null
+    );
+    if (!rollout || rollout.status !== "active") {
+      return { featureKey, societyId, enabled: false, reason: "inactive" };
+    }
+    const cohort = rollout.cohort || {};
+    const cohortList: string[] = Array.isArray(cohort.societies) ? cohort.societies : [];
+    if (cohortList.includes(societyId)) {
+      return { featureKey, societyId, enabled: true, reason: "cohort" };
+    }
+    const bucket = parseInt(sha256(`${featureKey}:${societyId}`).slice(0, 8), 16) % 100;
+    const enabled = bucket < Number(rollout.percentage || 0);
+    return { featureKey, societyId, enabled, reason: enabled ? "percentage" : "excluded" };
+  }
+
+  // cap 21: white-label branding profiles.
+  static async getWhiteLabel(societyId: string) {
+    return queryOne<any>(
+      `SELECT * FROM white_label_profiles WHERE society_id = $1`,
+      [societyId],
+      null
+    );
+  }
+
+  static async upsertWhiteLabel(input: {
+    societyId: string;
+    brandName?: string;
+    colors?: any;
+    logoUrl?: string;
+  }) {
+    const rows = await queryRows(
+      `
+        INSERT INTO white_label_profiles (society_id, brand_name, colors, logo_url, version, status, updated_at)
+        VALUES ($1, $2, $3::jsonb, $4, 1, 'draft', NOW())
+        ON CONFLICT (society_id)
+        DO UPDATE SET brand_name = EXCLUDED.brand_name,
+                      colors = EXCLUDED.colors,
+                      logo_url = EXCLUDED.logo_url,
+                      version = white_label_profiles.version + 1,
+                      status = 'draft',
+                      updated_at = NOW()
+        RETURNING *
+      `,
+      [input.societyId, input.brandName || null, JSON.stringify(input.colors || {}), input.logoUrl || null]
+    );
+    return rows[0];
+  }
+
+  static async publishWhiteLabel(societyId: string) {
+    const rows = await queryRows(
+      `
+        UPDATE white_label_profiles
+        SET status = 'published', updated_at = NOW()
+        WHERE society_id = $1
+        RETURNING *
+      `,
+      [societyId]
+    );
+    return rows[0] ?? null;
+  }
+
+  // cap 22: API clients. Store ONLY the sha256 hash; return plaintext once.
+  static async createApiClient(input: {
+    societyId: string;
+    name: string;
+    scopes?: any[];
+    quotaPerDay?: number;
+  }) {
+    if (!input.name?.trim()) {
+      const error = new Error("name is required");
+      (error as any).statusCode = 400;
+      throw error;
+    }
+    const plaintext = `sk_${crypto.randomBytes(24).toString("hex")}`;
+    const keyHash = sha256(plaintext);
+    const quota = Math.max(0, Math.round(Number(input.quotaPerDay) || 10000));
+    const rows = await queryRows(
+      `
+        INSERT INTO api_clients (society_id, name, key_hash, scopes, quota_per_day, is_active)
+        VALUES ($1, $2, $3, $4::jsonb, $5, true)
+        RETURNING id, society_id, name, scopes, quota_per_day, is_active, created_at
+      `,
+      [input.societyId, input.name.trim(), keyHash, JSON.stringify(input.scopes || []), quota]
+    );
+    return { ...rows[0], apiKey: plaintext };
+  }
+
+  static async listApiClients(societyId: string) {
+    return queryRows(
+      `
+        SELECT id, society_id, name, scopes, quota_per_day, is_active, created_at, updated_at
+        FROM api_clients
+        WHERE society_id = $1
+        ORDER BY created_at DESC
+      `,
+      [societyId]
+    );
+  }
+
+  static async revokeApiClient(id: string) {
+    const rows = await queryRows(
+      `
+        UPDATE api_clients
+        SET is_active = false, updated_at = NOW()
+        WHERE id = $1
+        RETURNING id, society_id, name, scopes, quota_per_day, is_active, created_at, updated_at
+      `,
+      [id]
+    );
+    return rows[0] ?? null;
+  }
+
+  // cap 23: webhook endpoints + integration connections. Never store plaintext secrets.
+  static async createWebhook(input: {
+    societyId: string;
+    url: string;
+    events?: any[];
+    secret?: string;
+  }) {
+    if (!input.url?.trim()) {
+      const error = new Error("url is required");
+      (error as any).statusCode = 400;
+      throw error;
+    }
+    const secret = input.secret?.trim() || crypto.randomBytes(24).toString("hex");
+    const secretHash = sha256(secret);
+    const rows = await queryRows(
+      `
+        INSERT INTO webhook_endpoints (society_id, url, events, secret_hash, is_active)
+        VALUES ($1, $2, $3::jsonb, $4, true)
+        RETURNING id, society_id, url, events, is_active, created_at
+      `,
+      [input.societyId, input.url.trim(), JSON.stringify(input.events || []), secretHash]
+    );
+    // Return the signing secret once, alongside the row (hash only is persisted).
+    return { ...rows[0], secret };
+  }
+
+  static async listWebhooks(societyId: string) {
+    return queryRows(
+      `
+        SELECT id, society_id, url, events, is_active, created_at, updated_at
+        FROM webhook_endpoints
+        WHERE society_id = $1
+        ORDER BY created_at DESC
+      `,
+      [societyId]
+    );
+  }
+
+  static async setIntegration(input: {
+    societyId: string;
+    provider: string;
+    config?: any;
+    status?: string;
+  }) {
+    if (!input.provider?.trim()) {
+      const error = new Error("provider is required");
+      (error as any).statusCode = 400;
+      throw error;
+    }
+    const rows = await queryRows(
+      `
+        INSERT INTO integration_connections (society_id, provider, config, status, updated_at)
+        VALUES ($1, $2, $3::jsonb, $4, NOW())
+        ON CONFLICT (society_id, provider)
+        DO UPDATE SET config = EXCLUDED.config, status = EXCLUDED.status, updated_at = NOW()
+        RETURNING *
+      `,
+      [input.societyId, input.provider.trim(), JSON.stringify(input.config || {}), input.status || "connected"]
     );
     return rows[0];
   }
