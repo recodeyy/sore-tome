@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:sero/app/theme.dart';
 import 'package:sero/providers/shared/profile_provider.dart';
+import 'package:sero/providers/shared/auth_provider.dart';
 
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
@@ -127,10 +128,78 @@ class ProfileScreen extends ConsumerWidget {
                 ),
               ),
             ),
+
+            const SizedBox(height: 12),
+
+            // Switch Portal — log out of the current portal and return to the
+            // portal picker so the user can sign into a different portal.
+            SizedBox(
+              width: double.infinity,
+              height: 56,
+              child: OutlinedButton.icon(
+                onPressed: () => _confirmSwitchPortal(context, ref),
+                icon: const Icon(Icons.swap_horiz_rounded, color: kPrimaryGreen),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: kPrimaryGreen,
+                  side: const BorderSide(color: kPrimaryGreen, width: 1.5),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16)),
+                ),
+                label: Text(
+                  'Switch Portal',
+                  style: GoogleFonts.outfit(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
           ],
         ),
       ),
     );
+  }
+
+  Future<void> _confirmSwitchPortal(BuildContext context, WidgetRef ref) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text('Switch Portal',
+            style: GoogleFonts.outfit(fontWeight: FontWeight.w700)),
+        content: Text(
+          'You will be signed out and taken to the portal selection screen. '
+          'Continue?',
+          style: GoogleFonts.outfit(),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancel',
+                style: GoogleFonts.outfit(
+                    color: const Color(0xFF64748B),
+                    fontWeight: FontWeight.w600)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: kPrimaryGreen,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
+            ),
+            child: Text('Switch',
+                style: GoogleFonts.outfit(
+                    color: Colors.white, fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !context.mounted) return;
+    await ref.read(authProvider.notifier).logout();
+    if (!context.mounted) return;
+    Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
   }
 
   Widget _buildDetailSection(List<Widget> items) {

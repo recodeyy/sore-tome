@@ -172,6 +172,28 @@ class ResidentProfileScreen extends ConsumerWidget {
           ),
           const SizedBox(height: 24),
 
+          // ── Switch Portal ──
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () async {
+                await ref.read(authProvider.notifier).logout();
+                if (!context.mounted) return;
+                Navigator.pushNamedAndRemoveUntil(
+                    context, '/login', (route) => false);
+              },
+              style: OutlinedButton.styleFrom(
+                foregroundColor: kPrimaryGreen,
+                side: const BorderSide(color: kPrimaryGreen, width: 1.5),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              ),
+              icon: const Icon(Icons.swap_horiz_rounded),
+              label: Text('Switch Portal', style: GoogleFonts.outfit(fontWeight: FontWeight.w700)),
+            ),
+          ),
+          const SizedBox(height: 12),
+
           // ── Sign out ──
           SizedBox(
             width: double.infinity,
