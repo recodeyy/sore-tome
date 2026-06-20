@@ -1,11 +1,13 @@
 const crypto = require("crypto");
 const { logger } = require("../src/shared/Logger");
+const { requestContextStore } = require("../src/shared/RequestContext");
 
 /**
  * Enterprise Context Middleware
  * 1. Generates a unique requestId for every request.
  * 2. Instruments the response to log total processing time.
  * 3. Injects requestId into response headers for tracing.
+ * 4. Runs downstream handlers inside AsyncLocalStorage context.
  */
 function contextMiddleware(req, res, next) {
   const requestId = req.headers["x-request-id"] || crypto.randomUUID();
@@ -17,6 +19,13 @@ function contextMiddleware(req, res, next) {
 
   // Use a child logger to automatically include requestId in every log from this request context
   req.log = logger.child({ requestId });
+
+  const contextObj = {
+    requestId,
+    userId: "unauthenticated",
+    societyId: undefined,
+  };
+  req.context = contextObj;
 
   // On finish, log the completion and response time
   res.on("finish", () => {
@@ -32,7 +41,10 @@ function contextMiddleware(req, res, next) {
     }, "Request Completed");
   });
 
-  next();
+  requestContextStore.run(contextObj, () => {
+    next();
+  });
 }
 
 module.exports = { contextMiddleware };
+

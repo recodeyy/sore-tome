@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:sero/app/theme.dart';
-import 'package:sero/data/mock_data.dart';
 import 'package:sero/widgets/common/sero_search_bar.dart';
+import 'package:sero/widgets/common/async_state_views.dart';
 import 'package:sero/providers/shared/notification_provider.dart';
+import 'package:sero/providers/shared/notices_provider.dart';
 import 'package:sero/widgets/shared/admin_drawer.dart';
 
 /// Notices Screen — Communication Module (1/2)
@@ -18,6 +18,7 @@ class NoticesScreen extends ConsumerStatefulWidget {
 
 class _NoticesScreenState extends ConsumerState<NoticesScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  String _query = '';
 
   @override
   void initState() {
@@ -102,27 +103,59 @@ class _NoticesScreenState extends ConsumerState<NoticesScreen> with SingleTicker
             padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
             child: SeroSearchBar(
               hintText: 'Search notices...',
-              onChanged: (v) {},
+              onChanged: (v) => setState(() => _query = v.trim().toLowerCase()),
             ),
           ),
 
-          // ── Notices List ──
+          // ── Notices List (live) ──
           Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
-              itemCount: MockCommunicationData.notices.length,
-              itemBuilder: (context, index) {
-                final notice = MockCommunicationData.notices[index];
-                return _NoticeCard(
-                  title: notice['title'],
-                  message: notice['message'],
-                  date: notice['date'],
-                  category: notice['category'],
-                  icon: IconData(notice['icon'], fontFamily: 'MaterialIcons'),
-                  color: Color(notice['color']),
-                );
-              },
-            ),
+            child: ref.watch(noticesProvider).when(
+                  loading: () => const LiveLoadingView(label: 'Loading notices…'),
+                  error: (e, _) => LiveErrorView(
+                    error: e,
+                    onRetry: () =>
+                        ref.read(noticesProvider.notifier).fetchNotices(),
+                  ),
+                  data: (notices) {
+                    final filtered = _query.isEmpty
+                        ? notices
+                        : notices
+                            .where((n) =>
+                                n.title.toLowerCase().contains(_query) ||
+                                n.body.toLowerCase().contains(_query))
+                            .toList();
+                    if (filtered.isEmpty) {
+                      return const LiveEmptyView(
+                        icon: Icons.campaign_outlined,
+                        message: 'No notices yet.',
+                      );
+                    }
+                    return RefreshIndicator(
+                      onRefresh: () =>
+                          ref.read(noticesProvider.notifier).fetchNotices(),
+                      child: ListView.builder(
+                        padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
+                        itemCount: filtered.length,
+                        itemBuilder: (context, index) {
+                          final notice = filtered[index];
+                          final color = notice.tag == 'new'
+                              ? const Color(0xFF2563EB)
+                              : notice.tag == 'today'
+                                  ? const Color(0xFF059669)
+                                  : const Color(0xFF7C3AED);
+                          return _NoticeCard(
+                            title: notice.title,
+                            message: notice.body,
+                            date: _formatDate(notice.createdAt),
+                            category: notice.tag,
+                            icon: Icons.campaign_outlined,
+                            color: color,
+                          );
+                        },
+                      ),
+                    );
+                  },
+                ),
           ),
         ],
       ),
@@ -147,6 +180,14 @@ class _NoticesScreenState extends ConsumerState<NoticesScreen> with SingleTicker
         ),
       ),
     );
+  }
+
+  String _formatDate(DateTime d) {
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    ];
+    return '${d.day} ${months[d.month - 1]} ${d.year}';
   }
 }
 

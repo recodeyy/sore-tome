@@ -11,6 +11,17 @@ allprojects {
 }
 
 
+// Redirect build outputs to the project-root `build/` dir so the Flutter tool
+// can locate the produced APK/AAB (otherwise it looks in build/app/outputs while
+// Gradle writes to android/app/build/outputs and reports "couldn't find .apk").
+val newBuildDir: Directory = rootProject.layout.buildDirectory.dir("../../build").get()
+rootProject.layout.buildDirectory.value(newBuildDir)
+
+subprojects {
+    val newSubprojectBuildDir: Directory = newBuildDir.dir(project.name)
+    project.layout.buildDirectory.value(newSubprojectBuildDir)
+}
+
 subprojects {
     project.evaluationDependsOn(":app")
 }

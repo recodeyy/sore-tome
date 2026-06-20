@@ -1,0 +1,65 @@
+# Render Blueprint for the Sero / Society backend.
+#
+# Render reads render.yaml from the REPO ROOT (this file). The backend lives in
+# the society-backend/ subdirectory, which is selected via `rootDir`.
+#
+# One-click deploy: dashboard.render.com -> New -> Blueprint -> pick the repo.
+# It provisions the `sero-api` web service + `sero-postgres` managed database,
+# runs migrations via preDeployCommand, then starts the app.
+
+databases:
+  - name: sero-postgres
+    plan: free
+    # pgvector: Render Postgres supports `CREATE EXTENSION vector` which the
+    # migrations perform; no extra config needed here.
+
+services:
+  - type: web
+    name: sero-api
+    runtime: docker
+    plan: free
+    rootDir: society-backend
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    # Run knex migrations against the managed DB on every deploy, before the new
+    # version receives traffic. Runs from rootDir, so it finds knexfile.js.
+    preDeployCommand: "npx knex migrate:latest"
+    envVars:
+      # ── Auto-wired from the managed Postgres ──────────────────────────────
+      - key: DATABASE_URL
+        fromDatabase:
+          name: sero-postgres
+          property: connectionString
+
+      # ── Auto-set values ───────────────────────────────────────────────────
+      - key: NODE_ENV
+        value: production
+      - key: CORS_ORIGINS
+        value: "*"
+      - key: LOG_LEVEL
+        value: info
+      # Render-managed Postgres terminates SSL with a cert chain Node won't verify
+      # by default; knexfile production honours this flag.
+      - key: DB_SSL_REJECT_UNAUTHORIZED
+        value: "false"
+
+      # ── Auto-generated secret ─────────────────────────────────────────────
+      - key: JWT_SECRET
+        generateValue: true
+
+      # ── Optional / lazy: Redis is connected lazily by ioredis with retry and
+      #    failures degrade to "caching disabled" — NOT required at boot. Set a
+      #    REDIS_URL in the dashboard only if you add a managed Redis/Key Value.
+      - key: REDIS_URL
+        sync: false
+
+      # ── Firebase: paste these 4 values in the dashboard (sync: false) ──────
+      - key: FIREBASE_PROJECT_ID
+        sync: false
+      - key: FIREBASE_CLIENT_EMAIL
+        sync: false
+      - key: FIREBASE_PRIVATE_KEY
+        sync: false
+      - key: FIREBASE_STORAGE_BUCKET
+        sync: false

@@ -3,8 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sero/widgets/shared/premium_navbar.dart';
 import '../screens/resident/home/resident_home_screen.dart';
 import '../screens/resident/channels/resident_channels_screen.dart';
-import '../screens/resident/issues/resident_issues_screen.dart';
-import '../screens/shared/ai_chat/ai_chat_screen.dart';
+import '../screens/resident/amenities/amenities_home_screen.dart';
+import '../screens/resident/payments/bills_dues_screen.dart';
+import '../screens/resident/profile/resident_profile_screen.dart';
 import '../screens/resident/registration/registration_pending_screen.dart';
 import 'package:sero/providers/shared/auth_provider.dart';
 
@@ -27,22 +28,21 @@ class _ResidentShellState extends ConsumerState<ResidentShell> {
       return const RegistrationPendingScreen();
     }
 
-    // 0-Home (Pulse/Security), 1-Hub (Social/Market), 2-Support (Service/Records), 3-AI (Assistant)
+    // Design bottom nav (resident mockups): Home / Community / Amenities / Payments / Profile
     final pages = [
-      const ResidentHomeScreen(), 
+      const ResidentHomeScreen(),
       const ResidentChannelsScreen(),
-      const ResidentIssuesScreen(),
-      const AiChatScreen(
-        userRole: 'resident',
-        initialMessage: 'How can you help me today?',
-      ),
+      const AmenitiesHomeScreen(),
+      const BillsDuesScreen(),
+      const ResidentProfileScreen(),
     ];
 
     final navItems = [
       NavItemData(icon: Icons.home_outlined, activeIcon: Icons.home_rounded, label: 'Home'),
-      NavItemData(icon: Icons.chat_outlined, activeIcon: Icons.chat_rounded, label: 'Hub'),
-      NavItemData(icon: Icons.miscellaneous_services_outlined, activeIcon: Icons.miscellaneous_services_rounded, label: 'Support'),
-      NavItemData(icon: Icons.auto_awesome_outlined, activeIcon: Icons.auto_awesome_rounded, label: 'Assistant'),
+      NavItemData(icon: Icons.groups_outlined, activeIcon: Icons.groups_rounded, label: 'Community'),
+      NavItemData(icon: Icons.pool_outlined, activeIcon: Icons.pool_rounded, label: 'Amenities'),
+      NavItemData(icon: Icons.payments_outlined, activeIcon: Icons.payments_rounded, label: 'Payments'),
+      NavItemData(icon: Icons.person_outline, activeIcon: Icons.person_rounded, label: 'Profile'),
     ];
 
     return Scaffold(

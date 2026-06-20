@@ -17,6 +17,18 @@ class NotificationModel {
     this.isRead = false,
   });
 
+  factory NotificationModel.fromMap(Map<String, dynamic> map) {
+    return NotificationModel(
+      id: (map['id'] ?? '').toString(),
+      title: (map['title'] ?? '').toString(),
+      message: (map['message'] ?? map['body'] ?? '').toString(),
+      type: (map['type'] ?? 'info').toString(),
+      createdAt: DateTime.tryParse((map['created_at'] ?? map['createdAt'] ?? '').toString()) ??
+          DateTime.now(),
+      isRead: map['is_read'] == true || map['isRead'] == true,
+    );
+  }
+
   IconData get icon {
     switch (type) {
       case 'alert':

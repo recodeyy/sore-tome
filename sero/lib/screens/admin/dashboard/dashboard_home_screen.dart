@@ -1,16 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:sero/app/theme.dart';
-import 'package:sero/data/mock_data.dart';
 import 'package:sero/widgets/common/stat_card.dart';
 import 'package:sero/widgets/common/section_header.dart';
 import 'package:sero/widgets/common/quick_action_button.dart';
+import 'package:sero/widgets/common/async_state_views.dart';
 import 'package:sero/screens/admin/admin_more_screen.dart';
-import 'dashboard_revenue_screen.dart';
-import 'dashboard_insights_screen.dart';
-import 'dashboard_notices_screen.dart';
+import 'package:sero/screens/admin/governance/polls_dashboard_screen.dart';
+import 'package:sero/widgets/admin/admin_actions.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 import 'package:sero/providers/shared/notification_provider.dart';
+import 'package:sero/providers/shared/auth_provider.dart';
+import 'package:sero/providers/admin/dashboard_provider.dart';
+import 'package:sero/providers/admin/admin_domain_providers.dart';
 
 /// Dashboard Home Overview — Screen 1 of 4
 /// Shows greeting, today's overview, quick actions, and recent activity.
@@ -19,9 +22,23 @@ class DashboardHomeScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final dashboardAsync = ref.watch(dashboardProvider);
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
-      body: CustomScrollView(
+      body: dashboardAsync.when(
+        loading: () => const LiveLoadingView(label: 'Loading dashboard…'),
+        error: (e, _) => LiveErrorView(
+          error: e,
+          onRetry: () => ref.invalidate(dashboardProvider),
+        ),
+        data: (stats) {
+          final fin = stats.financials;
+          final currency = fin.currency;
+          String money(num v) => '$currency ${v.toStringAsFixed(0)}';
+          final pendingApprovals = stats.pendingApprovalsCount;
+          final openComplaints = stats.topIssues.length;
+          final recentUpdates = stats.recentUpdates;
+          return CustomScrollView(
         physics: const BouncingScrollPhysics(),
         slivers: [
           // ── Top App Bar ──
@@ -88,37 +105,47 @@ class DashboardHomeScreen extends ConsumerWidget {
                     ],
                   ),
                   const SizedBox(height: 20),
-                  Text(
-                    'Good Morning, ${MockDashboardData.adminName} 👋',
-                    style: GoogleFonts.outfit(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w500,
-                      color: Colors.white.withValues(alpha: 0.9),
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      Text(
-                        MockDashboardData.societyName,
-                        style: GoogleFonts.outfit(
-                          fontSize: 22,
-                          fontWeight: FontWeight.w800,
-                          color: Colors.white,
+                  Builder(builder: (_) {
+                    final hour = DateTime.now().hour;
+                    final greet = hour < 12
+                        ? 'Good Morning'
+                        : (hour < 17 ? 'Good Afternoon' : 'Good Evening');
+                    final adminName = ref.watch(authProvider).value?.name ?? 'Admin';
+                    final today = DateFormat('EEE, d MMM yyyy').format(DateTime.now());
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '$greet, $adminName 👋',
+                          style: GoogleFonts.outfit(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w500,
+                            color: Colors.white.withValues(alpha: 0.9),
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 4),
-                      const Icon(Icons.keyboard_arrow_down, color: Colors.white70, size: 20),
-                    ],
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    MockDashboardData.dateLabel,
-                    style: GoogleFonts.outfit(
-                      fontSize: 13,
-                      color: Colors.white.withValues(alpha: 0.6),
-                    ),
-                  ),
+                        const SizedBox(height: 4),
+                        Text(
+                          ref.watch(societyProfileProvider).maybeWhen(
+                                data: (d) => ((d['profile'] as Map?)?['name'] ?? 'My Society').toString(),
+                                orElse: () => 'My Society',
+                              ),
+                          style: GoogleFonts.outfit(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          today,
+                          style: GoogleFonts.outfit(
+                            fontSize: 13,
+                            color: Colors.white.withValues(alpha: 0.7),
+                          ),
+                        ),
+                      ],
+                    );
+                  }),
                 ],
               ),
             ),
@@ -163,7 +190,7 @@ class DashboardHomeScreen extends ConsumerWidget {
               childAspectRatio: 0.85,
               children: [
                 StatCard(
-                  value: MockDashboardData.pendingApprovals.toString(),
+                  value: pendingApprovals.toString(),
                   label: 'Pending\nApprovals',
                   icon: Icons.pending_actions,
                   iconColor: const Color(0xFFEA580C),
@@ -171,7 +198,7 @@ class DashboardHomeScreen extends ConsumerWidget {
                   onTap: () => Navigator.pushNamed(context, '/admin/dashboard/insights'),
                 ),
                 StatCard(
-                  value: MockDashboardData.openComplaints.toString(),
+                  value: openComplaints.toString(),
                   label: 'Open\nComplaints',
                   icon: Icons.report_outlined,
                   iconColor: const Color(0xFFDC2626),
@@ -179,7 +206,7 @@ class DashboardHomeScreen extends ConsumerWidget {
                   onTap: () => Navigator.pushNamed(context, '/admin/dashboard/insights'),
                 ),
                 StatCard(
-                  value: MockDashboardData.todaysCollection,
+                  value: money(fin.totalCollected),
                   label: "Today's\nCollection",
                   icon: Icons.account_balance_wallet,
                   iconColor: const Color(0xFF059669),
@@ -198,7 +225,7 @@ class DashboardHomeScreen extends ConsumerWidget {
               childAspectRatio: 0.85,
               children: [
                 StatCard(
-                  value: MockDashboardData.maintenanceDue,
+                  value: money(fin.balance),
                   label: 'Maintenance\nDue',
                   icon: Icons.calendar_today,
                   iconColor: const Color(0xFF7C3AED),
@@ -206,7 +233,7 @@ class DashboardHomeScreen extends ConsumerWidget {
                   onTap: () => Navigator.pushNamed(context, '/admin/dashboard/revenue'),
                 ),
                 StatCard(
-                  value: MockDashboardData.visitorsToday.toString(),
+                  value: '0',
                   label: 'Visitors\nToday',
                   icon: Icons.directions_walk,
                   iconColor: const Color(0xFF2563EB),
@@ -214,7 +241,7 @@ class DashboardHomeScreen extends ConsumerWidget {
                   onTap: () => Navigator.pushNamed(context, '/admin/dashboard/insights'),
                 ),
                 StatCard(
-                  value: MockDashboardData.staffOnDuty.toString(),
+                  value: '0',
                   label: 'Staff On\nDuty',
                   icon: Icons.badge,
                   iconColor: const Color(0xFF064E3B),
@@ -241,7 +268,7 @@ class DashboardHomeScreen extends ConsumerWidget {
                     ),
                   ),
                   GestureDetector(
-                    onTap: () {},
+                    onTap: () => AdminActions.comingSoon(context, 'Customizing quick actions'),
                     child: Text(
                       'Edit',
                       style: GoogleFonts.outfit(
@@ -270,7 +297,10 @@ class DashboardHomeScreen extends ConsumerWidget {
                      icon: Icons.poll_outlined,
                      label: 'New Poll',
                      bgColor: const Color(0xFF10B981),
-                     onTap: () {}, // Not implemented yet
+                     onTap: () => Navigator.push(
+                       context,
+                       MaterialPageRoute(builder: (_) => const PollsDashboardScreen()),
+                     ),
                    ),
                    QuickActionButton(
                      icon: Icons.person_add_outlined,
@@ -311,47 +341,40 @@ class DashboardHomeScreen extends ConsumerWidget {
           ),
           SliverPadding(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-            sliver: MockDashboardData.recentActivity.isEmpty
-                ? SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.all(40.0),
-                      child: Center(
-                        child: Column(
-                          children: [
-                            const Icon(Icons.history, color: Color(0xFF94A3B8), size: 48),
-                            const SizedBox(height: 16),
-                            Text(
-                              'No dashboard data available.',
-                              style: GoogleFonts.outfit(color: const Color(0xFF64748B)),
-                            ),
-                          ],
-                        ),
-                      ),
+            sliver: recentUpdates.isEmpty
+                ? const SliverToBoxAdapter(
+                    child: LiveEmptyView(
+                      icon: Icons.history,
+                      message: 'No recent activity yet.',
                     ),
                   )
                 : SliverList(
                     delegate: SliverChildBuilderDelegate(
                       (context, index) {
-                        final item = MockDashboardData.recentActivity[index];
+                        final item = recentUpdates[index];
                         return _RecentActivityTile(
-                          icon: _getActivityIcon(item['icon']!),
-                          iconColor: _getActivityColor(item['icon']!),
-                          title: item['title']!,
-                          subtitle: item['subtitle'] ?? '',
-                          amount: item['amount'],
-                          time: item['time']!,
+                          icon: _getActivityIcon(item.type),
+                          iconColor: _getActivityColor(item.type),
+                          title: item.title,
+                          subtitle: (item.body ?? item.description ?? '').toString(),
+                          amount: null,
+                          time: item.createdAt != null
+                              ? '${item.createdAt!.day}/${item.createdAt!.month}'
+                              : '',
                         );
                       },
-                      childCount: MockDashboardData.recentActivity.length,
+                      childCount: recentUpdates.length,
                     ),
                   ),
           ),
 
           const SliverToBoxAdapter(child: SizedBox(height: 100)),
         ],
+      );
+        },
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () {},
+        onPressed: () => Navigator.pushNamed(context, '/admin/communication/create-notice'),
         backgroundColor: kPrimaryGreen,
         child: const Icon(Icons.add, color: Colors.white),
       ),

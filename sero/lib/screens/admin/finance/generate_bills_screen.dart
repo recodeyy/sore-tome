@@ -1,24 +1,30 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:sero/app/theme.dart';
-import 'package:sero/data/mock_data.dart';
+import 'package:sero/providers/admin/admin_domain_providers.dart';
+import 'package:sero/widgets/common/async_state_views.dart';
+import 'package:sero/widgets/admin/admin_actions.dart';
 
 /// Generate Bills — Screen 2 of 6
 /// Multi-step form for creating new maintenance or utility bills.
-class GenerateBillsScreen extends StatefulWidget {
+class GenerateBillsScreen extends ConsumerStatefulWidget {
   const GenerateBillsScreen({super.key});
 
   @override
-  State<GenerateBillsScreen> createState() => _GenerateBillsScreenState();
+  ConsumerState<GenerateBillsScreen> createState() => _GenerateBillsScreenState();
 }
 
-class _GenerateBillsScreenState extends State<GenerateBillsScreen> {
-  String _selectedWing = MockFinanceData.wings[0];
-  String _selectedBlock = MockFinanceData.blocks[0];
-  String _selectedBillType = MockFinanceData.billTypes[0];
+class _GenerateBillsScreenState extends ConsumerState<GenerateBillsScreen> {
+  // Bill type is a domain enum (no endpoint).
+  static const List<String> _billTypes = ['Maintenance', 'Water', 'Electricity', 'Sinking Fund', 'Other'];
+
+  String? _selectedWing;
+  String? _selectedBlock;
+  String _selectedBillType = _billTypes[0];
 
   @override
   Widget build(BuildContext context) {
+    final structureAsync = ref.watch(structureSummaryProvider);
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
@@ -28,35 +34,55 @@ class _GenerateBillsScreenState extends State<GenerateBillsScreen> {
         leading: IconButton(icon: const Icon(Icons.arrow_back, color: Color(0xFF1E293B)), onPressed: () => Navigator.pop(context)),
         title: Text('Generate Bills', style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.w700, color: const Color(0xFF1E293B))),
         actions: [
-          IconButton(icon: const Icon(Icons.description_outlined, color: Color(0xFF1E293B)), onPressed: () {}),
+          IconButton(icon: const Icon(Icons.description_outlined, color: Color(0xFF1E293B)), onPressed: () => Navigator.pushNamed(context, '/admin/finance/history')),
         ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // ── Step Indicator ──
-            const _StepIndicator(currentStep: 1),
-            const SizedBox(height: 32),
+      body: structureAsync.when(
+        loading: () => const LiveLoadingView(label: 'Loading structure…'),
+        error: (e, _) => LiveErrorView(
+          error: e,
+          onRetry: () => ref.invalidate(structureSummaryProvider),
+        ),
+        data: (structure) {
+          final wings = ((structure['wings'] as List?) ?? const [])
+              .map((w) => (w is Map ? (w['name'] ?? w['wing_name'] ?? '') : '').toString())
+              .where((s) => s.isNotEmpty)
+              .toList();
+          final blocks = ((structure['blocks'] as List?) ?? const [])
+              .map((b) => (b is Map ? (b['name'] ?? b['block_name'] ?? '') : '').toString())
+              .where((s) => s.isNotEmpty)
+              .toList();
+          // Keep selection valid against live lists.
+          if (_selectedWing != null && !wings.contains(_selectedWing)) _selectedWing = null;
+          if (_selectedBlock != null && !blocks.contains(_selectedBlock)) _selectedBlock = null;
+          return SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // ── Step Indicator ──
+                const _StepIndicator(currentStep: 1),
+                const SizedBox(height: 32),
 
-            // ── Select Wing ──
-            _buildLabel('Select Wing'),
-            _buildDropdown(
-              value: _selectedWing,
-              items: MockFinanceData.wings,
-              onChanged: (v) => setState(() => _selectedWing = v!),
-            ),
-            const SizedBox(height: 16),
+                // ── Select Wing ──
+                _buildLabel('Select Wing'),
+                _buildDropdown(
+                  value: _selectedWing,
+                  hint: wings.isEmpty ? 'No wings available' : 'Select Wing',
+                  items: wings,
+                  onChanged: (v) => setState(() => _selectedWing = v),
+                ),
+                const SizedBox(height: 16),
 
-            // ── Select Block ──
-            _buildLabel('Select Block'),
-            _buildDropdown(
-              value: _selectedBlock,
-              items: MockFinanceData.blocks,
-              onChanged: (v) => setState(() => _selectedBlock = v!),
-            ),
-            const SizedBox(height: 16),
+                // ── Select Block ──
+                _buildLabel('Select Block'),
+                _buildDropdown(
+                  value: _selectedBlock,
+                  hint: blocks.isEmpty ? 'No blocks available' : 'Select Block',
+                  items: blocks,
+                  onChanged: (v) => setState(() => _selectedBlock = v),
+                ),
+                const SizedBox(height: 16),
 
             // ── Bill Month ──
             _buildLabel('Bill Month'),
@@ -72,7 +98,8 @@ class _GenerateBillsScreenState extends State<GenerateBillsScreen> {
             _buildLabel('Bill Type'),
             _buildDropdown(
               value: _selectedBillType,
-              items: MockFinanceData.billTypes,
+              hint: 'Select Bill Type',
+              items: _billTypes,
               onChanged: (v) => setState(() => _selectedBillType = v!),
             ),
             const SizedBox(height: 16),
@@ -102,7 +129,7 @@ class _GenerateBillsScreenState extends State<GenerateBillsScreen> {
               width: double.infinity,
               height: 52,
               child: ElevatedButton(
-                onPressed: () {},
+                onPressed: () => AdminActions.comingSoon(context, 'Bill generation'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF064E3B),
                   foregroundColor: Colors.white,
@@ -117,7 +144,7 @@ class _GenerateBillsScreenState extends State<GenerateBillsScreen> {
               width: double.infinity,
               height: 52,
               child: OutlinedButton(
-                onPressed: () {},
+                onPressed: () => AdminActions.comingSoon(context, 'Saving drafts'),
                 style: OutlinedButton.styleFrom(
                   side: const BorderSide(color: Color(0xFF064E3B)),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
@@ -126,8 +153,10 @@ class _GenerateBillsScreenState extends State<GenerateBillsScreen> {
               ),
             ),
             const SizedBox(height: 40),
-          ],
-        ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
@@ -139,7 +168,7 @@ class _GenerateBillsScreenState extends State<GenerateBillsScreen> {
     );
   }
 
-  Widget _buildDropdown({required String value, required List<String> items, required ValueChanged<String?> onChanged}) {
+  Widget _buildDropdown({required String? value, required List<String> items, required ValueChanged<String?> onChanged, String? hint}) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(
@@ -151,8 +180,9 @@ class _GenerateBillsScreenState extends State<GenerateBillsScreen> {
         child: DropdownButton<String>(
           value: value,
           isExpanded: true,
+          hint: hint == null ? null : Text(hint, style: GoogleFonts.outfit(fontSize: 14, color: const Color(0xFF94A3B8))),
           items: items.map((t) => DropdownMenuItem(value: t, child: Text(t, style: GoogleFonts.outfit(fontSize: 14, color: const Color(0xFF1E293B))))).toList(),
-          onChanged: onChanged,
+          onChanged: items.isEmpty ? null : onChanged,
           icon: const Icon(Icons.keyboard_arrow_down, color: Color(0xFF94A3B8)),
         ),
       ),

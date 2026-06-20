@@ -1,23 +1,27 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:sero/app/theme.dart';
-import 'package:sero/data/mock_data.dart';
+import 'package:sero/providers/admin/admin_domain_providers.dart';
+import 'package:sero/widgets/common/async_state_views.dart';
 import 'package:sero/widgets/common/sero_search_bar.dart';
 import 'package:sero/widgets/common/status_badge.dart';
+import 'package:sero/widgets/admin/admin_actions.dart';
 
-class SlotAllocationScreen extends StatefulWidget {
+class SlotAllocationScreen extends ConsumerStatefulWidget {
   const SlotAllocationScreen({super.key});
 
   @override
-  State<SlotAllocationScreen> createState() => _SlotAllocationScreenState();
+  ConsumerState<SlotAllocationScreen> createState() => _SlotAllocationScreenState();
 }
 
-class _SlotAllocationScreenState extends State<SlotAllocationScreen> {
+class _SlotAllocationScreenState extends ConsumerState<SlotAllocationScreen> {
   String selectedTab = 'Basement 1';
   Map<String, dynamic>? selectedSlot;
 
   @override
   Widget build(BuildContext context) {
+    final slotsAsync = ref.watch(parkingSlotsProvider);
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
@@ -37,7 +41,7 @@ class _SlotAllocationScreenState extends State<SlotAllocationScreen> {
           Stack(
             children: [
               IconButton(
-                onPressed: () {},
+                onPressed: () => Navigator.pushNamed(context, '/notifications'),
                 icon: const Icon(Icons.notifications_outlined, color: Color(0xFF1E293B)),
               ),
               Positioned(
@@ -114,21 +118,39 @@ class _SlotAllocationScreenState extends State<SlotAllocationScreen> {
 
           // ── Slot Grid ──
           Expanded(
-            child: GridView.builder(
-              padding: const EdgeInsets.symmetric(horizontal: 30),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 5,
-                mainAxisSpacing: 20,
-                crossAxisSpacing: 15,
-                childAspectRatio: 0.65,
+            child: slotsAsync.when(
+              loading: () => const LiveLoadingView(label: 'Loading slots…'),
+              error: (e, _) => LiveErrorView(
+                error: e,
+                onRetry: () => ref.invalidate(parkingSlotsProvider),
               ),
-              itemCount: MockParkingData.parkingSlots.length,
-              itemBuilder: (context, index) {
-                final slot = MockParkingData.parkingSlots[index];
-                final isSelected = selectedSlot?['id'] == slot['id'];
-                return GestureDetector(
-                  onTap: () => setState(() => selectedSlot = slot),
-                  child: _buildSlotIcon(slot, isSelected),
+              data: (slots) {
+                if (slots.isEmpty) {
+                  return const LiveEmptyView(
+                    icon: Icons.local_parking_rounded,
+                    message: 'No parking slots found.',
+                  );
+                }
+                return GridView.builder(
+                  padding: const EdgeInsets.symmetric(horizontal: 30),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 5,
+                    mainAxisSpacing: 20,
+                    crossAxisSpacing: 15,
+                    childAspectRatio: 0.65,
+                  ),
+                  itemCount: slots.length,
+                  itemBuilder: (context, index) {
+                    final slot = slots[index] is Map
+                        ? (slots[index] as Map).cast<String, dynamic>()
+                        : <String, dynamic>{};
+                    final isSelected = selectedSlot != null &&
+                        selectedSlot!['id'] == slot['id'];
+                    return GestureDetector(
+                      onTap: () => setState(() => selectedSlot = slot),
+                      child: _buildSlotIcon(slot, isSelected),
+                    );
+                  },
                 );
               },
             ),
@@ -209,20 +231,7 @@ class _SlotAllocationScreenState extends State<SlotAllocationScreen> {
   }
 
   Widget _buildSlotIcon(Map<String, dynamic> slot, bool isSelected) {
-    Color color;
-    switch (slot['status']) {
-      case 'Allocated':
-        color = const Color(0xFF059669);
-        break;
-      case 'Reserved':
-        color = const Color(0xFF2563EB);
-        break;
-      case 'Blocked':
-        color = const Color(0xFFF59E0B);
-        break;
-      default:
-        color = const Color(0xFF94A3B8);
-    }
+    final color = _getStatusColor((slot['status'] ?? '').toString());
 
     return Column(
       children: [
@@ -244,7 +253,7 @@ class _SlotAllocationScreenState extends State<SlotAllocationScreen> {
         ),
         const SizedBox(height: 4),
         Text(
-          slot['id'],
+          (slot['id'] ?? slot['slot_id'] ?? slot['code'] ?? '').toString(),
           style: GoogleFonts.outfit(
             fontSize: 9,
             fontWeight: FontWeight.w700,
@@ -256,7 +265,12 @@ class _SlotAllocationScreenState extends State<SlotAllocationScreen> {
   }
 
   Widget _buildSelectionPanel() {
-    bool hasData = selectedSlot?['flat'] != null;
+    final slot = selectedSlot ?? const {};
+    final flat = (slot['flat'] ?? slot['unit'] ?? '').toString();
+    final owner = (slot['owner'] ?? slot['allocated_to'] ?? '').toString();
+    final vehicle = (slot['vehicle'] ?? slot['vehicle_number'] ?? '').toString();
+    final type = (slot['type'] ?? slot['vehicle_type'] ?? '').toString();
+    final bool hasData = flat.isNotEmpty;
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
@@ -273,7 +287,7 @@ class _SlotAllocationScreenState extends State<SlotAllocationScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                selectedSlot!['id'],
+                (slot['id'] ?? slot['slot_id'] ?? slot['code'] ?? '').toString(),
                 style: GoogleFonts.outfit(
                   fontSize: 20,
                   fontWeight: FontWeight.w800,
@@ -281,8 +295,8 @@ class _SlotAllocationScreenState extends State<SlotAllocationScreen> {
                 ),
               ),
               StatusBadge(
-                label: selectedSlot!['status'],
-                bgColor: _getStatusColor(selectedSlot!['status']),
+                label: (slot['status'] ?? '').toString(),
+                bgColor: _getStatusColor((slot['status'] ?? '').toString()),
               ),
             ],
           ),
@@ -290,15 +304,15 @@ class _SlotAllocationScreenState extends State<SlotAllocationScreen> {
           if (hasData)
             Row(
               children: [
-                Expanded(child: _buildDetailItem('Allocated To', '${selectedSlot!['flat']} • ${selectedSlot!['owner']}')),
-                Expanded(child: _buildDetailItem('Vehicle No.', selectedSlot!['vehicle'])),
+                Expanded(child: _buildDetailItem('Allocated To', '$flat • $owner')),
+                Expanded(child: _buildDetailItem('Vehicle No.', vehicle)),
               ],
             ),
           if (hasData) const SizedBox(height: 16),
           if (hasData)
             Row(
               children: [
-                Expanded(child: _buildDetailItem('Type', selectedSlot!['type'])),
+                Expanded(child: _buildDetailItem('Type', type)),
                 const Spacer(),
                 const Icon(Icons.chevron_right, color: Color(0xFF94A3B8)),
               ],
@@ -312,7 +326,7 @@ class _SlotAllocationScreenState extends State<SlotAllocationScreen> {
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
-              onPressed: () {},
+              onPressed: () => AdminActions.comingSoon(context, 'Slot allocation'),
               child: const Text('Allocate Slot'),
             ),
           ),
@@ -343,12 +357,13 @@ class _SlotAllocationScreenState extends State<SlotAllocationScreen> {
   }
 
   Color _getStatusColor(String status) {
-    switch (status) {
-      case 'Allocated':
+    switch (status.toLowerCase()) {
+      case 'allocated':
+      case 'occupied':
         return const Color(0xFF059669);
-      case 'Reserved':
+      case 'reserved':
         return const Color(0xFF2563EB);
-      case 'Blocked':
+      case 'blocked':
         return const Color(0xFFF59E0B);
       default:
         return const Color(0xFF94A3B8);

@@ -6,6 +6,10 @@ const { logger } = require("../src/shared/Logger");
  * Suspect activity includes hitting multiple 404s or consecutive validation failures.
  */
 async function abuseProtection(req, res, next) {
+  // LOAD-TEST: a load generator legitimately produces attack-like volume from a
+  // few IPs. Skip abuse blocking so the test isn't self-throttled. Never set
+  // LOADTEST_MODE in production.
+  if (process.env.LOADTEST_MODE === "true") return next();
   const ip = req.ip || req.headers["x-forwarded-for"] || "unknown";
   
   // 1. Fail-Safe: If Redis is down, we must NOT block valid traffic

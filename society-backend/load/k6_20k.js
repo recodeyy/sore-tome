@@ -5,11 +5,11 @@
 //
 // 20K VUs is NOT feasible on a single host. Use k6 Cloud / distributed runners,
 // or scale down with -e MAX_VUS=300 -e RT_VUS=300 -e BURST_RPS=150 to dry-run.
-import { buildOptions, mixed, realtime } from './k6_scale.js';
+import { buildOptions, mixed, realtime, setup } from './k6_scale.js';
 
 export const options = buildOptions('20k');
-export { mixed, realtime };
+export { mixed, realtime, setup };
 
-export default function () {
-  mixed();
+export default function (data) {
+  mixed(data);
 }

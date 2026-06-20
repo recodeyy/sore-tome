@@ -30,6 +30,9 @@ export const tenantMiddleware = (req: Request, res: Response, next: NextFunction
 
   // Inject societyId into the request object for easy access in routes/services
   tReq.societyId = societyId;
+  if ((tReq as any).context) {
+    (tReq as any).context.societyId = societyId;
+  }
   
   next();
 };

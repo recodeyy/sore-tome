@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:sero/app/theme.dart';
-import 'package:sero/data/mock_data.dart';
+import 'package:sero/providers/admin/admin_domain_providers.dart';
+import 'package:sero/widgets/common/async_state_views.dart';
 import 'package:sero/widgets/common/section_header.dart';
 import 'package:sero/widgets/common/quick_action_button.dart';
 import 'package:sero/providers/shared/notification_provider.dart';
 import 'package:sero/widgets/shared/admin_drawer.dart';
+import 'package:sero/widgets/admin/admin_actions.dart';
 
 /// Staff Dashboard Screen — Staff Module (1/2)
 /// Key metrics overview for staff attendance, leaves, payroll, and activities.
@@ -16,6 +18,7 @@ class StaffDashboardScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final unreadCount = ref.watch(notificationProvider.notifier).unreadCount;
+    final staffAsync = ref.watch(staffDashboardProvider);
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       drawer: const AdminDrawer(),
@@ -54,7 +57,35 @@ class StaffDashboardScreen extends ConsumerWidget {
           const SizedBox(width: 8),
         ],
       ),
-      body: CustomScrollView(
+      body: staffAsync.when(
+        loading: () => const LiveLoadingView(label: 'Loading staff data…'),
+        error: (e, _) => LiveErrorView(
+          error: e,
+          onRetry: () => ref.invalidate(staffDashboardProvider),
+        ),
+        data: (data) {
+          final staff = (data['staff'] as List?) ?? const [];
+          final attendanceRaw = data['attendance'];
+          final attendance =
+              attendanceRaw is Map ? attendanceRaw.cast<String, dynamic>() : const <String, dynamic>{};
+          String statusOf(dynamic s) =>
+              (s is Map ? (s['status'] ?? '').toString() : '').toLowerCase();
+          final totalStaff = staff.length;
+          final activeStaff = staff
+              .where((s) => statusOf(s) == 'active' || statusOf(s).isEmpty)
+              .length;
+          final int presentToday = (attendance['present'] ?? attendance['present_today'] ?? 0) is num
+              ? ((attendance['present'] ?? attendance['present_today'] ?? 0) as num).toInt()
+              : 0;
+          final int onLeave = (attendance['on_leave'] ?? attendance['leave'] ?? 0) is num
+              ? ((attendance['on_leave'] ?? attendance['leave'] ?? 0) as num).toInt()
+              : 0;
+          final presentPercent =
+              totalStaff == 0 ? 0 : ((presentToday / totalStaff) * 100).round();
+          final onLeavePercent =
+              totalStaff == 0 ? 0 : ((onLeave / totalStaff) * 100).round();
+          final recentActivity = (attendance['recent_activity'] as List?) ?? const [];
+          return CustomScrollView(
         physics: const BouncingScrollPhysics(),
         slivers: [
           // ── Summary Hero Card ──
@@ -81,7 +112,7 @@ class StaffDashboardScreen extends ConsumerWidget {
                             Text('Total Staff', style: GoogleFonts.outfit(fontSize: 13, color: Colors.white.withValues(alpha: 0.7))),
                             const SizedBox(height: 4),
                             Text(
-                              MockStaffData.totalStaff.toString(),
+                              totalStaff.toString(),
                               style: GoogleFonts.outfit(fontSize: 32, fontWeight: FontWeight.w800, color: Colors.white),
                             ),
                           ],
@@ -97,7 +128,7 @@ class StaffDashboardScreen extends ConsumerWidget {
                               ],
                             ),
                             Text(
-                              MockStaffData.activeStaff.toString(),
+                              activeStaff.toString(),
                               style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.w700, color: Colors.white),
                             ),
                           ],
@@ -109,9 +140,9 @@ class StaffDashboardScreen extends ConsumerWidget {
                     const SizedBox(height: 16),
                     Row(
                       children: [
-                        _SummaryStat(label: 'Present Today', value: MockStaffData.presentToday.toString(), percent: '${MockStaffData.presentPercent}%', color: const Color(0xFF10B981)),
+                        _SummaryStat(label: 'Present Today', value: presentToday.toString(), percent: '$presentPercent%', color: const Color(0xFF10B981)),
                         Container(width: 1, height: 32, color: Colors.white.withValues(alpha: 0.1)),
-                        _SummaryStat(label: 'On Leave', value: MockStaffData.onLeave.toString(), percent: '${MockStaffData.onLeavePercent}%', color: const Color(0xFFFB923C)),
+                        _SummaryStat(label: 'On Leave', value: onLeave.toString(), percent: '$onLeavePercent%', color: const Color(0xFFFB923C)),
                       ],
                     ),
                   ],
@@ -136,10 +167,10 @@ class StaffDashboardScreen extends ConsumerWidget {
               crossAxisSpacing: 10,
               childAspectRatio: 1.5,
               children: [
-                _OverviewCard(label: 'Attendance', value: '92.4%', icon: Icons.assignment_turned_in_outlined, color: const Color(0xFF059669)),
-                _OverviewCard(label: 'Leaves', value: '8', icon: Icons.description_outlined, color: const Color(0xFF2563EB)),
-                _OverviewCard(label: 'Pending Payroll', value: '₹ 2,45,780', icon: Icons.payments_outlined, color: const Color(0xFFEA580C)),
-                _OverviewCard(label: 'Overtime Hours', value: '120h', icon: Icons.more_time_outlined, color: const Color(0xFF7C3AED)),
+                _OverviewCard(label: 'Attendance', value: '$presentPercent%', icon: Icons.assignment_turned_in_outlined, color: const Color(0xFF059669)),
+                _OverviewCard(label: 'Leaves', value: onLeave.toString(), icon: Icons.description_outlined, color: const Color(0xFF2563EB)),
+                _OverviewCard(label: 'Pending Payroll', value: '₹ ${attendance['pending_payroll'] ?? 0}', icon: Icons.payments_outlined, color: const Color(0xFFEA580C)),
+                _OverviewCard(label: 'Overtime Hours', value: '${attendance['overtime_hours'] ?? 0}h', icon: Icons.more_time_outlined, color: const Color(0xFF7C3AED)),
               ],
             ),
           ),
@@ -156,10 +187,10 @@ class StaffDashboardScreen extends ConsumerWidget {
               crossAxisSpacing: 10,
               childAspectRatio: 0.85,
               children: [
-                QuickActionButton(label: 'Mark\nAttendance', icon: Icons.check_circle_outline, bgColor: const Color(0xFF059669), onTap: () {}),
-                QuickActionButton(label: 'Leave\nRequests', icon: Icons.email_outlined, bgColor: const Color(0xFFEA580C), onTap: () {}),
-                QuickActionButton(label: 'Duty\nRoster', icon: Icons.calendar_view_day_outlined, bgColor: const Color(0xFF7C3AED), onTap: () {}),
-                QuickActionButton(label: 'Payroll\nSummary', icon: Icons.account_balance_outlined, bgColor: const Color(0xFF2563EB), onTap: () {}),
+                QuickActionButton(label: 'Mark\nAttendance', icon: Icons.check_circle_outline, bgColor: const Color(0xFF059669), onTap: () => AdminActions.comingSoon(context, 'Marking attendance')),
+                QuickActionButton(label: 'Leave\nRequests', icon: Icons.email_outlined, bgColor: const Color(0xFFEA580C), onTap: () => AdminActions.comingSoon(context, 'Leave requests')),
+                QuickActionButton(label: 'Duty\nRoster', icon: Icons.calendar_view_day_outlined, bgColor: const Color(0xFF7C3AED), onTap: () => AdminActions.comingSoon(context, 'Duty roster')),
+                QuickActionButton(label: 'Payroll\nSummary', icon: Icons.account_balance_outlined, bgColor: const Color(0xFF2563EB), onTap: () => AdminActions.comingSoon(context, 'Payroll summary')),
               ],
             ),
           ),
@@ -174,35 +205,36 @@ class StaffDashboardScreen extends ConsumerWidget {
           ),
           SliverPadding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
-            sliver: MockStaffData.recentActivity.isEmpty
-                ? SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.all(40.0),
-                      child: Center(
-                        child: Text(
-                          'No staff activity found.',
-                          style: GoogleFonts.outfit(color: const Color(0xFF64748B)),
-                        ),
-                      ),
+            sliver: recentActivity.isEmpty
+                ? const SliverToBoxAdapter(
+                    child: LiveEmptyView(
+                      icon: Icons.history_rounded,
+                      message: 'No staff activity found.',
                     ),
                   )
                 : SliverList(
                     delegate: SliverChildBuilderDelegate(
                       (context, index) {
-                        final act = MockStaffData.recentActivity[index];
+                        final act = recentActivity[index] is Map
+                            ? recentActivity[index] as Map
+                            : const {};
                         return _ActivityTile(
-                          title: act['title'],
-                          desc: act['desc'],
-                          type: act['type'],
-                          color: Color(act['color']),
+                          title: (act['title'] ?? '').toString(),
+                          desc: (act['desc'] ?? '').toString(),
+                          type: (act['type'] ?? '').toString(),
+                          color: act['color'] is int
+                              ? Color(act['color'] as int)
+                              : const Color(0xFF059669),
                         );
                       },
-                      childCount: MockStaffData.recentActivity.length,
+                      childCount: recentActivity.length,
                     ),
                   ),
           ),
           const SliverToBoxAdapter(child: SizedBox(height: 100)),
         ],
+          );
+        },
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => Navigator.pushNamed(context, '/admin/staff/list'),

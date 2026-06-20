@@ -1,8 +1,19 @@
 import 'package:flutter/material.dart';
 import 'theme.dart';
 import 'main_shell.dart';
-import '../screens/shared/auth/login_screen.dart';
+import 'admin_shell.dart';
+import 'staff_shell.dart';
+import 'super_admin_shell.dart';
+import '../screens/shared/auth/role_login_landing_screen.dart';
+import '../screens/shared/auth/role_login_form_screen.dart';
+import '../screens/shared/auth/workspace_selector_screen.dart';
+import '../screens/shared/auth/account_state_screen.dart';
+import '../screens/shared/auth/auth_challenge_screen.dart';
 import '../screens/shared/auth/register_screen.dart';
+import '../screens/shared/ai/ai_society_pulse_screen.dart';
+import '../screens/shared/ai/complaint_intelligence_screen.dart';
+import '../screens/shared/ai/predictive_maintenance_screen.dart';
+import '../screens/shared/ai/financial_anomaly_screen.dart';
 import '../screens/resident/issues/post_issue_screen.dart';
 import '../screens/admin/post_notice_screen.dart';
 import '../screens/admin/manage_issues_screen.dart';
@@ -43,6 +54,22 @@ import '../screens/shared/profile/profile_screen.dart';
 import '../screens/shared/profile/edit_profile_screen.dart';
 import '../screens/shared/settings/settings_screen.dart';
 
+import '../screens/super_admin/kyc_verification_screen.dart';
+import '../screens/super_admin/setup_progress_screen.dart';
+import '../screens/super_admin/feature_controls_screen.dart';
+import '../screens/super_admin/api_access_screen.dart';
+import '../screens/super_admin/audit_log_screen.dart';
+import '../screens/super_admin/system_health_screen.dart';
+import '../screens/super_admin/impersonation_screen.dart';
+import '../screens/super_admin/super_admin_plans_screen.dart';
+import '../screens/super_admin/super_admin_announcements_screen.dart';
+import '../screens/super_admin/super_admin_reports_screen.dart';
+import '../screens/super_admin/super_admin_analytics_screen.dart';
+import '../screens/super_admin/super_admin_users_screen.dart';
+import '../screens/super_admin/super_admin_approvals_screen.dart';
+import '../screens/super_admin/super_admin_settings_screen.dart';
+import '../screens/super_admin/super_admin_support_screen.dart';
+
 class SocietyApp extends StatelessWidget {
   const SocietyApp({super.key});
 
@@ -55,15 +82,44 @@ class SocietyApp extends StatelessWidget {
       initialRoute: '/splash',
       routes: {
         '/splash':            (_) => const SplashScreen(),
-        '/login':             (_) => const LoginScreen(),
+        '/login':             (_) => const RoleLoginLandingScreen(),
+        '/login/super-admin': (_) => const RoleLoginFormScreen(portal: 'super-admin'),
+        '/login/admin':       (_) => const RoleLoginFormScreen(portal: 'admin'),
+        '/login/staff':       (_) => const RoleLoginFormScreen(portal: 'staff'),
+        '/login/resident':    (_) => const RoleLoginFormScreen(portal: 'resident'),
+        '/workspace-select':  (_) => const WorkspaceSelectorScreen(),
         '/register':          (_) => const RegisterScreen(),
         
         // --- PROTECTED ROUTES ---
         '/home':              (_) => const AuthGuard(child: MainShell()),
         '/admin':             (_) => const AuthGuard(
-                                      allowedRoles: ['main_admin', 'treasurer', 'secretary'],
-                                      child: MainShell(),
+                                      allowedRoles: ['main_admin', 'admin', 'treasurer', 'secretary', 'committee_member'],
+                                      child: AdminShell(),
                                     ),
+        '/staff':             (_) => const AuthGuard(
+                                      allowedRoles: ['guard', 'security_manager', 'facility_manager', 'supervisor', 'maintenance_staff', 'housekeeping_staff', 'reception_staff', 'parcel_desk_staff', 'staff'],
+                                      child: StaffShell(),
+                                    ),
+        '/super-admin':       (_) => const AuthGuard(
+                                      allowedRoles: ['super_admin', 'superadmin', 'platform_owner', 'platform_operations', 'platform_support', 'platform_security'],
+                                      child: SuperAdminShell(),
+                                    ),
+        '/super-admin/kyc':           (_) => const AuthGuard(allowedRoles: ['super_admin', 'superadmin'], child: KycVerificationScreen()),
+        '/super-admin/setup-progress':(_) => const AuthGuard(allowedRoles: ['super_admin', 'superadmin'], child: SetupProgressScreen()),
+        '/super-admin/features':      (_) => const AuthGuard(allowedRoles: ['super_admin', 'superadmin'], child: FeatureControlsScreen()),
+        '/super-admin/api-access':    (_) => const AuthGuard(allowedRoles: ['super_admin', 'superadmin'], child: ApiAccessScreen()),
+        '/super-admin/audit':         (_) => const AuthGuard(allowedRoles: ['super_admin', 'superadmin'], child: AuditLogScreen()),
+        '/super-admin/system-health': (_) => const AuthGuard(allowedRoles: ['super_admin', 'superadmin'], child: SystemHealthScreen()),
+        '/super-admin/impersonation': (_) => const AuthGuard(allowedRoles: ['super_admin', 'superadmin'], child: ImpersonationScreen()),
+        '/super-admin/plans':         (_) => const AuthGuard(allowedRoles: ['super_admin', 'superadmin'], child: SuperAdminPlansScreen()),
+        '/super-admin/subscriptions': (_) => const AuthGuard(allowedRoles: ['super_admin', 'superadmin'], child: SuperAdminPlansScreen()),
+        '/super-admin/announcements': (_) => const AuthGuard(allowedRoles: ['super_admin', 'superadmin'], child: SuperAdminAnnouncementsScreen()),
+        '/super-admin/reports':       (_) => const AuthGuard(allowedRoles: ['super_admin', 'superadmin'], child: SuperAdminReportsScreen()),
+        '/super-admin/analytics':     (_) => const AuthGuard(allowedRoles: ['super_admin', 'superadmin'], child: SuperAdminAnalyticsScreen()),
+        '/super-admin/users':         (_) => const AuthGuard(allowedRoles: ['super_admin', 'superadmin'], child: SuperAdminUsersScreen()),
+        '/super-admin/approvals':     (_) => const AuthGuard(allowedRoles: ['super_admin', 'superadmin'], child: SuperAdminApprovalsScreen()),
+        '/super-admin/settings':      (_) => const AuthGuard(allowedRoles: ['super_admin', 'superadmin'], child: SuperAdminSettingsScreen()),
+        '/super-admin/support':       (_) => const AuthGuard(allowedRoles: ['super_admin', 'superadmin'], child: SuperAdminSupportScreen()),
         '/post-issue':        (_) => const AuthGuard(child: PostIssueScreen()),
         '/admin/post-notice': (_) => const AuthGuard(
                                       allowedRoles: ['main_admin', 'secretary'],
@@ -121,16 +177,105 @@ class SocietyApp extends StatelessWidget {
         '/admin/assets':              (_) => const AuthGuard(child: AssetsDashboardScreen()),
         '/admin/assets/details':      (_) => const AuthGuard(child: LiftDetailsScreen()),
 
+        // --- AI INNOVATION ROUTES ---
+        '/ai/pulse':                  (_) => const AuthGuard(
+                                              allowedRoles: ['main_admin', 'admin', 'treasurer', 'secretary', 'committee_member', 'super_admin', 'superadmin'],
+                                              child: AISocietyPulseScreen(),
+                                            ),
+        '/ai/complaint-intelligence': (_) => const AuthGuard(
+                                              allowedRoles: ['main_admin', 'admin', 'secretary', 'committee_member', 'super_admin', 'superadmin'],
+                                              child: ComplaintIntelligenceScreen(),
+                                            ),
+        '/ai/maintenance':            (_) => const AuthGuard(
+                                              allowedRoles: ['main_admin', 'admin', 'committee_member', 'super_admin', 'superadmin'],
+                                              child: PredictiveMaintenanceScreen(),
+                                            ),
+        '/ai/financial-anomaly':      (_) => const AuthGuard(
+                                              allowedRoles: ['main_admin', 'admin', 'treasurer', 'super_admin', 'superadmin'],
+                                              child: FinancialAnomalyScreen(),
+                                            ),
+
         // --- COMMON ROUTES ---
         '/notifications':             (_) => const AuthGuard(child: NotificationsScreen()),
         '/profile':                   (_) => const AuthGuard(child: ProfileScreen()),
         '/profile/edit':              (_) => const AuthGuard(child: EditProfileScreen()),
         '/settings':                  (_) => const AuthGuard(child: SettingsScreen()),
       },
+      // Safety net: any route that isn't registered renders a friendly
+      // "coming soon" screen instead of crashing to a red error page.
+      onUnknownRoute: (settings) => MaterialPageRoute(
+        builder: (_) => _ComingSoonScreen(routeName: settings.name ?? ''),
+        settings: settings,
+      ),
     );
   }
 }
 
+class _ComingSoonScreen extends StatelessWidget {
+  final String routeName;
+
+  const _ComingSoonScreen({required this.routeName});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: kSlateBg,
+      appBar: AppBar(
+        backgroundColor: kSuperGreen,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        flexibleSpace: const DecoratedBox(
+          decoration: BoxDecoration(gradient: kSuperHeaderGradient),
+        ),
+        title: const Text('Coming Soon'),
+      ),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 84,
+                height: 84,
+                decoration: BoxDecoration(
+                  color: kSuperGreenSoft,
+                  borderRadius: BorderRadius.circular(24),
+                ),
+                child: const Icon(Icons.rocket_launch_outlined,
+                    color: kSuperGreen, size: 40),
+              ),
+              const SizedBox(height: 20),
+              const Text(
+                'This module is on the way',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF1E293B),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                routeName.isEmpty
+                    ? 'The screen you tried to open is not available yet.'
+                    : 'The screen "$routeName" is not available yet.',
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 13, color: Color(0xFF64748B)),
+              ),
+              const SizedBox(height: 24),
+              ElevatedButton(
+                onPressed: () => Navigator.of(context).maybePop(),
+                style: ElevatedButton.styleFrom(backgroundColor: kSuperGreen),
+                child: const Text('Go Back'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 
 

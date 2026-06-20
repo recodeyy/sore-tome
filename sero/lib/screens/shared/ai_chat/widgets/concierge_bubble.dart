@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:sero/app/theme.dart';
 import 'package:sero/services/ai_service.dart';
@@ -24,12 +25,15 @@ class ConciergeBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isAdmin = userRole == 'admin';
-    final content =
-        message['reply'] ??
+    final content = message['reply'] ??
         message['content'] ??
         message['partialData'] ??
         'No response content';
     final isDraft = message['type'] == 'draft' || (message['isDraft'] ?? false);
+    final isError = message['type'] == 'error' ||
+        message['type'] == 'system_unavailable' ||
+        message['status'] == 'error';
+    final requestId = message['requestId']?.toString();
 
     if (isUser) {
       return Padding(
@@ -111,25 +115,73 @@ class ConciergeBubble extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: isError ? const Color(0xFFFFFBFB) : Colors.white,
               borderRadius: const BorderRadius.only(
                 topRight: Radius.circular(24),
                 bottomRight: Radius.circular(24),
                 bottomLeft: Radius.circular(24),
               ),
-              border: Border.all(color: kSlateBorder.withValues(alpha: 0.5)),
+              border: Border.all(
+                color: isError
+                    ? const Color(0xFFFECACA)
+                    : kSlateBorder.withValues(alpha: 0.5),
+              ),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                if (isError) ...[
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.error_outline_rounded,
+                        size: 16,
+                        color: Color(0xFFEF4444),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'COPILOT REQUEST ERROR',
+                        style: GoogleFonts.outfit(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          color: const Color(0xFF991B1B),
+                          letterSpacing: 1,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                ],
                 Text(
                   content,
                   style: GoogleFonts.outfit(
                     fontSize: 14,
-                    color: const Color(0xFF334155),
+                    color: isError
+                        ? const Color(0xFF7F1D1D)
+                        : const Color(0xFF334155),
                     height: 1.5,
                   ),
                 ),
+                if (requestId != null) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: Text(
+                      'Request ID: $requestId',
+                      style: GoogleFonts.outfit(
+                        fontSize: 10,
+                        color: const Color(0xFF64748B),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
                 if (message['warning'] != null) ...[
                   const SizedBox(height: 8),
                   Container(
@@ -206,20 +258,78 @@ class ConciergeBubble extends StatelessWidget {
                   const SizedBox(height: 16),
                   const Divider(height: 1, color: Color(0xFFF1F5F9)),
                   const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: (message['sources'] as List)
-                        .map(
-                          (s) => SourcesBadge(
-                            file: s['file']?.toString() ?? 'Unknown',
-                            page: s['page']?.toString() ?? '0',
-                            snippet: s['snippet']?.toString(),
+                  Theme(
+                    data: Theme.of(context).copyWith(
+                      dividerColor: Colors.transparent,
+                    ),
+                    child: ExpansionTile(
+                      tilePadding: EdgeInsets.zero,
+                      childrenPadding: EdgeInsets.zero,
+                      initiallyExpanded: true,
+                      title: Text(
+                        'How this answer was found',
+                        style: GoogleFonts.outfit(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: const Color(0xFF64748B),
+                        ),
+                      ),
+                      children: [
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: (message['sources'] as List)
+                                .map(
+                                  (s) => SourcesBadge(
+                                    file: s['file']?.toString() ?? 'Unknown',
+                                    page: s['page']?.toString() ?? '0',
+                                    snippet: s['snippet']?.toString(),
+                                  ),
+                                )
+                                .toList(),
                           ),
-                        )
-                        .toList(),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    _BubbleIconButton(
+                      icon: Icons.copy_rounded,
+                      tooltip: 'Copy response',
+                      onTap: () {
+                        Clipboard.setData(
+                          ClipboardData(text: content.toString()),
+                        );
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Response copied')),
+                        );
+                      },
+                    ),
+                    const SizedBox(width: 8),
+                    _BubbleIconButton(
+                      icon: Icons.thumb_up_alt_outlined,
+                      tooltip: 'Helpful',
+                      onTap: () => _showFeedback(
+                        context,
+                        'Thanks for the feedback.',
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    _BubbleIconButton(
+                      icon: Icons.thumb_down_alt_outlined,
+                      tooltip: 'Not helpful',
+                      onTap: () => _showFeedback(
+                        context,
+                        'Feedback noted.',
+                      ),
+                    ),
+                  ],
+                ),
               ],
             ),
           ),
@@ -232,6 +342,44 @@ class ConciergeBubble extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  void _showFeedback(BuildContext context, String message) {
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
+  }
+}
+
+class _BubbleIconButton extends StatelessWidget {
+  const _BubbleIconButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          width: 32,
+          height: 32,
+          decoration: BoxDecoration(
+            color: const Color(0xFFF8FAFC),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+          ),
+          child: Icon(icon, size: 15, color: const Color(0xFF64748B)),
+        ),
       ),
     );
   }
@@ -295,14 +443,3 @@ class SourcesBadge extends StatelessWidget {
     );
   }
 }
-
-
-
-
-
-
-
-
-
-
-

@@ -1,20 +1,71 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:sero/app/theme.dart';
-import 'package:sero/data/mock_data.dart';
+import 'package:sero/providers/shared/notices_provider.dart';
+import 'package:sero/widgets/admin/admin_actions.dart';
 
-/// Create Notice Screen — Communication Module (2/2)
-/// Form-based screen for drafting and publishing society notices.
-class CreateNoticeScreen extends StatefulWidget {
+/// Fixed notice category enum (design/config constant — allowed static content).
+/// `value` is sent to the backend `type` field.
+const List<Map<String, dynamic>> _kNoticeCategories = [
+  {'label': 'General', 'value': 'info', 'icon': Icons.info_outline, 'color': 0xFF7C3AED},
+  {'label': 'Urgent', 'value': 'new', 'icon': Icons.warning_amber_outlined, 'color': 0xFFEF4444},
+  {'label': 'Event', 'value': 'today', 'icon': Icons.event_outlined, 'color': 0xFF059669},
+];
+
+/// Create Notice Screen — Communication Module (2/2).
+/// Publishes to the live Postgres backend via [NoticesNotifier.addNotice]
+/// (POST /notices-v2).
+class CreateNoticeScreen extends ConsumerStatefulWidget {
   const CreateNoticeScreen({super.key});
 
   @override
-  State<CreateNoticeScreen> createState() => _CreateNoticeScreenState();
+  ConsumerState<CreateNoticeScreen> createState() => _CreateNoticeScreenState();
 }
 
-class _CreateNoticeScreenState extends State<CreateNoticeScreen> {
+class _CreateNoticeScreenState extends ConsumerState<CreateNoticeScreen> {
+  final _titleController = TextEditingController();
+  final _messageController = TextEditingController();
   String _selectedCategory = 'General';
   String _selectedVisibility = 'All Members';
+  bool _submitting = false;
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _messageController.dispose();
+    super.dispose();
+  }
+
+  String get _selectedType => _kNoticeCategories
+      .firstWhere((c) => c['label'] == _selectedCategory)['value'] as String;
+
+  Future<void> _publish() async {
+    final title = _titleController.text.trim();
+    final body = _messageController.text.trim();
+    if (title.isEmpty || body.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Title and message are required.')),
+      );
+      return;
+    }
+    setState(() => _submitting = true);
+    try {
+      await ref.read(noticesProvider.notifier).addNotice(title, body, _selectedType);
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('Notice published.')));
+        Navigator.pop(context);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to publish: ${e.toString().replaceFirst('Exception: ', '')}')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -27,7 +78,7 @@ class _CreateNoticeScreenState extends State<CreateNoticeScreen> {
         leading: IconButton(icon: const Icon(Icons.arrow_back, color: Color(0xFF1E293B)), onPressed: () => Navigator.pop(context)),
         title: Text('Create Notice', style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.w700, color: const Color(0xFF1E293B))),
         actions: [
-          IconButton(icon: const Icon(Icons.notifications_outlined, size: 24, color: Color(0xFF1E293B)), onPressed: () {}),
+          IconButton(icon: const Icon(Icons.notifications_outlined, size: 24, color: Color(0xFF1E293B)), onPressed: () => Navigator.pushNamed(context, '/notifications')),
           const SizedBox(width: 8),
         ],
       ),
@@ -39,6 +90,7 @@ class _CreateNoticeScreenState extends State<CreateNoticeScreen> {
             // ── Title Field ──
             _buildLabel('Title', isRequired: true),
             TextField(
+              controller: _titleController,
               decoration: InputDecoration(
                 hintText: 'Enter notice title',
                 hintStyle: GoogleFonts.outfit(fontSize: 13, color: const Color(0xFFCBD5E1)),
@@ -56,14 +108,14 @@ class _CreateNoticeScreenState extends State<CreateNoticeScreen> {
             _buildLabel('Category', isRequired: true),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: MockCommunicationData.categories.map((cat) {
+              children: _kNoticeCategories.map((cat) {
                 final isSelected = _selectedCategory == cat['label'];
                 return _CategorySelectCard(
-                  label: cat['label'],
-                  icon: IconData(cat['icon'], fontFamily: 'MaterialIcons'),
-                  color: Color(cat['color']),
+                  label: cat['label'] as String,
+                  icon: cat['icon'] as IconData,
+                  color: Color(cat['color'] as int),
                   isSelected: isSelected,
-                  onTap: () => setState(() => _selectedCategory = cat['label']),
+                  onTap: () => setState(() => _selectedCategory = cat['label'] as String),
                 );
               }).toList(),
             ),
@@ -72,6 +124,7 @@ class _CreateNoticeScreenState extends State<CreateNoticeScreen> {
             // ── Message Field ──
             _buildLabel('Message', isRequired: true),
             TextField(
+              controller: _messageController,
               maxLines: 5,
               decoration: InputDecoration(
                 hintText: 'Type your notice message here...',
@@ -121,21 +174,6 @@ class _CreateNoticeScreenState extends State<CreateNoticeScreen> {
             ),
 
             const SizedBox(height: 20),
-            // ── Publish Date ──
-            _buildLabel('Publish On', isRequired: true),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0xFFE2E8F0))),
-              child: Row(
-                children: [
-                   Text('17 May 2024, 10:00 AM', style: GoogleFonts.outfit(fontSize: 13, fontWeight: FontWeight.w600, color: const Color(0xFF1E293B))),
-                   const Spacer(),
-                   const Icon(Icons.calendar_today_outlined, size: 18, color: Color(0xFF64748B)),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 20),
             // ── Visibility ──
             _buildLabel('Visible To', isRequired: true),
             Container(
@@ -157,20 +195,8 @@ class _CreateNoticeScreenState extends State<CreateNoticeScreen> {
             Row(
               children: [
                 Expanded(
-                  child: OutlinedButton(
-                    onPressed: () {},
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      side: const BorderSide(color: Color(0xFF064E3B)),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                    child: Text('Save as Draft', style: GoogleFonts.outfit(fontSize: 14, fontWeight: FontWeight.w700, color: const Color(0xFF064E3B))),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
                   child: ElevatedButton(
-                    onPressed: () {},
+                    onPressed: _submitting ? null : _publish,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF064E3B),
                       foregroundColor: Colors.white,
@@ -178,7 +204,13 @@ class _CreateNoticeScreenState extends State<CreateNoticeScreen> {
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       elevation: 0,
                     ),
-                    child: Text('Publish Now', style: GoogleFonts.outfit(fontSize: 14, fontWeight: FontWeight.w700)),
+                    child: _submitting
+                        ? const SizedBox(
+                            height: 18,
+                            width: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          )
+                        : Text('Publish Now', style: GoogleFonts.outfit(fontSize: 14, fontWeight: FontWeight.w700)),
                   ),
                 ),
               ],

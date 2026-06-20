@@ -65,7 +65,9 @@ class MarketplaceView extends ConsumerWidget {
             Text(sub, style: GoogleFonts.outfit(color: const Color(0xFF64748B)), textAlign: TextAlign.center),
             const SizedBox(height: 32),
             ElevatedButton.icon(
-              onPressed: () {}, // Implementation later
+              onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Posting marketplace items is not available yet for your society.')),
+              ),
               icon: const Icon(Icons.add, color: Colors.white),
               label: const Text('POST AN ITEM', style: TextStyle(color: Colors.white)),
               style: ElevatedButton.styleFrom(backgroundColor: kPrimaryGreen),
@@ -232,7 +234,9 @@ class DiscoveryView extends ConsumerWidget {
           ),
           const SizedBox(height: 20),
           ElevatedButton.icon(
-            onPressed: () {}, // File picker logic
+            onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Bylaws upload / AI training is not available yet.')),
+            ),
             icon: const Icon(Icons.upload_file_rounded, size: 18),
             label: const Text('UPLOAD PDF BYLAWS'),
             style: ElevatedButton.styleFrom(
@@ -313,7 +317,9 @@ class _DiscoveryCard extends StatelessWidget {
                   shape: BoxShape.circle,
                 ),
                 child: IconButton(
-                  onPressed: () {}, // Chat logic
+                  onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Direct messaging ${profile.userName} is not available yet.')),
+                  ),
                   icon: const Icon(Icons.chat_bubble_outline_rounded, color: kPrimaryBlue, size: 20),
                 ),
               ),

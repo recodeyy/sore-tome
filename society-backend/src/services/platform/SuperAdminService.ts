@@ -309,6 +309,42 @@ export class SuperAdminService {
     return { ...summary, members: memberCounts, features, support };
   }
 
+  static async platformUsers(filters: { q?: string; role?: string; limit?: unknown }) {
+    const parsed = Number(filters.limit);
+    const limit = Number.isFinite(parsed) ? Math.min(Math.max(parsed, 1), 200) : 50;
+    const params: QueryParams = [];
+    const clauses: string[] = [];
+
+    if (filters.q) {
+      params.push(`%${filters.q}%`);
+      clauses.push(`(COALESCE(name, '') ILIKE $${params.length} OR COALESCE(email, '') ILIKE $${params.length})`);
+    }
+    if (filters.role) {
+      params.push(filters.role);
+      clauses.push(`role = $${params.length}`);
+    }
+
+    params.push(limit);
+    const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+
+    return queryRows(
+      `
+        SELECT
+          id,
+          COALESCE(name, '') AS name,
+          COALESCE(email, '') AS email,
+          COALESCE(role, '') AS role,
+          COALESCE(status, '') AS status,
+          NULL AS last_active_at
+        FROM members
+        ${where}
+        ORDER BY created_at DESC NULLS LAST
+        LIMIT $${params.length}
+      `,
+      params
+    );
+  }
+
   static async applications(status = "pending") {
     return queryRows(
       `
@@ -619,10 +655,12 @@ export class SuperAdminService {
         created_at TIMESTAMP DEFAULT NOW()
       )
     `);
-    return queryRows(`SELECT id, title, body, created_at FROM platform_announcements ORDER BY created_at DESC`);
+    await db.query(`ALTER TABLE platform_announcements ADD COLUMN IF NOT EXISTS audience TEXT`);
+    await db.query(`ALTER TABLE platform_announcements ADD COLUMN IF NOT EXISTS channel TEXT`);
+    return queryRows(`SELECT id, title, body, audience, channel, created_at FROM platform_announcements ORDER BY created_at DESC`);
   }
 
-  static async createAnnouncement(title: string, body: string, actorId: string) {
+  static async createAnnouncement(title: string, body: string, audience: string, channel: string, actorId: string) {
     await db.query(`
       CREATE TABLE IF NOT EXISTS platform_announcements (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -631,13 +669,15 @@ export class SuperAdminService {
         created_at TIMESTAMP DEFAULT NOW()
       )
     `);
+    await db.query(`ALTER TABLE platform_announcements ADD COLUMN IF NOT EXISTS audience TEXT`);
+    await db.query(`ALTER TABLE platform_announcements ADD COLUMN IF NOT EXISTS channel TEXT`);
     const rows = await queryRows(
       `
-        INSERT INTO platform_announcements (title, body)
-        VALUES ($1, $2)
+        INSERT INTO platform_announcements (title, body, audience, channel)
+        VALUES ($1, $2, $3, $4)
         RETURNING *
       `,
-      [title, body]
+      [title, body, audience || "all", channel || "in_app"]
     );
     return rows[0];
   }
@@ -873,6 +913,36 @@ export class SuperAdminService {
         VALUES ($1, $2, 'offboarded', $3, $4)
       `,
       [societyId, current?.status || "active", actorId, reason]
+    );
+  }
+
+  static async listReports(limitInput?: unknown) {
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS report_jobs (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        society_id TEXT,
+        kind TEXT,
+        status TEXT DEFAULT 'queued',
+        params JSONB,
+        requested_by TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    const limit = clampLimit(limitInput, 25);
+    return queryRows(
+      `
+        SELECT
+          id,
+          COALESCE(kind, 'custom') AS type,
+          COALESCE(params->>'period', '') AS period,
+          COALESCE(status, 'queued') AS status,
+          created_at,
+          COALESCE(requested_by, '') AS requested_by
+        FROM report_jobs
+        ORDER BY created_at DESC
+        LIMIT $1
+      `,
+      [limit]
     );
   }
 

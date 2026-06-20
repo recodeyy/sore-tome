@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:sero/app/theme.dart';
-import 'package:sero/data/mock_data.dart';
+import 'package:sero/providers/admin/admin_domain_providers.dart';
+import 'package:sero/widgets/common/async_state_views.dart';
 import 'package:sero/widgets/common/info_list_tile.dart';
 import 'package:sero/widgets/common/stat_card.dart';
 import 'package:sero/widgets/common/status_badge.dart';
 import 'package:sero/providers/shared/notification_provider.dart';
 import 'package:sero/widgets/shared/admin_drawer.dart';
+import 'package:sero/widgets/admin/admin_actions.dart';
 import 'society_profile_screen.dart';
 import 'wings_blocks_screen.dart';
 import 'flats_units_screen.dart';
@@ -20,6 +22,7 @@ class SocietySetupHomeScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final unreadCount = ref.watch(notificationProvider.notifier).unreadCount;
+    final profileAsync = ref.watch(societyProfileProvider);
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       drawer: const AdminDrawer(),
@@ -103,7 +106,10 @@ class SocietySetupHomeScreen extends ConsumerWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            MockSocietyData.name,
+                            profileAsync.maybeWhen(
+                              data: (d) => ((d['profile'] as Map?)?['name'] ?? '').toString(),
+                              orElse: () => '',
+                            ),
                             style: GoogleFonts.outfit(
                               fontSize: 18,
                               fontWeight: FontWeight.w800,
@@ -112,7 +118,10 @@ class SocietySetupHomeScreen extends ConsumerWidget {
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            MockDashboardData.societyType,
+                            profileAsync.maybeWhen(
+                              data: (d) => ((d['profile'] as Map?)?['type'] ?? '').toString(),
+                              orElse: () => '',
+                            ),
                             style: GoogleFonts.outfit(
                               fontSize: 12,
                               color: Colors.white.withValues(alpha: 0.7),
@@ -168,14 +177,14 @@ class SocietySetupHomeScreen extends ConsumerWidget {
                   icon: Icons.people_outline,
                   title: 'Members',
                   subtitle: 'Manage member profiles',
-                  onTap: () {},
+                  onTap: () => Navigator.pushNamed(context, '/admin/society/flats'),
                 ),
                 const SizedBox(height: 8),
                 InfoListTile(
                   icon: Icons.groups_outlined,
                   title: 'Committee Members',
                   subtitle: 'Manage committee members',
-                  onTap: () {},
+                  onTap: () => AdminActions.comingSoon(context, 'Committee management'),
                 ),
               ]),
             ),
@@ -191,36 +200,56 @@ class SocietySetupHomeScreen extends ConsumerWidget {
               ),
             ),
           ),
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
-            sliver: SliverGrid.count(
-              crossAxisCount: 2,
-              mainAxisSpacing: 10,
-              crossAxisSpacing: 10,
-              childAspectRatio: 2.2,
-              children: [
-                CompactStatCard(
-                  value: MockSocietyData.totalWings.toString(),
-                  label: 'Total Wings',
-                  icon: Icons.view_column,
-                ),
-                CompactStatCard(
-                  value: MockSocietyData.totalBlocks.toString(),
-                  label: 'Total Blocks',
-                  icon: Icons.view_module,
-                ),
-                CompactStatCard(
-                  value: MockSocietyData.totalFlats.toString(),
-                  label: 'Total Flats',
-                  icon: Icons.apartment,
-                ),
-                CompactStatCard(
-                  value: MockSocietyData.totalMembers.toString(),
-                  label: 'Total Members',
-                  icon: Icons.people,
-                ),
-              ],
+          profileAsync.when(
+            loading: () => const SliverToBoxAdapter(
+              child: LiveLoadingView(label: 'Loading overview…'),
             ),
+            error: (e, _) => SliverToBoxAdapter(
+              child: LiveErrorView(
+                error: e,
+                onRetry: () => ref.invalidate(societyProfileProvider),
+              ),
+            ),
+            data: (d) {
+              final structure = (d['structure'] as Map?) ?? const {};
+              String count(List<String> keys) {
+                for (final k in keys) {
+                  if (structure[k] != null) return structure[k].toString();
+                }
+                return '0';
+              }
+              return SliverPadding(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+                sliver: SliverGrid.count(
+                  crossAxisCount: 2,
+                  mainAxisSpacing: 10,
+                  crossAxisSpacing: 10,
+                  childAspectRatio: 2.2,
+                  children: [
+                    CompactStatCard(
+                      value: count(['totalWings', 'total_wings']),
+                      label: 'Total Wings',
+                      icon: Icons.view_column,
+                    ),
+                    CompactStatCard(
+                      value: count(['totalBlocks', 'total_blocks']),
+                      label: 'Total Blocks',
+                      icon: Icons.view_module,
+                    ),
+                    CompactStatCard(
+                      value: count(['totalFlats', 'total_units', 'total_flats']),
+                      label: 'Total Flats',
+                      icon: Icons.apartment,
+                    ),
+                    CompactStatCard(
+                      value: count(['totalMembers', 'total_members']),
+                      label: 'Total Members',
+                      icon: Icons.people,
+                    ),
+                  ],
+                ),
+              );
+            },
           ),
 
           const SliverToBoxAdapter(child: SizedBox(height: 100)),

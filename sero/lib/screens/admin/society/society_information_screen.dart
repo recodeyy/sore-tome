@@ -1,32 +1,77 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:sero/app/theme.dart';
-import 'package:sero/data/mock_data.dart';
+import 'package:sero/providers/admin/admin_domain_providers.dart';
+import 'package:sero/services/admin/admin_society_service.dart';
+import 'package:sero/widgets/common/async_state_views.dart';
+import 'package:sero/widgets/admin/admin_actions.dart';
 
 /// Society Information — Screen 3 of 6
 /// Editable form showing basic info, registration, description.
-class SocietyInformationScreen extends StatefulWidget {
+class SocietyInformationScreen extends ConsumerStatefulWidget {
   const SocietyInformationScreen({super.key});
 
   @override
-  State<SocietyInformationScreen> createState() => _SocietyInformationScreenState();
+  ConsumerState<SocietyInformationScreen> createState() => _SocietyInformationScreenState();
 }
 
-class _SocietyInformationScreenState extends State<SocietyInformationScreen> {
-  // Form controllers initialized with mock data for easy API swap later
-  late final TextEditingController _nameController;
-  late final TextEditingController _codeController;
-  late final TextEditingController _regNumberController;
-  late final TextEditingController _descriptionController;
-  String _selectedType = MockSocietyData.type;
+class _SocietyInformationScreenState extends ConsumerState<SocietyInformationScreen> {
+  final TextEditingController _nameController = TextEditingController();
+  final TextEditingController _codeController = TextEditingController();
+  final TextEditingController _regNumberController = TextEditingController();
+  final TextEditingController _descriptionController = TextEditingController();
+  String _selectedType = 'Residential';
+  bool _seeded = false;
+  bool _saving = false;
+  String _establishedOn = '';
 
-  @override
-  void initState() {
-    super.initState();
-    _nameController = TextEditingController(text: MockSocietyData.name);
-    _codeController = TextEditingController(text: MockSocietyData.code);
-    _regNumberController = TextEditingController(text: MockSocietyData.registrationNumber);
-    _descriptionController = TextEditingController(text: MockSocietyData.description);
+  /// Persist the editable, backend-supported subset (name, registrationNo)
+  /// via PUT /society/profile, then refresh the live provider.
+  Future<void> _saveProfile() async {
+    setState(() => _saving = true);
+    try {
+      final ok = await AdminSocietyService.updateProfile({
+        'name': _nameController.text.trim(),
+        'registrationNo': _regNumberController.text.trim(),
+      });
+      if (!mounted) return;
+      if (ok) {
+        ref.invalidate(societyProfileProvider);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Changes saved successfully'), backgroundColor: Color(0xFF064E3B)),
+        );
+        Navigator.pop(context);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not save changes. Please try again.'), backgroundColor: Color(0xFFB91C1C)),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Save failed: $e'), backgroundColor: const Color(0xFFB91C1C)),
+      );
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  /// Seed controllers from live profile once data arrives.
+  void _seedFromProfile(Map profile) {
+    if (_seeded) return;
+    _seeded = true;
+    _nameController.text = (profile['name'] ?? '').toString();
+    _codeController.text = (profile['code'] ?? '').toString();
+    _regNumberController.text =
+        (profile['registrationNumber'] ?? profile['registration_number'] ?? '').toString();
+    _descriptionController.text = (profile['description'] ?? '').toString();
+    _establishedOn =
+        (profile['establishedOn'] ?? profile['established_on'] ?? '').toString();
+    final type = (profile['type'] ?? '').toString();
+    if (['Residential', 'Commercial', 'Mixed'].contains(type)) {
+      _selectedType = type;
+    }
   }
 
   @override
@@ -40,6 +85,7 @@ class _SocietyInformationScreenState extends State<SocietyInformationScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final profileAsync = ref.watch(societyProfileProvider);
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       body: Column(
@@ -62,14 +108,23 @@ class _SocietyInformationScreenState extends State<SocietyInformationScreen> {
                 ),
                 IconButton(
                   icon: const Icon(Icons.more_horiz, color: Color(0xFF1E293B)),
-                  onPressed: () {},
+                  onPressed: () => AdminActions.comingSoon(context, 'Editing society information'),
                 ),
               ],
             ),
           ),
 
           Expanded(
-            child: SingleChildScrollView(
+            child: profileAsync.when(
+              loading: () => const LiveLoadingView(label: 'Loading society information…'),
+              error: (e, _) => LiveErrorView(
+                error: e,
+                onRetry: () => ref.invalidate(societyProfileProvider),
+              ),
+              data: (data) {
+                final profile = (data['profile'] as Map?) ?? const {};
+                _seedFromProfile(profile);
+                return SingleChildScrollView(
               physics: const BouncingScrollPhysics(),
               padding: const EdgeInsets.all(20),
               child: Column(
@@ -147,7 +202,7 @@ class _SocietyInformationScreenState extends State<SocietyInformationScreen> {
                           const Icon(Icons.calendar_today_outlined, size: 16, color: Color(0xFF064E3B)),
                           const SizedBox(width: 8),
                           Text(
-                            MockSocietyData.establishedOn,
+                            _establishedOn,
                             style: GoogleFonts.outfit(fontSize: 14, fontWeight: FontWeight.w600, color: const Color(0xFF1E293B)),
                           ),
                         ],
@@ -188,25 +243,26 @@ class _SocietyInformationScreenState extends State<SocietyInformationScreen> {
                     width: double.infinity,
                     height: 52,
                     child: ElevatedButton(
-                      onPressed: () {
-                        // TODO: API integration - save society info
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Changes saved successfully'), backgroundColor: Color(0xFF064E3B)),
-                        );
-                        Navigator.pop(context);
-                      },
+                      onPressed: _saving ? null : _saveProfile,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: kPrimaryGreen,
                         foregroundColor: Colors.white,
                         elevation: 0,
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                       ),
-                      child: Text('Save Changes', style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.w700)),
+                      child: _saving
+                          ? const SizedBox(
+                              height: 20, width: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            )
+                          : Text('Save Changes', style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.w700)),
                     ),
                   ),
                   const SizedBox(height: 40),
                 ],
               ),
+            );
+              },
             ),
           ),
         ],

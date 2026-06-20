@@ -471,8 +471,13 @@ export const ComplaintService = {
       `SELECT
          count(*)::int AS total,
          count(*) FILTER (WHERE status IN ('open','in_progress'))::int AS open,
+         count(*) FILTER (WHERE status = 'open')::int AS open_only,
+         count(*) FILTER (WHERE status = 'in_progress')::int AS in_progress,
+         count(*) FILTER (WHERE status = 'resolved')::int AS resolved_only,
+         count(*) FILTER (WHERE status = 'closed')::int AS closed,
          count(*) FILTER (WHERE status IN ('resolved','closed'))::int AS resolved,
          count(*) FILTER (WHERE due_at IS NOT NULL AND due_at < now() AND status NOT IN ('resolved','closed'))::int AS overdue,
+         count(*) FILTER (WHERE due_at IS NOT NULL AND due_at::date = now()::date AND status NOT IN ('resolved','closed'))::int AS due_today,
          count(*) FILTER (WHERE sla_breached)::int AS breached
        FROM complaints WHERE society_id = $1`,
       [societyId]

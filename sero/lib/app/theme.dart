@@ -9,6 +9,18 @@ const kAccentBlue = Color(0xFF0EA5E9);   // Sky 500
 const kSlateBg = Color(0xFFF8FAFC);      // Soft Slate background
 const kSlateBorder = Color(0xFFE2E8F0);  // Slate border
 
+// Super Admin bright emerald (matches platform reference designs)
+const kSuperGreen = Color(0xFF16A45C);       // Vivid emerald header
+const kSuperGreenDark = Color(0xFF0E8A4B);   // Darker emerald for gradient end
+const kSuperGreenSoft = Color(0xFFE7F6EE);   // Soft tinted surface
+
+// Flat bright header gradient used across Super Admin screens
+const kSuperHeaderGradient = LinearGradient(
+  colors: [kSuperGreen, kSuperGreenDark],
+  begin: Alignment.topLeft,
+  end: Alignment.bottomRight,
+);
+
 // Premium Gradient for AppBars and Headers
 const kPremiumGradient = LinearGradient(
   colors: [kPrimaryGreen, Color(0xFF111827)], // Deep Emerald to near-black navy

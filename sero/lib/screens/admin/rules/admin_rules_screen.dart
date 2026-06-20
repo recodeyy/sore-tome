@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:sero/app/theme.dart';
 import 'package:sero/providers/shared/ai_provider.dart';
 import 'package:sero/providers/shared/rules_provider.dart';
+import 'package:sero/providers/admin/admin_domain_providers.dart';
 
 // Modularized Widgets
 import 'package:sero/screens/admin/rules/widgets/rules_widgets.dart';
@@ -118,7 +119,10 @@ class _AdminRulesScreenState extends ConsumerState<AdminRulesScreen> {
   void _handleExportPdf(BuildContext context) async {
     final aiRules = ref.read(aiRulesProvider).value ?? [];
     final manualRules = ref.read(rulesProvider).value ?? [];
-    final societyName = 'The Sero Community'; // Modernized name placeholder
+    // Live society name from the authenticated society profile.
+    final profile = ref.read(societyProfileProvider).value?['profile'] as Map?;
+    final societyName =
+        (profile?['name'] ?? profile?['society_name'] ?? 'Your Society').toString();
 
     showDialog(
       context: context,

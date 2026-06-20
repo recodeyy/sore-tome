@@ -150,6 +150,19 @@ router.get("/societies/:societyId", async (req: Request, res: Response) => {
   }
 });
 
+router.get("/users", async (req: Request, res: Response) => {
+  try {
+    const data = await SuperAdminService.platformUsers({
+      q: req.query.q as string | undefined,
+      role: req.query.role as string | undefined,
+      limit: req.query.limit,
+    });
+    return res.json({ success: true, data });
+  } catch (error: any) {
+    return sendError(res, "GET /super-admin/users", error);
+  }
+});
+
 router.get("/applications", async (req: Request, res: Response) => {
   try {
     const data = await SuperAdminService.applications((req.query.status as string) || "pending");
@@ -451,14 +464,23 @@ router.get("/announcements", async (_req: Request, res: Response) => {
 
 router.post("/announcements", async (req: Request, res: Response) => {
   try {
-    const { title, body } = req.body;
+    const { title, body, audience, channel } = req.body;
     if (!title || !body) {
       return res.status(400).json({ success: false, error: { code: "VALIDATION_FAILED", message: "title and body are required" } });
     }
-    const data = await SuperAdminService.createAnnouncement(title, body, actorId(req));
+    const data = await SuperAdminService.createAnnouncement(title, body, audience || "all", channel || "in_app", actorId(req));
     return res.json({ success: true, data });
   } catch (error: any) {
     return sendError(res, "POST /super-admin/announcements", error);
+  }
+});
+
+router.get("/reports", async (req: Request, res: Response) => {
+  try {
+    const data = await SuperAdminService.listReports(req.query.limit);
+    return res.json({ success: true, data });
+  } catch (error: any) {
+    return sendError(res, "GET /super-admin/reports", error);
   }
 });
 

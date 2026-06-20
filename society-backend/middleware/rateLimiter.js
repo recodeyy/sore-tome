@@ -11,6 +11,8 @@ function createRateLimiter({ windowMs, max, prefix, message }) {
   const windowSec = Math.ceil(windowMs / 1000);
 
   return async function rateLimiter(req, res, next) {
+    // LOAD-TEST: bypass rate limiting so the generator isn't throttled.
+    if (process.env.LOADTEST_MODE === "true") return next();
     if (!redisManager.isConnected) return next();
 
     const identity = req.user?.uid ? `u:${req.user.uid}` : `ip:${req.ip || "unknown"}`;

@@ -1,0 +1,37 @@
+# User specific and build files
+**/.gradle/
+**/build/
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+node_modules/
+
+# Secrets and keys (crucial)
+**/*firebase-adminsdk*.json
+**/serviceAccountKey.json
+**/google-services*.json
+**/firebase.json
+**/.env
+**/local.properties
+**/key.properties
+**/*.keystore
+**/*.jks
+
+# Temporary archives and extracted directories
+*.zip
+*.tgz
+*.tar.gz
+*.exe
+/project-sero-extracted/
+
+# Test/Execution results
+/firebase-debug.log
+/master_execution_results.json
+/master_release_findings.json
+
+# Screenshots / Images at root level
+/image*.png
+/screen.png
+/sero-*.png

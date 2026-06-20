@@ -1,5 +1,3 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-
 class SocietyVitals {
   final int parcelsPending;
   final int guardsOnDuty;
@@ -17,11 +15,11 @@ class SocietyVitals {
 
   factory SocietyVitals.fromMap(Map<String, dynamic> map) {
     return SocietyVitals(
-      parcelsPending: map['parcelsPending'] ?? 0,
-      guardsOnDuty: map['guardsOnDuty'] ?? 0,
-      activeMaintenance: map['activeMaintenance'] ?? "None",
-      systemStatus: map['systemStatus'] ?? "Stable",
-      lastUpdate: (map['lastUpdate'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      parcelsPending: (map['parcelsPending'] as num?)?.toInt() ?? 0,
+      guardsOnDuty: (map['guardsOnDuty'] as num?)?.toInt() ?? 0,
+      activeMaintenance: map['activeMaintenance']?.toString() ?? "None",
+      systemStatus: map['systemStatus']?.toString() ?? "Stable",
+      lastUpdate: DateTime.tryParse(map['lastUpdate']?.toString() ?? '') ?? DateTime.now(),
     );
   }
 
@@ -31,7 +29,7 @@ class SocietyVitals {
       'guardsOnDuty': guardsOnDuty,
       'activeMaintenance': activeMaintenance,
       'systemStatus': systemStatus,
-      'lastUpdate': Timestamp.fromDate(lastUpdate),
+      'lastUpdate': lastUpdate.toIso8601String(),
     };
   }
 }

@@ -131,6 +131,49 @@ export const AnalyticsService = {
     return { from: fromStr, to: toStr, collections, expenses };
   },
 
+  /**
+   * Live society vitals — tenant-scoped operational snapshot for the admin
+   * dashboard. Replaces the old hard-coded Firestore `vitals/current` doc.
+   * Every source is guarded so a missing table returns a safe default.
+   */
+  async vitals(societyId: string) {
+    const [parcelsPending, guardsOnDuty, activeMaintenance, paymentFailures] = await Promise.all([
+      // No parcels table yet → guarded to 0 until one exists.
+      (async () =>
+        (await tableExists("parcels"))
+          ? safeCount(
+              `SELECT COUNT(*) FROM parcels WHERE society_id = $1 AND status = 'pending'`,
+              [societyId]
+            )
+          : 0)(),
+      // Guards currently on duty: attendance entries checked in but not out today.
+      safeCount(
+        `SELECT COUNT(*) FROM attendance_entries
+         WHERE society_id = $1 AND work_date = current_date
+           AND check_in_at IS NOT NULL AND check_out_at IS NULL`,
+        [societyId]
+      ),
+      // Open/in-progress maintenance work orders.
+      safeCount(
+        `SELECT COUNT(*) FROM maintenance_work_orders
+         WHERE society_id = $1 AND status IN ('open','in_progress','scheduled')`,
+        [societyId]
+      ),
+      safeCount(
+        `SELECT COUNT(*) FROM payments WHERE society_id = $1 AND status = 'failed'`,
+        [societyId]
+      ),
+    ]);
+
+    return {
+      parcelsPending,
+      guardsOnDuty,
+      activeMaintenance: activeMaintenance > 0 ? `${activeMaintenance} active` : "None",
+      systemStatus: paymentFailures > 0 ? "Attention" : "Stable",
+      lastUpdate: new Date().toISOString(),
+    };
+  },
+
   /** Operational alerts. Each source is guarded and returns 0/empty on failure. */
   async alerts(societyId: string) {
     const alerts: { type: string; severity: string; message: string; count: number }[] = [];

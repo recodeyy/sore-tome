@@ -1,13 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:sero/app/theme.dart';
-import 'package:sero/data/mock_data.dart';
 import 'package:sero/widgets/common/mini_chart.dart';
-import 'package:sero/widgets/common/stat_card.dart';
 import 'package:sero/widgets/common/section_header.dart';
-import 'package:sero/widgets/common/status_badge.dart';
+import 'package:sero/widgets/common/async_state_views.dart';
 import 'package:sero/providers/shared/notification_provider.dart';
+import 'package:sero/providers/admin/admin_domain_providers.dart';
 import 'package:sero/widgets/shared/admin_drawer.dart';
 
 /// Complaints Dashboard Screen — Complaints Module (1/2)
@@ -56,7 +54,27 @@ class ComplaintsDashboardScreen extends ConsumerWidget {
           const SizedBox(width: 8),
         ],
       ),
-      body: CustomScrollView(
+      body: ref.watch(complaintsDashboardProvider).when(
+        loading: () => const LiveLoadingView(label: 'Loading complaints…'),
+        error: (e, _) => LiveErrorView(
+          error: e,
+          onRetry: () => ref.invalidate(complaintsDashboardProvider),
+        ),
+        data: (payload) {
+          final analytics = (payload['analytics'] as Map?)?.cast<String, dynamic>() ?? const {};
+          final complaints = (payload['complaints'] as List?) ?? const [];
+          int n(String k) => (analytics[k] as num?)?.toInt() ?? 0;
+          final total = n('total');
+          final openOnly = n('open_only');
+          final inProgress = n('in_progress');
+          final resolvedOnly = n('resolved_only');
+          final closed = n('closed');
+          final overdue = n('overdue');
+          final dueToday = n('due_today');
+          String pct(int v) => total == 0 ? '0%' : '${(v * 100 / total).round()}%';
+          return RefreshIndicator(
+            onRefresh: () async => ref.invalidate(complaintsDashboardProvider),
+            child: CustomScrollView(
         physics: const BouncingScrollPhysics(),
         slivers: [
           // ── Metrics Grid ──
@@ -70,43 +88,43 @@ class ComplaintsDashboardScreen extends ConsumerWidget {
               children: [
                 _SummaryCard(
                   label: 'Total Complaints',
-                  value: MockComplaintsData.totalComplaints.toString(),
+                  value: total.toString(),
                   subtitle: 'All Time',
                   icon: Icons.assignment_outlined,
                   color: const Color(0xFF0D9488),
                 ),
                 _SummaryCard(
                   label: 'Open',
-                  value: MockComplaintsData.openCount.toString(),
-                  subtitle: '${MockComplaintsData.openPercent}%',
+                  value: openOnly.toString(),
+                  subtitle: pct(openOnly),
                   icon: Icons.notifications_none,
                   color: const Color(0xFFEA580C),
                 ),
                 _SummaryCard(
                   label: 'In Progress',
-                  value: MockComplaintsData.inProgressCount.toString(),
-                  subtitle: '${MockComplaintsData.inProgressPercent}%',
+                  value: inProgress.toString(),
+                  subtitle: pct(inProgress),
                   icon: Icons.hourglass_empty,
                   color: const Color(0xFF2563EB),
                 ),
                 _SummaryCard(
                   label: 'Resolved',
-                  value: MockComplaintsData.resolvedCount.toString(),
-                  subtitle: '${MockComplaintsData.resolvedPercent}%',
+                  value: resolvedOnly.toString(),
+                  subtitle: pct(resolvedOnly),
                   icon: Icons.check_circle_outline,
                   color: const Color(0xFF059669),
                 ),
                 _SummaryCard(
                   label: 'Overdue',
-                  value: MockComplaintsData.overdueCount.toString(),
-                  subtitle: '${MockComplaintsData.overduePercent}%',
+                  value: overdue.toString(),
+                  subtitle: pct(overdue),
                   icon: Icons.access_time,
                   color: const Color(0xFFDC2626),
                 ),
                 _SummaryCard(
                   label: 'Due Today',
-                  value: MockComplaintsData.dueTodayCount.toString(),
-                  subtitle: '${MockComplaintsData.dueTodayPercent}%',
+                  value: dueToday.toString(),
+                  subtitle: pct(dueToday),
                   icon: Icons.calendar_today_outlined,
                   color: const Color(0xFF7C3AED),
                 ),
@@ -128,49 +146,39 @@ class ComplaintsDashboardScreen extends ConsumerWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text('Complaints by Status', style: GoogleFonts.outfit(fontSize: 15, fontWeight: FontWeight.w700, color: const Color(0xFF1E293B))),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(8)),
-                          child: Row(
-                            children: [
-                              Text('This Month', style: GoogleFonts.outfit(fontSize: 10, color: const Color(0xFF64748B))),
-                              const Icon(Icons.keyboard_arrow_down, size: 14, color: Color(0xFF64748B)),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
+                    Text('Complaints by Status', style: GoogleFonts.outfit(fontSize: 15, fontWeight: FontWeight.w700, color: const Color(0xFF1E293B))),
                     const SizedBox(height: 20),
-                    Row(
-                      children: [
-                        DonutChart(
-                          segments: [
-                            DonutSegment(value: 24, color: const Color(0xFFEA580C), label: 'Open'),
-                            DonutSegment(value: 36, color: const Color(0xFF2563EB), label: 'In Progress'),
-                            DonutSegment(value: 62, color: const Color(0xFF059669), label: 'Resolved'),
-                            DonutSegment(value: 6, color: const Color(0xFF64748B), label: 'Closed'),
-                          ],
-                          size: 110,
-                          centerValue: '128',
-                          centerLabel: 'Total',
-                        ),
-                        const SizedBox(width: 24),
-                        Expanded(
-                          child: Column(
+                    total == 0
+                        ? const LiveEmptyView(
+                            icon: Icons.assignment_outlined,
+                            message: 'No complaints yet.',
+                          )
+                        : Row(
                             children: [
-                              _DonutLegend(color: const Color(0xFFEA580C), label: 'Open', value: '24 (18.8%)'),
-                              _DonutLegend(color: const Color(0xFF2563EB), label: 'In Progress', value: '36 (28.1%)'),
-                              _DonutLegend(color: const Color(0xFF059669), label: 'Resolved', value: '62 (48.4%)'),
-                              _DonutLegend(color: const Color(0xFF64748B), label: 'Closed', value: '6 (4.7%)'),
+                              DonutChart(
+                                segments: [
+                                  DonutSegment(value: openOnly.toDouble(), color: const Color(0xFFEA580C), label: 'Open'),
+                                  DonutSegment(value: inProgress.toDouble(), color: const Color(0xFF2563EB), label: 'In Progress'),
+                                  DonutSegment(value: resolvedOnly.toDouble(), color: const Color(0xFF059669), label: 'Resolved'),
+                                  DonutSegment(value: closed.toDouble(), color: const Color(0xFF64748B), label: 'Closed'),
+                                ],
+                                size: 110,
+                                centerValue: total.toString(),
+                                centerLabel: 'Total',
+                              ),
+                              const SizedBox(width: 24),
+                              Expanded(
+                                child: Column(
+                                  children: [
+                                    _DonutLegend(color: const Color(0xFFEA580C), label: 'Open', value: '$openOnly (${pct(openOnly)})'),
+                                    _DonutLegend(color: const Color(0xFF2563EB), label: 'In Progress', value: '$inProgress (${pct(inProgress)})'),
+                                    _DonutLegend(color: const Color(0xFF059669), label: 'Resolved', value: '$resolvedOnly (${pct(resolvedOnly)})'),
+                                    _DonutLegend(color: const Color(0xFF64748B), label: 'Closed', value: '$closed (${pct(closed)})'),
+                                  ],
+                                ),
+                              ),
                             ],
                           ),
-                        ),
-                      ],
-                    ),
                   ],
                 ),
               ),
@@ -185,25 +193,43 @@ class ComplaintsDashboardScreen extends ConsumerWidget {
               onAction: () {},
             ),
           ),
-          SliverPadding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            sliver: SliverList(
-              delegate: SliverChildBuilderDelegate(
-                (context, index) {
-                  final complaint = MockComplaintsData.recentComplaints[index];
-                  return _ComplaintRow(
-                    id: complaint['id'],
-                    title: complaint['title'],
-                    location: complaint['location'],
-                    status: complaint['status'],
-                    color: Color(complaint['color']),
-                    onTap: () => Navigator.pushNamed(context, '/admin/complaints/details'),
-                  );
-                },
-                childCount: MockComplaintsData.recentComplaints.length,
+          if (complaints.isEmpty)
+            const SliverToBoxAdapter(
+              child: LiveEmptyView(
+                icon: Icons.assignment_outlined,
+                message: 'No complaints yet.',
+              ),
+            )
+          else
+            SliverPadding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              sliver: SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (context, index) {
+                    final complaint = (complaints[index] as Map).cast<String, dynamic>();
+                    final status = (complaint['status'] ?? '').toString();
+                    final color = status == 'in_progress'
+                        ? const Color(0xFF2563EB)
+                        : status == 'open'
+                            ? const Color(0xFFEA580C)
+                            : const Color(0xFF059669);
+                    return _ComplaintRow(
+                      id: (complaint['code'] ?? complaint['id'] ?? '').toString(),
+                      title: (complaint['title'] ?? '').toString(),
+                      location: (complaint['location'] ?? complaint['category'] ?? '').toString(),
+                      status: status,
+                      color: color,
+                      onTap: () => Navigator.pushNamed(
+                        context,
+                        '/admin/complaints/details',
+                        arguments: complaint['id'],
+                      ),
+                    );
+                  },
+                  childCount: complaints.length,
+                ),
               ),
             ),
-          ),
 
           // ── Action Button ──
           SliverToBoxAdapter(
@@ -213,7 +239,7 @@ class ComplaintsDashboardScreen extends ConsumerWidget {
                 width: double.infinity,
                 height: 52,
                 child: ElevatedButton.icon(
-                  onPressed: () {},
+                  onPressed: () => Navigator.pushNamed(context, '/post-issue'),
                   icon: const Icon(Icons.add, size: 20),
                   label: Text('Raise New Complaint', style: GoogleFonts.outfit(fontSize: 15, fontWeight: FontWeight.w600)),
                   style: ElevatedButton.styleFrom(
@@ -227,6 +253,9 @@ class ComplaintsDashboardScreen extends ConsumerWidget {
             ),
           ),
         ],
+      ),
+          );
+        },
       ),
     );
   }

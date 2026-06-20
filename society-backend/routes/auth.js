@@ -8,6 +8,7 @@ const { authMiddleware, adminOnly, mainAdminOnly } = require("../middleware/auth
 const { AuditLogService } = require("../src/services/AuditLogService");
 const { redis } = require("../src/shared/Redis");
 const { logger } = require("../src/shared/Logger");
+const { db } = require("../src/shared/Database");
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRES_IN = "1h";
@@ -198,23 +199,304 @@ router.post("/register", validate(RegisterSchema), async (req, res) => {
     }
 });
 
+// ─── HELPER FUNCTIONS FOR SEPARATE PORTALS & WORKSPACES ──────────────────────────
+async function getUserDestinations(uid, phone) {
+    const destinations = [];
+    const cleanPhone = phone ? phone.replace(/\s+/g, "") : "";
+    
+    // 1. Query Postgres members
+    try {
+        const membersRes = await db.query(
+            `SELECT m.*, sa.society_name 
+             FROM members m 
+             LEFT JOIN society_applications sa ON sa.society_id = m.society_id 
+             WHERE m.user_id = $1 OR m.phone = $2`,
+            [uid, cleanPhone]
+        );
+        for (const row of membersRes.rows) {
+            if (["moved_out", "deactivated", "rejected"].includes(row.status)) {
+                continue;
+            }
+            const normalizedRole = (row.role || "").trim().toLowerCase().replaceAll("-", "_");
+            const isAdmin = ["main_admin", "admin", "secretary", "treasurer", "committee_member"].includes(normalizedRole);
+            
+            destinations.push({
+                workspaceId: isAdmin ? `admin-${row.society_id}` : `resident-${row.society_id}-${row.id}`,
+                type: isAdmin ? "admin" : "resident",
+                role: row.role || (isAdmin ? "admin" : "resident_owner"),
+                societyId: row.society_id,
+                societyName: row.society_name || "My Society",
+                unitId: row.unit_id || null,
+                status: row.status
+            });
+        }
+    } catch (err) {
+        logger.warn({ uid, error: err.message }, "Failed to fetch pg memberships for workspaces");
+    }
+
+    // 2. Query Postgres staff
+    try {
+        const staffRes = await db.query(
+            `SELECT s.*, sa.society_name 
+             FROM staff s 
+             LEFT JOIN society_applications sa ON sa.society_id = s.society_id 
+             WHERE s.user_id = $1 OR s.phone = $2`,
+            [uid, cleanPhone]
+        );
+        for (const row of staffRes.rows) {
+            if (row.status === "terminated") {
+                continue;
+            }
+            destinations.push({
+                workspaceId: `staff-${row.society_id}-${row.id}`,
+                type: "staff",
+                role: row.role || "guard",
+                societyId: row.society_id,
+                societyName: row.society_name || "My Society",
+                status: row.status === "active" ? "approved" : "suspended"
+            });
+        }
+    } catch (err) {
+        logger.warn({ uid, error: err.message }, "Failed to fetch pg staff for workspaces");
+    }
+
+    return destinations;
+}
+
+function addFirestoreDestinations(user, destinations) {
+    const normalizedRole = (user.role || "").trim().toLowerCase().replaceAll("-", "_");
+    
+    if (["super_admin", "superadmin"].includes(normalizedRole)) {
+        if (!destinations.some(d => d.type === "super-admin")) {
+            destinations.push({
+                workspaceId: "platform-super-admin",
+                type: "super-admin",
+                role: "super_admin",
+                societyId: "platform",
+                societyName: "SERO Platform Control",
+                status: "approved"
+            });
+        }
+    } else if (["main_admin", "admin", "secretary", "treasurer", "committee_member"].includes(normalizedRole)) {
+        // Only add a Firestore-derived admin workspace when the user actually has
+        // a society on their profile. Otherwise rely on real Postgres memberships
+        // (avoids a phantom null-society workspace that blocks tenant scoping).
+        if (user.society_id && !destinations.some(d => d.type === "admin" && d.societyId === user.society_id)) {
+            destinations.push({
+                workspaceId: `admin-${user.society_id}`,
+                type: "admin",
+                role: user.role,
+                societyId: user.society_id,
+                societyName: "My Society",
+                status: user.status || "approved"
+            });
+        }
+    } else if (normalizedRole === "resident") {
+        if (user.society_id && !destinations.some(d => d.type === "resident" && d.societyId === user.society_id)) {
+            destinations.push({
+                workspaceId: `resident-${user.society_id}`,
+                type: "resident",
+                role: "resident_owner",
+                societyId: user.society_id,
+                societyName: "My Society",
+                status: user.status || "pending"
+            });
+        }
+    }
+}
+
+// ─── FIREBASE / GOOGLE SIGN-IN + SIGN-UP ────────────────────────────────────────
+// POST /auth/firebase
+// Body: { idToken, portal? }
+// Verifies a Firebase ID token (Google, Phone, etc.), provisions the user on
+// first sign-in (sign-up), and issues the same app session as /auth/login.
+router.post("/firebase", async (req, res) => {
+    const ip = req.ip || req.headers["x-forwarded-for"] || "unknown";
+    const { idToken, portal } = req.body || {};
+
+    if (!idToken || typeof idToken !== "string") {
+        return res.status(400).json({ error: "Missing Firebase idToken" });
+    }
+
+    try {
+        // 1. Verify the Firebase ID token with the Admin SDK (authoritative).
+        let decoded;
+        try {
+            decoded = await getAdmin().auth().verifyIdToken(idToken);
+        } catch (e) {
+            logger.warn({ ip, error: e.message }, "SEC-FAIL: Invalid Firebase ID token");
+            return res.status(401).json({ error: "Invalid or expired Google session" });
+        }
+
+        const email = (decoded.email || "").trim().toLowerCase();
+        const cleanPhone = (decoded.phone_number || "").replace(/\s+/g, "");
+        const displayName = decoded.name || (email ? email.split("@")[0] : "Member");
+        const fDb = getDb();
+
+        // 2. Find an existing user by email or phone.
+        let snap = null;
+        if (email) {
+            snap = await fDb.collection("users").where("email", "==", email).limit(1).get();
+        }
+        if ((!snap || snap.empty) && cleanPhone) {
+            snap = await fDb.collection("users").where("phone", "==", cleanPhone).limit(1).get();
+        }
+
+        let userDoc = snap && !snap.empty ? snap.docs[0] : null;
+        let user;
+
+        // 3. First-time Google user → sign up (no password; provisioned pending).
+        if (!userDoc) {
+            const userRef = fDb.collection("users").doc();
+            const userData = {
+                uid: userRef.id,
+                name: displayName,
+                email: email || null,
+                phone: cleanPhone || null,
+                password: null,            // social account — no local password
+                authProvider: "google",
+                firebaseUid: decoded.uid,
+                flatNumber: "",
+                blockName: "",
+                society_id: null,
+                role: "resident",
+                status: "pending",         // requires admin approval, like /register
+                createdAt: getAdmin().firestore.FieldValue.serverTimestamp(),
+                residentType: "owner",
+                maintenanceExempt: false,
+                approvedAt: null,
+                approvedBy: null,
+                failedLoginAttempts: 0,
+                lockUntil: null,
+            };
+            await userRef.set(userData);
+            userDoc = await userRef.get();
+            user = userDoc.data();
+
+            await fDb.collection("notifications").add({
+                type: "registration_request",
+                title: "New Google sign-up",
+                body: `${displayName} signed up with Google and is awaiting approval.`,
+                targetRole: "main_admin",
+                userId: userRef.id,
+                read: false,
+                createdAt: getAdmin().firestore.FieldValue.serverTimestamp(),
+            });
+        } else {
+            user = userDoc.data();
+            // Backfill the firebaseUid/provider link for existing accounts.
+            if (!user.firebaseUid) {
+                await userDoc.ref.update({ firebaseUid: decoded.uid, authProvider: user.authProvider || "google" });
+            }
+        }
+
+        // 4. Status gates (mirror /login).
+        if (user.status === "pending" && !portal) {
+            return res.status(403).json({ error: "Your account is pending admin approval.", status: "pending" });
+        }
+        if (user.status === "rejected" && !portal) {
+            return res.status(403).json({ error: "Your registration was not approved.", status: "rejected" });
+        }
+
+        // 5. Resolve destinations + portal check (mirror /login).
+        const destinations = await getUserDestinations(userDoc.id, user.phone || "");
+        addFirestoreDestinations(user, destinations);
+
+        if (portal) {
+            const matching = destinations.filter(d => d.type === portal);
+            if (matching.length === 0) {
+                return res.status(403).json({
+                    success: false,
+                    error: {
+                        code: "PORTAL_MISMATCH",
+                        message: "This account does not have access to the selected portal.",
+                        allowedPortals: [...new Set(destinations.map(d => d.type))]
+                    }
+                });
+            }
+        }
+
+        const filteredDestinations = portal ? destinations.filter(d => d.type === portal) : destinations;
+        const requiresWorkspaceSelection = filteredDestinations.length > 1;
+
+        let activeWorkspace = null;
+        let finalRole = user.role;
+        let finalSocietyId = user.society_id;
+        if (!requiresWorkspaceSelection && filteredDestinations.length === 1) {
+            activeWorkspace = filteredDestinations[0];
+            finalRole = activeWorkspace.role;
+            finalSocietyId = activeWorkspace.societyId;
+        }
+        // Firestore + Firebase custom-token claims reject `undefined` (platform/
+        // admin accounts may have no society). Normalize to null.
+        finalSocietyId = finalSocietyId ?? null;
+
+        // 6. Issue app JWT + refresh token (same as /login).
+        const token = jwt.sign(
+            { uid: userDoc.id, phone: user.phone, role: finalRole, name: user.name, society_id: finalSocietyId },
+            JWT_SECRET,
+            { expiresIn: JWT_EXPIRES_IN }
+        );
+        const refreshToken = crypto.randomBytes(40).toString("hex");
+        const refreshTokenHash = hashToken(refreshToken);
+        await fDb.collection("refresh_tokens").doc(refreshTokenHash).set({
+            userId: userDoc.id,
+            expiresAt: getAdmin().firestore.Timestamp.fromDate(new Date(Date.now() + REFRESH_TOKEN_EXPIRES_IN)),
+            revoked: false,
+            createdAt: getAdmin().firestore.FieldValue.serverTimestamp(),
+            role: finalRole,
+            society_id: finalSocietyId
+        });
+
+        let firebaseToken = null;
+        try {
+            firebaseToken = await getAdmin().auth().createCustomToken(userDoc.id, { role: finalRole, society_id: finalSocietyId });
+        } catch (e) {
+            logger.warn({ userId: userDoc.id }, "Firebase custom token generation failed (non-fatal)");
+        }
+
+        logger.info({ ip, userId: userDoc.id }, "Firebase/Google sign-in successful");
+
+        const { password: _pw, ...safeUser } = user;
+        const responseData = {
+            token,
+            refreshToken,
+            firebaseToken,
+            user: safeUser,
+            requiresWorkspaceSelection,
+            activeWorkspace,
+            destinations: filteredDestinations
+        };
+        res.json({ success: true, data: responseData, ...responseData });
+
+    } catch (err) {
+        logger.error({ ip, error: err.message }, "Unhandled error during Firebase sign-in");
+        res.status(500).json({ error: "Internal server error" });
+    }
+});
+
 // ─── LOGIN ────────────────────────────────────────────────────────────────────
 // POST /auth/login
-// Body: { phone, password }
+// Body: { phone, password, portal }
 // SECURITY: Strictly validated via Zod schemas.
 const DUMMY_HASH = "$2a$10$K9pYpYpYpYpYpYpYpYpYpOu9pYpYpYpYpYpYpYpYpYpYpYpYpYpYp"; // Placeholder hash for timing safety
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 router.post("/login", validate(LoginSchema), async (req, res) => {
-    const { phone, password } = req.body;
+    const { phone, password, portal } = req.body;
     const ip = req.ip || req.headers["x-forwarded-for"] || "unknown";
 
     try {
         const cleanPhone = phone.replace(/\s+/g, "");
-        const db = getDb();
+        const fDb = getDb();
 
-        // 1. Fetch user (one-shot lookup)
-        const snap = await db.collection("users").where("phone", "==", cleanPhone).limit(1).get();
+        // 1. Fetch user (one-shot lookup by phone or email)
+        let snap;
+        if (phone.includes("@")) {
+            snap = await fDb.collection("users").where("email", "==", phone.trim().toLowerCase()).limit(1).get();
+        } else {
+            snap = await fDb.collection("users").where("phone", "==", cleanPhone).limit(1).get();
+        }
         const userDoc = snap.empty ? null : snap.docs[0];
         const user = userDoc ? userDoc.data() : null;
 
@@ -258,13 +540,13 @@ router.post("/login", validate(LoginSchema), async (req, res) => {
         }
 
         // 6. Verify Status ONLY after successful password match
-        if (user.status === "pending") {
+        if (user.status === "pending" && !portal) {
             return res.status(403).json({ 
                 error: "Your account is pending admin approval. You will be notified once approved.",
                 status: "pending"
             });
         }
-        if (user.status === "rejected") {
+        if (user.status === "rejected" && !portal) {
             return res.status(403).json({ 
                 error: "Your registration was not approved. Please contact the society admin.",
                 status: "rejected"
@@ -274,14 +556,133 @@ router.post("/login", validate(LoginSchema), async (req, res) => {
         // Reset security counters on success
         await userDoc.ref.update({ failedLoginAttempts: 0, lockUntil: null });
 
-        // 7. Issue JWT + Refresh Token
+        // Resolve destinations and check portal mismatch
+        const destinations = await getUserDestinations(userDoc.id, user.phone);
+        addFirestoreDestinations(user, destinations);
+
+        if (portal) {
+            const matching = destinations.filter(d => d.type === portal);
+            if (matching.length === 0) {
+                logger.warn({ ip, userId: userDoc.id, portal }, "Portal mismatch detected");
+                return res.status(403).json({
+                    success: false,
+                    error: {
+                        code: "PORTAL_MISMATCH",
+                        message: `This account does not have access to the selected portal.`,
+                        allowedPortals: [...new Set(destinations.map(d => d.type))]
+                    }
+                });
+            }
+        }
+
+        const filteredDestinations = portal ? destinations.filter(d => d.type === portal) : destinations;
+        const requiresWorkspaceSelection = filteredDestinations.length > 1;
+
+        let activeWorkspace = null;
+        let finalRole = user.role;
+        let finalSocietyId = user.society_id;
+
+        if (!requiresWorkspaceSelection && filteredDestinations.length === 1) {
+            activeWorkspace = filteredDestinations[0];
+            finalRole = activeWorkspace.role;
+            finalSocietyId = activeWorkspace.societyId;
+        }
+        // Firestore + Firebase custom-token claims reject `undefined` (platform/
+        // admin accounts may have no society). Normalize to null.
+        finalSocietyId = finalSocietyId ?? null;
+
+        // 7. Issue JWT + Refresh Token (scoped if singular workspace resolved)
         const token = jwt.sign(
             { 
                 uid: userDoc.id, 
                 phone: user.phone, 
-                role: user.role, 
+                role: finalRole, 
                 name: user.name,
-                society_id: user.society_id
+                society_id: finalSocietyId
+            },
+            JWT_SECRET,
+            { expiresIn: JWT_EXPIRES_IN }
+        );
+
+        const refreshToken = crypto.randomBytes(40).toString("hex");
+        const refreshTokenHash = hashToken(refreshToken);
+
+        await fDb.collection("refresh_tokens").doc(refreshTokenHash).set({
+            userId: userDoc.id,
+            expiresAt: getAdmin().firestore.Timestamp.fromDate(new Date(Date.now() + REFRESH_TOKEN_EXPIRES_IN)),
+            revoked: false,
+            createdAt: getAdmin().firestore.FieldValue.serverTimestamp(),
+            role: finalRole,
+            society_id: finalSocietyId
+        });
+
+        logger.info({ ip, userId: userDoc.id }, "Login successful with refresh token");
+
+        // Generate Firebase custom token so Flutter can sign into Firebase Auth
+        let firebaseToken = null;
+        try {
+            firebaseToken = await getAdmin().auth().createCustomToken(userDoc.id, {
+                role: finalRole,
+                society_id: finalSocietyId,
+            });
+        } catch (e) {
+            logger.warn({ userId: userDoc.id }, "Firebase custom token generation failed (non-fatal)");
+        }
+
+        const { password: _, ...safeUser } = user;
+        const responseData = {
+            token,
+            refreshToken,
+            firebaseToken,
+            user: safeUser,
+            requiresWorkspaceSelection,
+            activeWorkspace,
+            destinations: filteredDestinations
+        };
+        res.json({
+            success: true,
+            data: responseData,
+            ...responseData
+        });
+
+    } catch (err) {
+        logger.error({ ip, error: err.message }, "Unhandled error during login");
+        res.status(500).json({ error: "Internal server error" });
+    }
+});
+
+// ─── WORKSPACE SELECTION ENDPOINTS ──────────────────────────────────────────────
+router.post("/workspace/select", authMiddleware, async (req, res) => {
+    const { workspaceId } = req.body;
+    const uid = req.user.uid;
+    const phone = req.user.phone;
+    const ip = req.ip || req.headers["x-forwarded-for"] || "unknown";
+
+    try {
+        const db = getDb();
+        const userDoc = await db.collection("users").doc(uid).get();
+        if (!userDoc.exists) {
+            return res.status(404).json({ success: false, error: "User not found" });
+        }
+        const user = userDoc.data();
+
+        const destinations = await getUserDestinations(uid, phone);
+        addFirestoreDestinations(user, destinations);
+
+        const activeWorkspace = destinations.find(d => d.workspaceId === workspaceId);
+        if (!activeWorkspace) {
+            logger.warn({ ip, userId: uid, workspaceId }, "SEC-WARN: Unauthorized workspace selection attempt");
+            return res.status(403).json({ success: false, error: "Unauthorized access to selected workspace" });
+        }
+
+        // Issue new scoped JWT + custom token
+        const token = jwt.sign(
+            { 
+                uid, 
+                phone, 
+                role: activeWorkspace.role, 
+                name: user.name,
+                society_id: activeWorkspace.societyId
             },
             JWT_SECRET,
             { expiresIn: JWT_EXPIRES_IN }
@@ -291,31 +692,113 @@ router.post("/login", validate(LoginSchema), async (req, res) => {
         const refreshTokenHash = hashToken(refreshToken);
 
         await db.collection("refresh_tokens").doc(refreshTokenHash).set({
-            userId: userDoc.id,
+            userId: uid,
             expiresAt: getAdmin().firestore.Timestamp.fromDate(new Date(Date.now() + REFRESH_TOKEN_EXPIRES_IN)),
             revoked: false,
             createdAt: getAdmin().firestore.FieldValue.serverTimestamp(),
+            role: activeWorkspace.role,
+            society_id: activeWorkspace.societyId
         });
 
-        logger.info({ ip, userId: userDoc.id }, "Login successful with refresh token");
-
-        // Generate Firebase custom token so Flutter can sign into Firebase Auth
-        // (required for direct Firestore SDK access in the app)
         let firebaseToken = null;
         try {
-            firebaseToken = await getAdmin().auth().createCustomToken(userDoc.id, {
-                role: user.role,
-                society_id: user.society_id,
+            firebaseToken = await getAdmin().auth().createCustomToken(uid, {
+                role: activeWorkspace.role,
+                society_id: activeWorkspace.societyId,
             });
         } catch (e) {
-            logger.warn({ userId: userDoc.id }, "Firebase custom token generation failed (non-fatal)");
+            logger.warn({ userId: uid }, "Firebase custom token generation failed during workspace select");
         }
 
-        const { password: _, ...safeUser } = user;
-        res.json({ token, refreshToken, firebaseToken, user: safeUser });
+        logger.info({ ip, userId: uid, workspaceId }, "Workspace selected successfully");
+        res.json({
+            success: true,
+            data: {
+                token,
+                refreshToken,
+                firebaseToken,
+                activeWorkspace
+            }
+        });
 
     } catch (err) {
-        logger.error({ ip, error: err.message }, "Unhandled error during login");
+        logger.error({ ip, error: err.message }, "Error during workspace selection");
+        res.status(500).json({ error: "Internal server error" });
+    }
+});
+
+router.post("/workspace/switch", authMiddleware, async (req, res) => {
+    // Switch acts identically to select but is routed appropriately
+    const { workspaceId } = req.body;
+    const uid = req.user.uid;
+    const phone = req.user.phone;
+    const ip = req.ip || req.headers["x-forwarded-for"] || "unknown";
+
+    try {
+        const db = getDb();
+        const userDoc = await db.collection("users").doc(uid).get();
+        if (!userDoc.exists) {
+            return res.status(404).json({ success: false, error: "User not found" });
+        }
+        const user = userDoc.data();
+
+        const destinations = await getUserDestinations(uid, phone);
+        addFirestoreDestinations(user, destinations);
+
+        const activeWorkspace = destinations.find(d => d.workspaceId === workspaceId);
+        if (!activeWorkspace) {
+            logger.warn({ ip, userId: uid, workspaceId }, "SEC-WARN: Unauthorized workspace switch attempt");
+            return res.status(403).json({ success: false, error: "Unauthorized access to selected workspace" });
+        }
+
+        // Issue new scoped JWT + custom token
+        const token = jwt.sign(
+            { 
+                uid, 
+                phone, 
+                role: activeWorkspace.role, 
+                name: user.name,
+                society_id: activeWorkspace.societyId
+            },
+            JWT_SECRET,
+            { expiresIn: JWT_EXPIRES_IN }
+        );
+
+        const refreshToken = crypto.randomBytes(40).toString("hex");
+        const refreshTokenHash = hashToken(refreshToken);
+
+        await db.collection("refresh_tokens").doc(refreshTokenHash).set({
+            userId: uid,
+            expiresAt: getAdmin().firestore.Timestamp.fromDate(new Date(Date.now() + REFRESH_TOKEN_EXPIRES_IN)),
+            revoked: false,
+            createdAt: getAdmin().firestore.FieldValue.serverTimestamp(),
+            role: activeWorkspace.role,
+            society_id: activeWorkspace.societyId
+        });
+
+        let firebaseToken = null;
+        try {
+            firebaseToken = await getAdmin().auth().createCustomToken(uid, {
+                role: activeWorkspace.role,
+                society_id: activeWorkspace.societyId,
+            });
+        } catch (e) {
+            logger.warn({ userId: uid }, "Firebase custom token generation failed during workspace switch");
+        }
+
+        logger.info({ ip, userId: uid, workspaceId }, "Workspace switched successfully");
+        res.json({
+            success: true,
+            data: {
+                token,
+                refreshToken,
+                firebaseToken,
+                activeWorkspace
+            }
+        });
+
+    } catch (err) {
+        logger.error({ ip, error: err.message }, "Error during workspace switch");
         res.status(500).json({ error: "Internal server error" });
     }
 });

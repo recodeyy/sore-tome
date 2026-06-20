@@ -1,17 +1,26 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:sero/app/theme.dart';
-import 'package:sero/data/mock_data.dart';
+import 'package:sero/providers/admin/admin_domain_providers.dart';
+import 'package:sero/widgets/common/async_state_views.dart';
 import 'package:sero/widgets/common/sero_search_bar.dart';
-import 'package:sero/widgets/common/status_badge.dart';
+import 'package:sero/widgets/admin/admin_actions.dart';
 
 /// Payment History — Screen 4 of 6
 /// Searchable list of transactions with status filtering and detailed rows.
-class PaymentHistoryScreen extends StatelessWidget {
+class PaymentHistoryScreen extends ConsumerStatefulWidget {
   const PaymentHistoryScreen({super.key});
 
   @override
+  ConsumerState<PaymentHistoryScreen> createState() => _PaymentHistoryScreenState();
+}
+
+class _PaymentHistoryScreenState extends ConsumerState<PaymentHistoryScreen> {
+  String _query = '';
+
+  @override
   Widget build(BuildContext context) {
+    final invoicesAsync = ref.watch(paymentHistoryProvider);
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
@@ -21,7 +30,7 @@ class PaymentHistoryScreen extends StatelessWidget {
         leading: IconButton(icon: const Icon(Icons.arrow_back, color: Color(0xFF1E293B)), onPressed: () => Navigator.pop(context)),
         title: Text('Payment History', style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.w700, color: const Color(0xFF1E293B))),
         actions: [
-          IconButton(icon: const Icon(Icons.filter_list, color: Color(0xFF1E293B)), onPressed: () {}),
+          IconButton(icon: const Icon(Icons.filter_list, color: Color(0xFF1E293B)), onPressed: () => AdminActions.comingSoon(context, 'Advanced filters')),
         ],
       ),
       body: Column(
@@ -31,8 +40,8 @@ class PaymentHistoryScreen extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
             child: SeroSearchBar(
               hintText: 'Search by Flat, Bill No., Name..',
-              onChanged: (v) {},
-              onFilterTap: () {},
+              onChanged: (v) => setState(() => _query = v.trim().toLowerCase()),
+              onFilterTap: () => AdminActions.comingSoon(context, 'Advanced filters'),
             ),
           ),
           Padding(
@@ -54,17 +63,48 @@ class PaymentHistoryScreen extends StatelessWidget {
 
           // ── Payment List ──
           Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 80),
-              itemCount: MockFinanceData.paymentHistory.length,
-              itemBuilder: (context, index) {
-                final payment = MockFinanceData.paymentHistory[index];
-                return _PaymentItemRow(
-                  title: payment['title'],
-                  subtitle: payment['subtitle'],
-                  amount: payment['amount'],
-                  date: payment['date'],
-                  status: payment['status'],
+            child: invoicesAsync.when(
+              loading: () => const LiveLoadingView(label: 'Loading payments…'),
+              error: (e, _) => LiveErrorView(
+                error: e,
+                onRetry: () => ref.invalidate(paymentHistoryProvider),
+              ),
+              data: (invoices) {
+                if (invoices.isEmpty) {
+                  return const LiveEmptyView(
+                    icon: Icons.receipt_long_outlined,
+                    message: 'No payment history yet.',
+                  );
+                }
+                final filtered = _query.isEmpty
+                    ? invoices
+                    : invoices.where((inv) {
+                        final m = inv is Map ? inv : const {};
+                        final hay = [
+                          m['title'], m['invoice_no'], m['unit'], m['flat'],
+                          m['resident_name'], m['subtitle'], m['status'],
+                        ].where((e) => e != null).join(' ').toLowerCase();
+                        return hay.contains(_query);
+                      }).toList();
+                if (filtered.isEmpty) {
+                  return const LiveEmptyView(
+                    icon: Icons.search_off,
+                    message: 'No payments match your search.',
+                  );
+                }
+                return ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 80),
+                  itemCount: filtered.length,
+                  itemBuilder: (context, index) {
+                    final m = filtered[index] is Map ? filtered[index] as Map : const {};
+                    return _PaymentItemRow(
+                      title: (m['title'] ?? m['invoice_no'] ?? m['unit'] ?? 'Invoice').toString(),
+                      subtitle: (m['subtitle'] ?? m['resident_name'] ?? m['flat'] ?? '').toString(),
+                      amount: '₹ ${m['amount'] ?? m['total'] ?? 0}',
+                      date: (m['date'] ?? m['created_at'] ?? m['due_date'] ?? '').toString(),
+                      status: (m['status'] ?? 'Pending').toString(),
+                    );
+                  },
                 );
               },
             ),

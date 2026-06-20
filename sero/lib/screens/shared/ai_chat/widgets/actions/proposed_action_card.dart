@@ -89,9 +89,8 @@ class _ProposedActionCardState extends State<ProposedActionCard> {
                       style: GoogleFonts.outfit(
                         fontSize: 10,
                         fontWeight: FontWeight.w800,
-                        color: isExpired
-                            ? Colors.grey
-                            : const Color(0xFF64748B),
+                        color:
+                            isExpired ? Colors.grey : const Color(0xFF64748B),
                         letterSpacing: 1,
                       ),
                     ),
@@ -133,61 +132,86 @@ class _ProposedActionCardState extends State<ProposedActionCard> {
                     height: 1.5,
                   ),
                 ),
+                const SizedBox(height: 14),
+                _ProposalDetail(
+                  label: 'Target',
+                  value: widget.message['target']?.toString() ??
+                      widget.message['societyId']?.toString() ??
+                      'Current authorized society',
+                ),
+                _ProposalDetail(
+                  label: 'Permission',
+                  value: widget.message['permission']?.toString() ??
+                      'Checked by backend on confirmation',
+                ),
+                _ProposalDetail(
+                  label: 'Approval',
+                  value: widget.message['approvalRequired'] == true
+                      ? 'Approval required before final execution'
+                      : 'No extra approval reported',
+                ),
+                _ProposalDetail(
+                  label: 'Reference',
+                  value: widget.message['requestId']?.toString() ??
+                      widget.message['actionId']?.toString() ??
+                      'Pending',
+                ),
                 const SizedBox(height: 20),
                 if (_loading)
                   const Center(
                     child: CircularProgressIndicator(color: kPrimaryGreen),
                   )
                 else
-                  Row(
+                  Column(
                     children: [
-                      Expanded(
-                        child: ElevatedButton(
-                          onPressed: isExpired
-                              ? null
-                              : () async {
-                                  setState(() => _loading = true);
-                                  try {
-                                    await widget.aiService.executeAction(
-                                      widget.message['actionId'],
-                                    );
-                                    setState(() {
-                                      _loading = false;
-                                      _executed = true;
-                                      widget.message['executed'] = true;
-                                    });
-                                    widget.onExecuted();
-                                    if (!context.mounted) return;
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text('Action confirmed!'),
-                                      ),
-                                    );
-                                  } catch (e) {
-                                    if (!context.mounted) return;
-                                    setState(() => _loading = false);
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text('Execution failed: $e'),
-                                      ),
-                                    );
-                                  }
-                                },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: kPrimaryGreen,
-                            foregroundColor: Colors.white,
-                            disabledBackgroundColor: Colors.grey.shade300,
-                            elevation: 0,
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: isExpired
+                                  ? null
+                                  : () {
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(
+                                        const SnackBar(
+                                          content: Text(
+                                            'Edit flow requires backend proposal editing support.',
+                                          ),
+                                        ),
+                                      );
+                                    },
+                              child: const Text('Edit'),
                             ),
                           ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: () {
+                                setState(() => _secondsRemaining = 0);
+                              },
+                              child: const Text('Cancel'),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: isExpired ? null : _confirmAction,
+                          style: ElevatedButton.styleFrom(
+                              backgroundColor: kPrimaryGreen,
+                              foregroundColor: Colors.white,
+                              disabledBackgroundColor: Colors.grey.shade300,
+                              elevation: 0,
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              )),
                           child: Text(
                             'Confirm & Save',
-                            style: GoogleFonts.outfit(
-                              fontWeight: FontWeight.w700,
-                            ),
+                            style:
+                                GoogleFonts.outfit(fontWeight: FontWeight.w700),
                           ),
                         ),
                       ),
@@ -199,6 +223,29 @@ class _ProposedActionCardState extends State<ProposedActionCard> {
         ],
       ),
     );
+  }
+
+  Future<void> _confirmAction() async {
+    setState(() => _loading = true);
+    try {
+      await widget.aiService.executeAction(widget.message['actionId']);
+      setState(() {
+        _loading = false;
+        _executed = true;
+        widget.message['executed'] = true;
+      });
+      widget.onExecuted();
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Action confirmed!')),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      setState(() => _loading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Execution failed: $e')),
+      );
+    }
   }
 
   String _getDisplayTitle(String tool, Map params) {
@@ -228,13 +275,42 @@ class _ProposedActionCardState extends State<ProposedActionCard> {
   }
 }
 
+class _ProposalDetail extends StatelessWidget {
+  const _ProposalDetail({required this.label, required this.value});
 
+  final String label;
+  final String value;
 
-
-
-
-
-
-
-
-
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 78,
+            child: Text(
+              label,
+              style: GoogleFonts.outfit(
+                fontSize: 11,
+                color: const Color(0xFF94A3B8),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: GoogleFonts.outfit(
+                fontSize: 11,
+                color: const Color(0xFF475569),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

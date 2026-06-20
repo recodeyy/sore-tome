@@ -2,11 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:sero/app/theme.dart';
-import 'package:sero/data/mock_data.dart';
 import 'package:sero/widgets/common/stat_card.dart';
 import 'package:sero/widgets/common/quick_action_button.dart';
 import 'package:sero/widgets/common/status_badge.dart';
+import 'package:sero/widgets/common/async_state_views.dart';
 import 'package:sero/providers/shared/notification_provider.dart';
+import 'package:sero/providers/shared/notices_provider.dart';
+import 'package:sero/models/notice.dart';
+import 'package:sero/widgets/admin/admin_actions.dart';
 
 /// Dashboard Notices & Quick Stats — Screen 4 of 4  
 /// Shows notice highlights, quick stats, and shortcuts section.
@@ -16,9 +19,22 @@ class DashboardNoticesScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final unreadCount = ref.watch(notificationProvider.notifier).unreadCount;
+    final noticesAsync = ref.watch(noticesProvider);
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
-      body: CustomScrollView(
+      body: noticesAsync.when(
+        loading: () => const LiveLoadingView(label: 'Loading notices…'),
+        error: (e, _) => LiveErrorView(
+          error: e,
+          onRetry: () => ref.read(noticesProvider.notifier).fetchNotices(),
+        ),
+        data: (notices) {
+          // Quick-stats have no provider source on this screen → show 0 truthfully.
+          const totalMembers = 0;
+          const totalFlats = 0;
+          const totalStaff = 0;
+          const totalVehicles = 0;
+          return CustomScrollView(
         physics: const BouncingScrollPhysics(),
         slivers: [
           // ── App Bar ──
@@ -73,7 +89,7 @@ class DashboardNoticesScreen extends ConsumerWidget {
                 children: [
                   Text('Notice Highlights', style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.w700, color: const Color(0xFF1E293B))),
                   GestureDetector(
-                    onTap: () {},
+                    onTap: () => Navigator.pushNamed(context, '/admin/notices'),
                     child: Text('View All', style: GoogleFonts.outfit(fontSize: 13, fontWeight: FontWeight.w600, color: kPrimaryGreen)),
                   ),
                 ],
@@ -82,30 +98,29 @@ class DashboardNoticesScreen extends ConsumerWidget {
           ),
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
-            sliver: MockDashboardData.noticeHighlights.isEmpty
-                ? SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.all(20.0),
-                      child: Center(
-                        child: Text(
-                          'No notices available.',
-                          style: GoogleFonts.outfit(color: const Color(0xFF64748B)),
-                        ),
-                      ),
+            sliver: notices.isEmpty
+                ? const SliverToBoxAdapter(
+                    child: LiveEmptyView(
+                      icon: Icons.campaign_outlined,
+                      message: 'No notices yet.',
                     ),
                   )
                 : SliverList(
                     delegate: SliverChildBuilderDelegate(
                       (context, index) {
-                        final notice = MockDashboardData.noticeHighlights[index];
+                        final Notice notice = notices[index];
+                        final badge = notice.tag == 'new'
+                            ? 'New'
+                            : (notice.tag == 'today' ? 'Important' : 'General');
+                        final d = notice.createdAt;
                         return _NoticeCard(
-                          badge: notice['badge'] as String,
-                          title: notice['title'] as String,
-                          description: notice['description'] as String,
-                          date: notice['date'] as String,
+                          badge: badge,
+                          title: notice.title,
+                          description: notice.body,
+                          date: '${d.day}/${d.month}/${d.year}',
                         );
                       },
-                      childCount: MockDashboardData.noticeHighlights.length,
+                      childCount: notices.length,
                     ),
                   ),
           ),
@@ -142,22 +157,22 @@ class DashboardNoticesScreen extends ConsumerWidget {
               childAspectRatio: 2.2,
               children: [
                 CompactStatCard(
-                  value: MockDashboardData.totalMembers.toString(),
+                  value: totalMembers.toString(),
                   label: 'Total Members',
                   icon: Icons.people_outline,
                 ),
                 CompactStatCard(
-                  value: MockDashboardData.totalFlats.toString(),
+                  value: totalFlats.toString(),
                   label: 'Total Flats',
                   icon: Icons.apartment,
                 ),
                 CompactStatCard(
-                  value: MockDashboardData.totalStaff.toString(),
+                  value: totalStaff.toString(),
                   label: 'Total Staff',
                   icon: Icons.badge_outlined,
                 ),
                 CompactStatCard(
-                  value: MockDashboardData.totalVehicles.toString(),
+                  value: totalVehicles.toString(),
                   label: 'Total Vehicles',
                   icon: Icons.directions_car_outlined,
                 ),
@@ -189,31 +204,31 @@ class DashboardNoticesScreen extends ConsumerWidget {
                       icon: Icons.campaign_outlined,
                       label: 'Add Notice',
                       bgColor: kPrimaryGreen,
-                      onTap: () {},
+                      onTap: () => Navigator.pushNamed(context, '/admin/communication/create-notice'),
                     ),
                     QuickActionButton(
                       icon: Icons.receipt_long_outlined,
                       label: 'Generate Bill',
                       bgColor: const Color(0xFF10B981),
-                      onTap: () {},
+                      onTap: () => Navigator.pushNamed(context, '/admin/finance/generate-bills'),
                     ),
                     QuickActionButton(
                       icon: Icons.person_add_outlined,
                       label: 'Add Member',
                       bgColor: const Color(0xFF1E3A8A),
-                      onTap: () {},
+                      onTap: () => Navigator.pushNamed(context, '/admin/society/flats'),
                     ),
                     QuickActionButton(
                       icon: Icons.poll_outlined,
                       label: 'Create Poll',
                       bgColor: const Color(0xFF7C3AED),
-                      onTap: () {},
+                      onTap: () => AdminActions.comingSoon(context, 'Polls'),
                     ),
                     QuickActionButton(
                       icon: Icons.more_horiz,
                       label: 'More',
                       bgColor: const Color(0xFF475569),
-                      onTap: () {},
+                      onTap: () => Navigator.pushNamed(context, '/admin/reports'),
                     ),
                   ],
                 ),
@@ -223,9 +238,11 @@ class DashboardNoticesScreen extends ConsumerWidget {
 
           const SliverToBoxAdapter(child: SizedBox(height: 100)),
         ],
+      );
+        },
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () {},
+        onPressed: () => Navigator.pushNamed(context, '/admin/communication/create-notice'),
         backgroundColor: kPrimaryGreen,
         child: const Icon(Icons.add, color: Colors.white),
       ),

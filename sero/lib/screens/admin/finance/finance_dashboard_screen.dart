@@ -1,15 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:sero/app/theme.dart';
-import 'package:sero/data/mock_data.dart';
+import 'package:sero/providers/admin/admin_domain_providers.dart';
+import 'package:sero/widgets/common/async_state_views.dart';
 import 'package:sero/widgets/common/mini_chart.dart';
 import 'package:sero/providers/shared/notification_provider.dart';
-import 'package:sero/widgets/common/stat_card.dart';
-import 'generate_bills_screen.dart';
-import 'bill_details_screen.dart';
-import 'payment_history_screen.dart';
-import 'financial_ledger_screen.dart';
 import 'package:sero/widgets/shared/admin_drawer.dart';
 
 /// Finance Dashboard — Screen 1 of 6
@@ -19,6 +14,7 @@ class FinanceDashboardScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final financeAsync = ref.watch(financeDashboardProvider);
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       drawer: const AdminDrawer(),
@@ -40,7 +36,15 @@ class FinanceDashboardScreen extends ConsumerWidget {
               style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.w700, color: const Color(0xFF1E293B)),
             ),
             actions: [
-              IconButton(icon: const Icon(Icons.calendar_today_outlined, size: 20, color: Color(0xFF1E293B)), onPressed: () {}),
+              IconButton(
+                icon: const Icon(Icons.calendar_today_outlined, size: 20, color: Color(0xFF1E293B)),
+                onPressed: () => showDatePicker(
+                  context: context,
+                  initialDate: DateTime.now(),
+                  firstDate: DateTime(2020),
+                  lastDate: DateTime(2030),
+                ),
+              ),
               GestureDetector(
                 onTap: () => Navigator.pushNamed(context, '/notifications'),
                 child: Stack(
@@ -67,142 +71,167 @@ class FinanceDashboardScreen extends ConsumerWidget {
             ],
           ),
 
-          // ── Total Collection Hero Card ──
+          // ── Live content (hero + stats + chart) ──
           SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
-              child: Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: const Color(0xFFF1F5F9)),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+            child: financeAsync.when(
+              loading: () => const LiveLoadingView(label: 'Loading finance data…'),
+              error: (e, _) => LiveErrorView(
+                error: e,
+                onRetry: () => ref.invalidate(financeDashboardProvider),
+              ),
+              data: (data) {
+                final summary = (data['summary'] as Map?) ?? const {};
+                final dues = (data['dues'] as Map?) ?? const {};
+                final totalCollection = '₹ ${summary['collection'] ?? summary['total_collection'] ?? summary['income'] ?? 0}';
+                final pendingDues = '₹ ${dues['total'] ?? dues['outstanding'] ?? summary['dues'] ?? 0}';
+                final thisMonthRevenue = '₹ ${summary['income'] ?? summary['revenue'] ?? 0}';
+                final totalExpenses = '₹ ${summary['expense'] ?? summary['total_expense'] ?? 0}';
+                final maintenanceDue = '₹ ${dues['maintenance'] ?? dues['maintenance_due'] ?? 0}';
+                final maintenanceDueFlats = (dues['flats'] ?? dues['flat_count'] ?? 0).toString();
+                final revenueData = ((summary['revenue_series'] ?? summary['revenueLineData']) as List?)
+                        ?.map((e) => (e is num ? e.toDouble() : 0.0))
+                        .toList() ??
+                    const <double>[];
+                final revenueLabels = ((summary['revenue_labels'] ?? summary['revenueLabels']) as List?)
+                        ?.map((e) => e.toString())
+                        .toList() ??
+                    const <String>[];
+                return Column(
                   children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text('Total Collection', style: GoogleFonts.outfit(fontSize: 13, color: const Color(0xFF94A3B8))),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                          decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(8)),
-                          child: Row(
-                            children: [
-                              Text('May 2024', style: GoogleFonts.outfit(fontSize: 11, fontWeight: FontWeight.w600, color: const Color(0xFF64748B))),
-                              const Icon(Icons.keyboard_arrow_down, size: 14, color: Color(0xFF64748B)),
-                            ],
+                    // ── Total Collection Hero Card ──
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+                      child: Container(
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: const Color(0xFFF1F5F9)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text('Total Collection', style: GoogleFonts.outfit(fontSize: 13, color: const Color(0xFF94A3B8))),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                  decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(8)),
+                                  child: Row(
+                                    children: [
+                                      Text('This Month', style: GoogleFonts.outfit(fontSize: 11, fontWeight: FontWeight.w600, color: const Color(0xFF64748B))),
+                                      const Icon(Icons.keyboard_arrow_down, size: 14, color: Color(0xFF64748B)),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              totalCollection,
+                              style: GoogleFonts.outfit(fontSize: 28, fontWeight: FontWeight.w800, color: const Color(0xFF064E3B)),
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(10),
+                                  decoration: BoxDecoration(color: const Color(0xFFF0FDF4), borderRadius: BorderRadius.circular(12)),
+                                  child: const Icon(Icons.account_balance_wallet_outlined, color: Color(0xFF064E3B), size: 20),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    // ── Stat Grid ──
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+                      child: GridView.count(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        crossAxisCount: 2,
+                        mainAxisSpacing: 10,
+                        crossAxisSpacing: 10,
+                        childAspectRatio: 1.4,
+                        children: [
+                          _FinanceMetricCard(
+                            label: 'Pending Dues',
+                            value: pendingDues,
+                            onTap: () => Navigator.pushNamed(context, '/admin/finance/history'),
                           ),
-                        ),
-                      ],
+                          _FinanceMetricCard(
+                            label: 'This Month Revenue',
+                            value: thisMonthRevenue,
+                            showSparkline: true,
+                            onTap: () => Navigator.pushNamed(context, '/admin/finance/reports'),
+                          ),
+                          _FinanceMetricCard(
+                            label: 'Total Expenses',
+                            value: totalExpenses,
+                            onTap: () => Navigator.pushNamed(context, '/admin/finance/ledger'),
+                          ),
+                          _FinanceMetricCard(
+                            label: 'Maintenance Due',
+                            value: maintenanceDue,
+                            subtitle: '$maintenanceDueFlats Flats',
+                            onTap: () => Navigator.pushNamed(context, '/admin/finance/bills'),
+                          ),
+                        ],
+                      ),
                     ),
-                    const SizedBox(height: 8),
-                    Text(
-                      MockFinanceData.totalCollection,
-                      style: GoogleFonts.outfit(fontSize: 28, fontWeight: FontWeight.w800, color: const Color(0xFF064E3B)),
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        const Icon(Icons.trending_up, size: 14, color: Color(0xFF059669)),
-                        const SizedBox(width: 4),
-                        Text(MockFinanceData.totalCollectionTrend, style: GoogleFonts.outfit(fontSize: 12, fontWeight: FontWeight.w700, color: const Color(0xFF059669))),
-                        const SizedBox(width: 6),
-                        Text('vs Apr 2024', style: GoogleFonts.outfit(fontSize: 12, color: const Color(0xFFCBD5E1))),
-                        const Spacer(),
-                        Container(
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(color: const Color(0xFFF0FDF4), borderRadius: BorderRadius.circular(12)),
-                          child: const Icon(Icons.account_balance_wallet_outlined, color: Color(0xFF064E3B), size: 20),
+
+                    // ── Revenue Overview Chart ──
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
+                      child: Container(
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: const Color(0xFFF1F5F9)),
                         ),
-                      ],
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text('Revenue Overview', style: GoogleFonts.outfit(fontSize: 15, fontWeight: FontWeight.w700, color: const Color(0xFF1E293B))),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(8)),
+                                  child: Row(
+                                    children: [
+                                      Text('This Month', style: GoogleFonts.outfit(fontSize: 10, color: const Color(0xFF64748B))),
+                                      const Icon(Icons.keyboard_arrow_down, size: 14, color: Color(0xFF64748B)),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 20),
+                            revenueData.isEmpty
+                                ? const LiveEmptyView(
+                                    icon: Icons.show_chart_rounded,
+                                    message: 'No revenue trend available.',
+                                  )
+                                : MiniLineChart(
+                                    data: revenueData,
+                                    labels: revenueLabels,
+                                    lineColor: const Color(0xFF059669),
+                                    height: 180,
+                                  ),
+                          ],
+                        ),
+                      ),
                     ),
                   ],
-                ),
-              ),
-            ),
-          ),
-
-          // ── Stat Grid ──
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-            sliver: SliverGrid.count(
-              crossAxisCount: 2,
-              mainAxisSpacing: 10,
-              crossAxisSpacing: 10,
-              childAspectRatio: 1.4,
-              children: [
-                _FinanceMetricCard(
-                  label: 'Pending Dues',
-                  value: MockFinanceData.pendingDues,
-                  trend: MockFinanceData.pendingDuesTrend,
-                  trendUp: false,
-                  onTap: () => Navigator.pushNamed(context, '/admin/finance/history'),
-                ),
-                _FinanceMetricCard(
-                  label: 'This Month Revenue',
-                  value: MockFinanceData.thisMonthRevenue,
-                  showSparkline: true,
-                  onTap: () => Navigator.pushNamed(context, '/admin/finance/reports'),
-                ),
-                _FinanceMetricCard(
-                  label: 'Total Expenses',
-                  value: MockFinanceData.totalExpenses,
-                  trend: MockFinanceData.totalExpensesTrend,
-                  trendUp: true,
-                  onTap: () => Navigator.pushNamed(context, '/admin/finance/ledger'),
-                ),
-                _FinanceMetricCard(
-                  label: 'Maintenance Due',
-                  value: MockFinanceData.maintenanceDue,
-                  subtitle: '${MockFinanceData.maintenanceDueFlats} Flats',
-                  onTap: () => Navigator.pushNamed(context, '/admin/finance/bills'),
-                ),
-              ],
-            ),
-          ),
-
-          // ── Revenue Overview Chart ──
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
-              child: Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: const Color(0xFFF1F5F9)),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text('Revenue Overview', style: GoogleFonts.outfit(fontSize: 15, fontWeight: FontWeight.w700, color: const Color(0xFF1E293B))),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(8)),
-                          child: Row(
-                            children: [
-                              Text('This Month', style: GoogleFonts.outfit(fontSize: 10, color: const Color(0xFF64748B))),
-                              const Icon(Icons.keyboard_arrow_down, size: 14, color: Color(0xFF64748B)),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 20),
-                    MiniLineChart(
-                      data: MockDashboardData.revenueLineData,
-                      labels: MockDashboardData.revenueLabels,
-                      lineColor: const Color(0xFF059669),
-                      height: 180,
-                    ),
-                  ],
-                ),
-              ),
+                );
+              },
             ),
           ),
 
@@ -231,8 +260,6 @@ class FinanceDashboardScreen extends ConsumerWidget {
 class _FinanceMetricCard extends StatelessWidget {
   final String label;
   final String value;
-  final String? trend;
-  final bool trendUp;
   final String? subtitle;
   final bool showSparkline;
   final VoidCallback onTap;
@@ -240,8 +267,6 @@ class _FinanceMetricCard extends StatelessWidget {
   const _FinanceMetricCard({
     required this.label,
     required this.value,
-    this.trend,
-    this.trendUp = true,
     this.subtitle,
     this.showSparkline = false,
     required this.onTap,
@@ -264,14 +289,6 @@ class _FinanceMetricCard extends StatelessWidget {
           children: [
             Text(label, style: GoogleFonts.outfit(fontSize: 11, fontWeight: FontWeight.w600, color: const Color(0xFF94A3B8))),
             Text(value, style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.w800, color: const Color(0xFF1E293B))),
-            if (trend != null)
-              Row(
-                children: [
-                  Icon(trendUp ? Icons.trending_up : Icons.trending_down, size: 12, color: trendUp ? const Color(0xFF059669) : const Color(0xFFDC2626)),
-                  const SizedBox(width: 4),
-                  Text(trend!, style: GoogleFonts.outfit(fontSize: 10, fontWeight: FontWeight.w700, color: trendUp ? const Color(0xFF059669) : const Color(0xFFDC2626))),
-                ],
-              ),
             if (subtitle != null)
               Text(subtitle!, style: GoogleFonts.outfit(fontSize: 11, fontWeight: FontWeight.w600, color: const Color(0xFFEA580C))),
             if (showSparkline)

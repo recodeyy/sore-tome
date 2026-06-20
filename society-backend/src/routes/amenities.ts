@@ -70,6 +70,17 @@ function handleEnhErr(err: any, res: Response, msg: string) {
   return res.status(500).json({ error: msg });
 }
 
+// GET /amenities — list all amenities for the society
+router.get("/", authMiddleware, tenantMiddleware, async (req: Request, res: Response) => {
+  try {
+    const amenities = await BookingService.listAmenities(societyOf(req));
+    res.json({ amenities });
+  } catch (err: any) {
+    logger.error({ error: err.message }, "List amenities failed");
+    res.status(500).json({ error: "Failed to list amenities" });
+  }
+});
+
 // POST /amenities — create an amenity (admin)
 router.post("/", authMiddleware, tenantMiddleware, adminOnly, validate(CreateAmenitySchema), async (req: Request, res: Response) => {
   try {

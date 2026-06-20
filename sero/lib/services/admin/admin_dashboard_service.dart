@@ -13,6 +13,14 @@ class AdminDashboardService {
     return (data as Map?)?.cast<String, dynamic>() ?? <String, dynamic>{};
   }
 
+  /// Fetches tenant-scoped live society vitals.
+  /// Returns the unwrapped `data` map from the envelope.
+  static Future<Map<String, dynamic>> getVitals() async {
+    final res = await ApiService.get('/admin/dashboard/vitals');
+    final data = ApiService.unwrap(res);
+    return (data as Map?)?.cast<String, dynamic>() ?? <String, dynamic>{};
+  }
+
   /// Fetches recent activities for the dashboard.
   static Future<List<dynamic>> getRecentActivities() async {
     final res = await ApiService.get('/admin/dashboard/summary');

@@ -1,12 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:sero/app/theme.dart';
-import 'package:sero/data/mock_data.dart';
 import 'package:sero/widgets/common/section_header.dart';
+import 'package:sero/widgets/common/async_state_views.dart';
 import 'financial_report_screen.dart';
 import 'package:sero/providers/shared/notification_provider.dart';
+import 'package:sero/providers/admin/admin_domain_providers.dart';
 import 'package:sero/widgets/shared/admin_drawer.dart';
+import 'package:sero/widgets/admin/admin_actions.dart';
+
+/// Fixed report taxonomy (config constant — allowed static content).
+const List<Map<String, dynamic>> _kReportCategories = [
+  {'title': 'Financial Reports', 'kind': 'finance', 'icon': Icons.account_balance_wallet_outlined, 'color': 0xFF059669},
+  {'title': 'Occupancy Reports', 'kind': 'occupancy', 'icon': Icons.home_work_outlined, 'color': 0xFF2563EB},
+  {'title': 'Staff Reports', 'kind': 'staff', 'icon': Icons.badge_outlined, 'color': 0xFF7C3AED},
+  {'title': 'Complaint Reports', 'kind': 'complaints', 'icon': Icons.report_problem_outlined, 'color': 0xFFEF4444},
+];
 
 /// Reports Dashboard — Screen 1 of 2
 /// Overview of report generation, downloads, and categories.
@@ -16,6 +25,7 @@ class ReportsDashboardScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final unreadCount = ref.watch(notificationProvider.notifier).unreadCount;
+    final reportsAsync = ref.watch(reportsDashboardProvider);
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       drawer: const AdminDrawer(),
@@ -65,148 +75,166 @@ class ReportsDashboardScreen extends ConsumerWidget {
             ],
           ),
 
-          // ── Summary Hero Card ──
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
-              child: Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF064E3B),
-                  borderRadius: BorderRadius.circular(20),
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFF064E3B).withValues(alpha: 0.25),
-                      blurRadius: 20,
-                      offset: const Offset(0, 8),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Total Reports',
-                              style: GoogleFonts.outfit(fontSize: 13, color: Colors.white.withValues(alpha: 0.8)),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              MockReportsData.totalReportsGenerated.toString(),
-                              style: GoogleFonts.outfit(fontSize: 32, fontWeight: FontWeight.w800, color: Colors.white),
-                            ),
-                            Text(
-                              'Generated This Month',
-                              style: GoogleFonts.outfit(fontSize: 12, color: Colors.white.withValues(alpha: 0.6)),
-                            ),
-                          ],
-                        ),
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: const Icon(Icons.bar_chart, color: Colors.white, size: 40),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 24),
-                    Container(
-                      height: 1,
-                      color: Colors.white.withValues(alpha: 0.1),
-                    ),
-                    const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        _SummaryMiniItem(
-                          label: 'Downloads (This Month)',
-                          value: MockReportsData.totalDownloads.toString(),
-                          icon: Icons.file_download_outlined,
-                        ),
-                        Container(width: 1, height: 40, color: Colors.white.withValues(alpha: 0.1)),
-                        _SummaryMiniItem(
-                          label: 'Scheduled Reports',
-                          value: MockReportsData.scheduledReports.toString(),
-                          icon: Icons.calendar_today_outlined,
-                        ),
-                      ],
-                    ),
-                  ],
+          ...reportsAsync.when(
+            loading: () => const [
+              SliverToBoxAdapter(child: LiveLoadingView(label: 'Loading reports…')),
+            ],
+            error: (e, _) => [
+              SliverToBoxAdapter(
+                child: LiveErrorView(
+                  error: e,
+                  onRetry: () => ref.invalidate(reportsDashboardProvider),
                 ),
               ),
-            ),
-          ),
-
-          // ── Report Categories ──
-          SliverToBoxAdapter(
-            child: const SectionHeader(title: 'Report Categories'),
-          ),
-          SliverPadding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            sliver: SliverGrid.count(
-              crossAxisCount: 2,
-              mainAxisSpacing: 10,
-              crossAxisSpacing: 10,
-              childAspectRatio: 2.1,
-              children: MockReportsData.categories.map((cat) {
-                return _CategoryCard(
-                  title: cat['title'] as String,
-                  count: cat['count'] as int,
-                  icon: IconData(cat['icon'] as int, fontFamily: 'MaterialIcons'),
-                  color: Color(cat['color'] as int),
-                  onTap: () {
-                    if (cat['title'] == 'Financial Reports') {
-                      Navigator.push(context, MaterialPageRoute(builder: (_) => const FinancialReportScreen()));
-                    }
-                  },
-                );
-              }).toList(),
-            ),
-          ),
-
-          // ── Recent Reports ──
-          SliverToBoxAdapter(
-            child: SectionHeader(
-              title: 'Recent Reports',
-              actionText: 'View All',
-              onAction: () {},
-            ),
-          ),
-          SliverPadding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            sliver: MockReportsData.recentReports.isEmpty
-                ? SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.all(40.0),
-                      child: Center(
-                        child: Text(
-                          'No reports generated yet.',
-                          style: GoogleFonts.outfit(color: const Color(0xFF64748B)),
-                        ),
+            ],
+            data: (payload) {
+              final jobs = (payload['jobs'] as List?) ?? const [];
+              final templates = (payload['templates'] as List?) ?? const [];
+              final completed = jobs
+                  .where((j) => (j as Map)['status'] == 'completed')
+                  .length;
+              final countByKind = <String, int>{};
+              for (final j in jobs) {
+                final k = ((j as Map)['kind'] ?? 'custom').toString();
+                countByKind[k] = (countByKind[k] ?? 0) + 1;
+              }
+              return [
+                // ── Summary Hero Card ──
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+                    child: Container(
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF064E3B),
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFF064E3B).withValues(alpha: 0.25),
+                            blurRadius: 20,
+                            offset: const Offset(0, 8),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Total Reports',
+                                    style: GoogleFonts.outfit(fontSize: 13, color: Colors.white.withValues(alpha: 0.8)),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    jobs.length.toString(),
+                                    style: GoogleFonts.outfit(fontSize: 32, fontWeight: FontWeight.w800, color: Colors.white),
+                                  ),
+                                  Text(
+                                    'Generated',
+                                    style: GoogleFonts.outfit(fontSize: 12, color: Colors.white.withValues(alpha: 0.6)),
+                                  ),
+                                ],
+                              ),
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                child: const Icon(Icons.bar_chart, color: Colors.white, size: 40),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 24),
+                          Container(height: 1, color: Colors.white.withValues(alpha: 0.1)),
+                          const SizedBox(height: 16),
+                          Row(
+                            children: [
+                              _SummaryMiniItem(
+                                label: 'Completed',
+                                value: completed.toString(),
+                                icon: Icons.file_download_outlined,
+                              ),
+                              Container(width: 1, height: 40, color: Colors.white.withValues(alpha: 0.1)),
+                              _SummaryMiniItem(
+                                label: 'Templates',
+                                value: templates.length.toString(),
+                                icon: Icons.calendar_today_outlined,
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
                     ),
-                  )
-                : SliverList(
-                    delegate: SliverChildBuilderDelegate(
-                      (context, index) {
-                        final report = MockReportsData.recentReports[index];
-                        return _RecentReportTile(
-                          title: report['title'] as String,
-                          subtitle: report['subtitle'] as String,
-                          date: report['date'] as String,
-                          type: report['type'] as String,
-                          icon: IconData(report['icon'] as int, fontFamily: 'MaterialIcons'),
-                          color: Color(report['color'] as int),
-                        );
-                      },
-                      childCount: MockReportsData.recentReports.length,
-                    ),
                   ),
+                ),
+
+                // ── Report Categories ──
+                const SliverToBoxAdapter(child: SectionHeader(title: 'Report Categories')),
+                SliverPadding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  sliver: SliverGrid.count(
+                    crossAxisCount: 2,
+                    mainAxisSpacing: 10,
+                    crossAxisSpacing: 10,
+                    childAspectRatio: 2.1,
+                    children: _kReportCategories.map((cat) {
+                      return _CategoryCard(
+                        title: cat['title'] as String,
+                        count: countByKind[cat['kind']] ?? 0,
+                        icon: cat['icon'] as IconData,
+                        color: Color(cat['color'] as int),
+                        onTap: () {
+                          if (cat['title'] == 'Financial Reports') {
+                            Navigator.push(context, MaterialPageRoute(builder: (_) => const FinancialReportScreen()));
+                          }
+                        },
+                      );
+                    }).toList(),
+                  ),
+                ),
+
+                // ── Recent Reports ──
+                SliverToBoxAdapter(
+                  child: SectionHeader(
+                    title: 'Recent Reports',
+                    actionText: 'View All',
+                    onAction: () {},
+                  ),
+                ),
+                SliverPadding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  sliver: jobs.isEmpty
+                      ? const SliverToBoxAdapter(
+                          child: LiveEmptyView(
+                            icon: Icons.bar_chart_outlined,
+                            message: 'No reports generated yet.',
+                          ),
+                        )
+                      : SliverList(
+                          delegate: SliverChildBuilderDelegate(
+                            (context, index) {
+                              final report = (jobs[index] as Map).cast<String, dynamic>();
+                              final fmt = (report['format'] ?? 'pdf').toString().toUpperCase();
+                              return _RecentReportTile(
+                                title: (report['title'] ?? report['kind'] ?? 'Report').toString(),
+                                subtitle: (report['kind'] ?? '').toString(),
+                                date: (report['created_at'] ?? '').toString().split('T').first,
+                                type: fmt,
+                                icon: Icons.description_outlined,
+                                color: const Color(0xFF059669),
+                              );
+                            },
+                            childCount: jobs.length,
+                          ),
+                        ),
+                ),
+              ];
+            },
           ),
 
           // ── Schedule Button ──
@@ -214,7 +242,7 @@ class ReportsDashboardScreen extends ConsumerWidget {
             child: Padding(
               padding: const EdgeInsets.fromLTRB(20, 24, 20, 100),
               child: OutlinedButton(
-                onPressed: () {},
+                onPressed: () => AdminActions.comingSoon(context, 'Scheduling reports'),
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   side: const BorderSide(color: Color(0xFF064E3B)),

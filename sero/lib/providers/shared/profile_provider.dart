@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:sero/providers/shared/auth_provider.dart';
 
 class AdminProfile {
   final String name;
@@ -37,19 +38,35 @@ class AdminProfile {
 }
 
 final profileProvider = StateNotifierProvider<ProfileNotifier, AdminProfile>((ref) {
-  return ProfileNotifier();
+  // Hydrate from the authenticated user (/users/me) and keep in sync.
+  final notifier = ProfileNotifier();
+  notifier._hydrate(ref.read(authProvider).value);
+  ref.listen(authProvider, (_, next) => notifier._hydrate(next.value));
+  return notifier;
 });
 
 class ProfileNotifier extends StateNotifier<AdminProfile> {
   ProfileNotifier()
       : super(AdminProfile(
-          // TODO: Fetch profile from backend
-          name: 'Name',
-          email: 'Email',
-          phone: 'Phone',
-          role: 'Role',
-          society: 'Society',
+          name: '',
+          email: '',
+          phone: '',
+          role: '',
+          society: '',
         ));
+
+  /// Populate from the live authenticated user model.
+  void _hydrate(dynamic user) {
+    if (user == null) return;
+    state = AdminProfile(
+      name: user.name ?? '',
+      email: state.email,
+      phone: user.phone ?? '',
+      role: user.role ?? '',
+      society: user.societyId ?? '',
+      profilePicture: user.photoUrl,
+    );
+  }
 
   void updateProfile({String? name, String? email, String? phone}) {
     state = state.copyWith(

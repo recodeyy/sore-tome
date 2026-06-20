@@ -5,6 +5,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:sero/app/theme.dart';
 import 'package:sero/models/facility_booking.dart';
 import 'package:sero/providers/shared/community_providers.dart';
+import 'package:sero/screens/resident/facilities/facilities_screen.dart';
 
 // --- 1. Reservation View ---
 class ReservationView extends ConsumerWidget {
@@ -99,7 +100,9 @@ class _FacilityCard extends StatelessWidget {
             ),
           ),
           ElevatedButton(
-            onPressed: () {}, // Booking flow
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const FacilitiesScreen()),
+            ),
             style: ElevatedButton.styleFrom(
               backgroundColor: kPrimaryBlue,
               foregroundColor: Colors.white,

@@ -89,6 +89,18 @@ router.get("/notices", (req, res) =>
 router.post("/polls/:id/vote", validate(VoteSchema), (req, res) =>
   withCtx(req, res, async (ctx) => res.status(201).json({ vote: await ResidentService.vote(ctx, req.params.id as string, req.body.optionId) }), "Failed to cast vote"));
 
+router.get("/vehicles", (req, res) =>
+  withCtx(req, res, async (ctx) => res.json({ vehicles: await ResidentService.vehicles(ctx) }), "Failed to load vehicles"));
+
+router.get("/family", (req, res) =>
+  withCtx(req, res, async (ctx) => res.json({ family: await ResidentService.family(ctx) }), "Failed to load family members"));
+
+router.get("/kyc", (req, res) =>
+  withCtx(req, res, async (ctx) => res.json({ kyc: await ResidentService.kyc(ctx) }), "Failed to load KYC documents"));
+
+router.get("/emergency-contacts", (req, res) =>
+  withCtx(req, res, async (ctx) => res.json({ contacts: await ResidentService.emergencyContacts(ctx) }), "Failed to load emergency contacts"));
+
 router.get("/visitors", (req, res) =>
   withCtx(req, res, async (ctx) => res.json({ visitors: await ResidentService.visitors(ctx) }), "Failed to load visitors"));
 

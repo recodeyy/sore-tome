@@ -4,11 +4,11 @@
 //           10,000 realtime / 100 AI streams (pack Stage 3). Sustain 30 min.
 //
 // On a single host scale down with -e MAX_VUS=200 -e RT_VUS=200 -e BURST_RPS=100.
-import { buildOptions, mixed, realtime } from './k6_scale.js';
+import { buildOptions, mixed, realtime, setup } from './k6_scale.js';
 
 export const options = buildOptions('10k');
-export { mixed, realtime };
+export { mixed, realtime, setup };
 
-export default function () {
-  mixed();
+export default function (data) {
+  mixed(data);
 }

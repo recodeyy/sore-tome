@@ -15,14 +15,26 @@ class Database {
       throw new Error("Targeted Failure: Database Configuration Incomplete");
     }
 
+    // Pool ceiling is env-tunable for scale tests / production. Behind a
+    // transaction-mode pooler (PgBouncer) this is the per-API-instance app pool;
+    // PgBouncer multiplexes these onto a small server-side connection set, so a
+    // higher app `max` is safe. Without a pooler, keep `(replicas × max)` under
+    // Postgres `max_connections` to avoid exhaustion (load-test gate, pack §9/§29).
+    const poolMax = parseInt(process.env.DB_POOL_MAX || "10", 10);
     const config: PoolConfig = {
       connectionString: connStr,
-      max: 10, // Hardened pool cap
-      idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 10000,
+      max: Number.isFinite(poolMax) && poolMax > 0 ? poolMax : 10,
+      idleTimeoutMillis: parseInt(process.env.DB_POOL_IDLE_MS || "30000", 10),
+      connectionTimeoutMillis: parseInt(process.env.DB_POOL_CONN_TIMEOUT_MS || "10000", 10),
       keepAlive: true,
-      ssl: connStr.includes("localhost") ? false : { rejectUnauthorized: false },
+      // SSL off for localhost or when explicitly disabled (e.g. internal
+      // container Postgres/PgBouncer with no TLS, as in the load-test stack).
+      ssl: (connStr.includes("localhost") || process.env.DB_SSL === "false")
+        ? false
+        : { rejectUnauthorized: false },
     };
+
+    logger.info({ poolMax: config.max }, "PostgreSQL pool configured");
 
 
     this.pool = new Pool(config);

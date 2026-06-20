@@ -2,10 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:sero/app/theme.dart';
-import 'package:sero/data/mock_data.dart';
 import 'package:sero/widgets/common/mini_chart.dart';
-import 'package:sero/widgets/common/section_header.dart';
+import 'package:sero/widgets/common/async_state_views.dart';
 import 'package:sero/providers/shared/notification_provider.dart';
+import 'package:sero/providers/admin/dashboard_provider.dart';
+import 'package:sero/widgets/admin/admin_actions.dart';
 
 /// Dashboard Insights — Screen 3 of 4
 /// Shows circular progress indicators for KPIs, complaint summary donut,
@@ -16,9 +17,30 @@ class DashboardInsightsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final unreadCount = ref.watch(notificationProvider.notifier).unreadCount;
+    final dashboardAsync = ref.watch(dashboardProvider);
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
-      body: CustomScrollView(
+      body: dashboardAsync.when(
+        loading: () => const LiveLoadingView(label: 'Loading insights…'),
+        error: (e, _) => LiveErrorView(
+          error: e,
+          onRetry: () => ref.invalidate(dashboardProvider),
+        ),
+        data: (stats) {
+          final collectionEfficiency = stats.financials.percentage.toDouble().clamp(0, 100) / 100.0;
+          const complaintResolution = 0.0;
+          const occupancyRate = 0.0;
+          final openComplaintsCount = stats.topIssues.length;
+          const inProgressComplaints = 0;
+          const resolvedComplaints = 0;
+          const closedComplaints = 0;
+          final totalComplaints = openComplaintsCount;
+          const checkedIn = 0;
+          const checkedOut = 0;
+          final upcomingEvents = stats.recentUpdates
+              .where((u) => u.type == 'event')
+              .toList();
+          return CustomScrollView(
         physics: const BouncingScrollPhysics(),
         slivers: [
           // ── App Bar ──
@@ -40,7 +62,14 @@ class DashboardInsightsScreen extends ConsumerWidget {
                 children: [
                   IconButton(
                     icon: const Icon(Icons.calendar_today_outlined, color: Color(0xFF1E293B), size: 20),
-                    onPressed: () {},
+                    onPressed: () async {
+                      await showDatePicker(
+                        context: context,
+                        initialDate: DateTime.now(),
+                        firstDate: DateTime(2020),
+                        lastDate: DateTime(2030),
+                      );
+                    },
                   ),
                 ],
               ),
@@ -81,7 +110,7 @@ class DashboardInsightsScreen extends ConsumerWidget {
                 children: [
                   Text('Insights', style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.w700, color: const Color(0xFF1E293B))),
                   GestureDetector(
-                    onTap: () {},
+                    onTap: () => Navigator.pushNamed(context, '/admin/reports'),
                     child: Text('View All', style: GoogleFonts.outfit(fontSize: 13, fontWeight: FontWeight.w600, color: kPrimaryGreen)),
                   ),
                 ],
@@ -102,23 +131,23 @@ class DashboardInsightsScreen extends ConsumerWidget {
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
                     CircularIndicator(
-                      value: MockDashboardData.collectionEfficiency,
+                      value: collectionEfficiency,
                       label: 'Collection\nEfficiency',
-                      sublabel: 'Excellent',
+                      sublabel: '${(collectionEfficiency * 100).round()}%',
                       color: kPrimaryGreen,
                       size: 72,
                     ),
                     CircularIndicator(
-                      value: MockDashboardData.complaintResolution,
+                      value: complaintResolution,
                       label: 'Complaint\nResolution',
-                      sublabel: 'Good',
+                      sublabel: '${(complaintResolution * 100).round()}%',
                       color: const Color(0xFFD97706),
                       size: 72,
                     ),
                     CircularIndicator(
-                      value: MockDashboardData.occupancyRate,
+                      value: occupancyRate,
                       label: 'Occupancy\nRate',
-                      sublabel: 'Excellent',
+                      sublabel: '${(occupancyRate * 100).round()}%',
                       color: const Color(0xFF059669),
                       size: 72,
                     ),
@@ -165,12 +194,12 @@ class DashboardInsightsScreen extends ConsumerWidget {
                   children: [
                     DonutChart(
                       segments: [
-                        DonutSegment(value: MockDashboardData.openComplaintsCount.toDouble(), color: const Color(0xFF064E3B), label: 'Open'),
-                        DonutSegment(value: MockDashboardData.inProgressComplaints.toDouble(), color: const Color(0xFF10B981), label: 'In Progress'),
-                        DonutSegment(value: MockDashboardData.resolvedComplaints.toDouble(), color: const Color(0xFF6EE7B7), label: 'Resolved'),
-                        DonutSegment(value: MockDashboardData.closedComplaints.toDouble(), color: const Color(0xFFD1D5DB), label: 'Closed'),
+                        DonutSegment(value: openComplaintsCount.toDouble(), color: const Color(0xFF064E3B), label: 'Open'),
+                        DonutSegment(value: inProgressComplaints.toDouble(), color: const Color(0xFF10B981), label: 'In Progress'),
+                        DonutSegment(value: resolvedComplaints.toDouble(), color: const Color(0xFF6EE7B7), label: 'Resolved'),
+                        DonutSegment(value: closedComplaints.toDouble(), color: const Color(0xFFD1D5DB), label: 'Closed'),
                       ],
-                      centerValue: MockDashboardData.totalComplaints.toString(),
+                      centerValue: totalComplaints.toString(),
                       centerLabel: 'Total',
                       size: 110,
                     ),
@@ -179,10 +208,10 @@ class DashboardInsightsScreen extends ConsumerWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          _ComplaintLegendRow(color: const Color(0xFF064E3B), label: 'Open', count: MockDashboardData.openComplaintsCount),
-                          _ComplaintLegendRow(color: const Color(0xFF10B981), label: 'In Progress', count: MockDashboardData.inProgressComplaints),
-                          _ComplaintLegendRow(color: const Color(0xFF6EE7B7), label: 'Resolved', count: MockDashboardData.resolvedComplaints),
-                          _ComplaintLegendRow(color: const Color(0xFFD1D5DB), label: 'Closed', count: MockDashboardData.closedComplaints),
+                          _ComplaintLegendRow(color: const Color(0xFF064E3B), label: 'Open', count: openComplaintsCount),
+                          _ComplaintLegendRow(color: const Color(0xFF10B981), label: 'In Progress', count: inProgressComplaints),
+                          _ComplaintLegendRow(color: const Color(0xFF6EE7B7), label: 'Resolved', count: resolvedComplaints),
+                          _ComplaintLegendRow(color: const Color(0xFFD1D5DB), label: 'Closed', count: closedComplaints),
                         ],
                       ),
                     ),
@@ -230,7 +259,7 @@ class DashboardInsightsScreen extends ConsumerWidget {
                           Row(
                             children: [
                               Text(
-                                MockDashboardData.checkedIn.toString(),
+                                checkedIn.toString(),
                                 style: GoogleFonts.outfit(fontSize: 28, fontWeight: FontWeight.w800, color: const Color(0xFF1E293B)),
                               ),
                               const SizedBox(width: 8),
@@ -238,7 +267,7 @@ class DashboardInsightsScreen extends ConsumerWidget {
                                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                 decoration: BoxDecoration(color: const Color(0xFFD1FAE5), borderRadius: BorderRadius.circular(6)),
                                 child: Text(
-                                  MockDashboardData.checkedInTrend,
+                                  '—',
                                   style: GoogleFonts.outfit(fontSize: 11, fontWeight: FontWeight.w600, color: const Color(0xFF059669)),
                                 ),
                               ),
@@ -267,7 +296,7 @@ class DashboardInsightsScreen extends ConsumerWidget {
                           Row(
                             children: [
                               Text(
-                                MockDashboardData.checkedOut.toString(),
+                                checkedOut.toString(),
                                 style: GoogleFonts.outfit(fontSize: 28, fontWeight: FontWeight.w800, color: const Color(0xFF1E293B)),
                               ),
                               const SizedBox(width: 8),
@@ -275,7 +304,7 @@ class DashboardInsightsScreen extends ConsumerWidget {
                                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                 decoration: BoxDecoration(color: const Color(0xFFD1FAE5), borderRadius: BorderRadius.circular(6)),
                                 child: Text(
-                                  MockDashboardData.checkedOutTrend,
+                                  '—',
                                   style: GoogleFonts.outfit(fontSize: 11, fontWeight: FontWeight.w600, color: const Color(0xFF059669)),
                                 ),
                               ),
@@ -301,7 +330,7 @@ class DashboardInsightsScreen extends ConsumerWidget {
                 children: [
                   Text('Upcoming Events', style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.w700, color: const Color(0xFF1E293B))),
                   GestureDetector(
-                    onTap: () {},
+                    onTap: () => Navigator.pushNamed(context, '/admin/notices'),
                     child: Text('View All', style: GoogleFonts.outfit(fontSize: 13, fontWeight: FontWeight.w600, color: kPrimaryGreen)),
                   ),
                 ],
@@ -310,76 +339,90 @@ class DashboardInsightsScreen extends ConsumerWidget {
           ),
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
-            sliver: SliverList(
-              delegate: SliverChildBuilderDelegate(
-                (context, index) {
-                  final event = MockDashboardData.upcomingEvents[index];
-                  return Container(
-                    margin: const EdgeInsets.only(bottom: 10),
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: const Color(0xFFF1F5F9)),
+            sliver: upcomingEvents.isEmpty
+                ? const SliverToBoxAdapter(
+                    child: LiveEmptyView(
+                      icon: Icons.event_outlined,
+                      message: 'No upcoming events yet.',
                     ),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 48,
-                          padding: const EdgeInsets.symmetric(vertical: 8),
+                  )
+                : SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                      (context, index) {
+                        final event = upcomingEvents[index];
+                        final date = event.createdAt;
+                        const months = ['', 'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+                        final day = date != null ? date.day.toString() : '--';
+                        final month = date != null ? months[date.month] : '';
+                        final details = (event.description ?? event.body ?? '').toString();
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 10),
+                          padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
-                            color: const Color(0xFFF0FDF4),
-                            borderRadius: BorderRadius.circular(12),
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: const Color(0xFFF1F5F9)),
                           ),
-                          child: Column(
+                          child: Row(
                             children: [
-                              Text(
-                                event['day']!,
-                                style: GoogleFonts.outfit(fontSize: 20, fontWeight: FontWeight.w800, color: kPrimaryGreen),
+                              Container(
+                                width: 48,
+                                padding: const EdgeInsets.symmetric(vertical: 8),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF0FDF4),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Column(
+                                  children: [
+                                    Text(
+                                      day,
+                                      style: GoogleFonts.outfit(fontSize: 20, fontWeight: FontWeight.w800, color: kPrimaryGreen),
+                                    ),
+                                    Text(
+                                      month,
+                                      style: GoogleFonts.outfit(fontSize: 10, fontWeight: FontWeight.w600, color: kPrimaryGreen),
+                                    ),
+                                  ],
+                                ),
                               ),
-                              Text(
-                                event['month']!,
-                                style: GoogleFonts.outfit(fontSize: 10, fontWeight: FontWeight.w600, color: kPrimaryGreen),
+                              const SizedBox(width: 14),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      event.title,
+                                      style: GoogleFonts.outfit(fontSize: 14, fontWeight: FontWeight.w700, color: const Color(0xFF1E293B)),
+                                    ),
+                                    if (details.isNotEmpty) ...[
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        details,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: GoogleFonts.outfit(fontSize: 11, color: const Color(0xFF94A3B8)),
+                                      ),
+                                    ],
+                                  ],
+                                ),
                               ),
+                              const Icon(Icons.calendar_today_outlined, size: 18, color: Color(0xFFCBD5E1)),
                             ],
                           ),
-                        ),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                event['title']!,
-                                style: GoogleFonts.outfit(fontSize: 14, fontWeight: FontWeight.w700, color: const Color(0xFF1E293B)),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                event['details']!,
-                                style: GoogleFonts.outfit(fontSize: 11, color: const Color(0xFF94A3B8)),
-                              ),
-                              Text(
-                                event['location']!,
-                                style: GoogleFonts.outfit(fontSize: 11, color: const Color(0xFF94A3B8)),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const Icon(Icons.calendar_today_outlined, size: 18, color: Color(0xFFCBD5E1)),
-                      ],
+                        );
+                      },
+                      childCount: upcomingEvents.length,
                     ),
-                  );
-                },
-                childCount: MockDashboardData.upcomingEvents.length,
-              ),
-            ),
+                  ),
           ),
 
           const SliverToBoxAdapter(child: SizedBox(height: 100)),
         ],
+      );
+        },
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () {},
+        onPressed: () => AdminActions.comingSoon(context, 'Creating events'),
         backgroundColor: kPrimaryGreen,
         child: const Icon(Icons.add, color: Colors.white),
       ),

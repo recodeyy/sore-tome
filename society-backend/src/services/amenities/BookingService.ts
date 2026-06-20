@@ -12,6 +12,19 @@ function aerr(message: string, code: string) {
  * the loser gets a 23P01 exclusion_violation which we surface as a conflict.
  */
 export const BookingService = {
+  /** List all amenities for a society (tenant-scoped). */
+  async listAmenities(societyId: string) {
+    const { rows } = await db.query(
+      `SELECT id, name, capacity, is_active, open_minutes, close_minutes,
+              price_minor, deposit_minor, requires_approval, max_per_member, created_at
+         FROM amenities
+        WHERE society_id = $1
+        ORDER BY name ASC`,
+      [societyId]
+    );
+    return rows;
+  },
+
   async createAmenity(societyId: string, input: { name: string; capacity?: number }) {
     const { rows } = await db.query(
       `INSERT INTO amenities (society_id, name, capacity) VALUES ($1, $2, $3) RETURNING *`,

@@ -5,7 +5,6 @@ import 'package:sero/providers/shared/auth_provider.dart';
 import 'package:sero/widgets/shared/brand_logo.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:sero/config/dev_config.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -43,11 +42,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final phone = _phoneCtrl.text.trim();
     final pass = _passCtrl.text.trim();
     
-    // In Mock mode, allow login with any credentials or even empty
-    if (!kUseMockData && (phone.isEmpty || pass.isEmpty)) return;
+    if (phone.isEmpty || pass.isEmpty) return;
 
-    final loginPhone = kUseMockData ? (phone.isEmpty ? '+919876543210' : '+91$phone') : '+91$phone';
-    final loginPass = kUseMockData ? (pass.isEmpty ? 'password' : pass) : pass;
+    final loginPhone = '+91$phone';
+    final loginPass = pass;
 
     setState(() => _loading = true);
     try {
@@ -63,16 +61,37 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     }
   }
 
+  // ── Google Sign-In / Sign-Up ────────────────────────────────
+  Future<void> _loginWithGoogle() async {
+    setState(() => _loading = true);
+    try {
+      final result = await ref.read(authProvider.notifier).loginWithGoogle();
+      if (!mounted) return;
+      if (result == null) return; // user cancelled the Google picker
+      if (result) {
+        // Multiple workspaces — let the user pick one.
+        Navigator.pushNamed(context, '/workspace-select');
+      } else {
+        Navigator.pushNamedAndRemoveUntil(context, '/home', (_) => false);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      final msg = e is Map ? e['error'] : e.toString();
+      _showError(msg ?? 'Google sign-in failed');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
   // ── Admin Login ─────────────────────────────────────────────
   Future<void> _loginAdmin() async {
     final user = _adminUserCtrl.text.trim();
     final pass = _adminPassCtrl.text.trim();
     
-    // In Mock mode, allow login with any credentials or even empty
-    if (!kUseMockData && (user.isEmpty || pass.isEmpty)) return;
+    if (user.isEmpty || pass.isEmpty) return;
 
-    final loginUser = kUseMockData ? (user.isEmpty ? 'admin' : user) : user;
-    final loginPass = kUseMockData ? (pass.isEmpty ? 'password' : pass) : pass;
+    final loginUser = user;
+    final loginPass = pass;
 
     setState(() => _loading = true);
     try {
@@ -346,6 +365,53 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       fontWeight: FontWeight.w600,
                     ),
                   ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            const Expanded(child: Divider(color: Color(0xFFE2E8F0))),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Text(
+                'OR',
+                style: GoogleFonts.outfit(
+                  color: const Color(0xFF94A3B8),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            const Expanded(child: Divider(color: Color(0xFFE2E8F0))),
+          ],
+        ),
+        const SizedBox(height: 16),
+        SizedBox(
+          width: double.infinity,
+          height: 52,
+          child: OutlinedButton.icon(
+            onPressed: _loading ? null : _loginWithGoogle,
+            style: OutlinedButton.styleFrom(
+              side: const BorderSide(color: Color(0xFFE2E8F0)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+            ),
+            icon: Image.network(
+              'https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg',
+              width: 20,
+              height: 20,
+              errorBuilder: (_, __, ___) =>
+                  const Icon(Icons.account_circle, size: 20, color: Color(0xFF4285F4)),
+            ),
+            label: Text(
+              'Continue with Google',
+              style: GoogleFonts.outfit(
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+                color: const Color(0xFF1A1A1A),
+              ),
+            ),
           ),
         ),
         const SizedBox(height: 12),

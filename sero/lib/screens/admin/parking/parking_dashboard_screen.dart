@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:sero/app/theme.dart';
-import 'package:sero/data/mock_data.dart';
+import 'package:sero/providers/admin/admin_domain_providers.dart';
+import 'package:sero/widgets/common/async_state_views.dart';
 import 'package:sero/widgets/common/main_summary_card.dart';
 import 'package:sero/widgets/common/stat_card.dart';
 import 'package:sero/widgets/common/section_header.dart';
@@ -17,6 +18,7 @@ class ParkingDashboardScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final unreadCount = ref.watch(notificationProvider.notifier).unreadCount;
+    final parkingAsync = ref.watch(parkingDashboardProvider);
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       drawer: const AdminDrawer(),
@@ -67,31 +69,59 @@ class ParkingDashboardScreen extends ConsumerWidget {
           const SizedBox(width: 8),
         ],
       ),
-      body: CustomScrollView(
-        physics: const BouncingScrollPhysics(),
-        slivers: [
-          const SliverToBoxAdapter(child: SizedBox(height: 20)),
+      body: parkingAsync.when(
+        loading: () => const LiveLoadingView(label: 'Loading parking data…'),
+        error: (e, _) => LiveErrorView(
+          error: e,
+          onRetry: () => ref.invalidate(parkingDashboardProvider),
+        ),
+        data: (data) {
+          final slots = (data['slots'] as List?) ?? const [];
+          final requests = (data['requests'] as List?) ?? const [];
+          final violations = (data['violations'] as List?) ?? const [];
+          String statusOf(dynamic s) =>
+              (s is Map ? (s['status'] ?? '').toString() : '').toLowerCase();
+          final totalSlots = slots.length;
+          final allocatedSlots =
+              slots.where((s) => statusOf(s) == 'allocated' || statusOf(s) == 'occupied').length;
+          final reservedSlots = slots.where((s) => statusOf(s) == 'reserved').length;
+          final availableSlots = totalSlots - allocatedSlots - reservedSlots;
+          final residentVehicles = slots
+              .where((s) => s is Map && (s['vehicle_type'] ?? s['type']) != 'visitor')
+              .where((s) => statusOf(s) == 'allocated' || statusOf(s) == 'occupied')
+              .length;
+          final visitorVehicles = slots
+              .where((s) => s is Map && (s['vehicle_type'] ?? s['type']) == 'visitor')
+              .length;
+          final pendingRequests = requests.length;
+          final violationCases = violations.length;
+          final pct = (int v) =>
+              totalSlots == 0 ? '0 (0%)' : '$v (${((v / totalSlots) * 100).round()}%)';
+          return CustomScrollView(
+            physics: const BouncingScrollPhysics(),
+            slivers: [
+              const SliverToBoxAdapter(child: SizedBox(height: 20)),
 
-          // ── Main Summary Card ──
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: MainSummaryCard(
-                title: 'Total Parking Slots',
-                value: MockParkingData.totalSlots.toString(),
-                icon: Icons.local_parking_rounded,
-                subStats: [
-                  SummarySubStat('Allocated', MockParkingData.allocatedSlots.toString()),
-                  SummarySubStat('Available', MockParkingData.availableSlots.toString()),
-                ],
+              // ── Main Summary Card ──
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: MainSummaryCard(
+                    title: 'Total Parking Slots',
+                    value: totalSlots.toString(),
+                    icon: Icons.local_parking_rounded,
+                    subStats: [
+                      SummarySubStat('Allocated', allocatedSlots.toString()),
+                      SummarySubStat('Available', availableSlots.toString()),
+                    ],
+                  ),
+                ),
               ),
-            ),
-          ),
 
-          const SliverToBoxAdapter(child: SizedBox(height: 20)),
+              const SliverToBoxAdapter(child: SizedBox(height: 20)),
 
-          // ── Stat Cards Grid ──
-          SliverPadding(
+              // ── Stat Cards Grid ──
+              SliverPadding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
             sliver: SliverGrid.count(
               crossAxisCount: 2,
@@ -100,7 +130,7 @@ class ParkingDashboardScreen extends ConsumerWidget {
               childAspectRatio: 1.5,
               children: [
                 StatCard(
-                  value: MockParkingData.residentVehicles.toString(),
+                  value: residentVehicles.toString(),
                   label: 'Resident Vehicles',
                   icon: Icons.person_outline,
                   iconColor: const Color(0xFF2563EB),
@@ -109,7 +139,7 @@ class ParkingDashboardScreen extends ConsumerWidget {
                   trendUp: true,
                 ),
                 StatCard(
-                  value: MockParkingData.visitorVehicles.toString(),
+                  value: visitorVehicles.toString(),
                   label: 'Visitor Vehicles',
                   icon: Icons.directions_car_outlined,
                   iconColor: const Color(0xFF0EA5E9),
@@ -118,16 +148,16 @@ class ParkingDashboardScreen extends ConsumerWidget {
                   trendUp: true,
                 ),
                 StatCard(
-                  value: MockParkingData.pendingRequests.toString(),
+                  value: pendingRequests.toString(),
                   label: 'Pending Requests',
                   icon: Icons.assignment_outlined,
                   iconColor: const Color(0xFFF59E0B),
                   iconBgColor: const Color(0xFFFFFBEB),
-                  trend: '6 Requests',
+                  trend: '$pendingRequests Requests',
                   trendUp: false,
                 ),
                 StatCard(
-                  value: MockParkingData.violationCases.toString(),
+                  value: violationCases.toString(),
                   label: 'Violation Cases',
                   icon: Icons.report_problem_outlined,
                   iconColor: const Color(0xFFEF4444),
@@ -192,23 +222,23 @@ class ParkingDashboardScreen extends ConsumerWidget {
                     Row(
                       children: [
                         DonutChart(
-                          centerValue: MockParkingData.totalSlots.toString(),
+                          centerValue: totalSlots.toString(),
                           centerLabel: 'Total',
                           size: 120,
                           segments: [
-                            DonutSegment(value: MockParkingData.allocatedSlots.toDouble(), color: const Color(0xFF059669), label: 'Allocated'),
-                            DonutSegment(value: MockParkingData.availableSlots.toDouble(), color: const Color(0xFF2563EB), label: 'Available'),
-                            DonutSegment(value: MockParkingData.reservedSlots.toDouble(), color: const Color(0xFFF59E0B), label: 'Reserved'),
+                            DonutSegment(value: allocatedSlots.toDouble(), color: const Color(0xFF059669), label: 'Allocated'),
+                            DonutSegment(value: availableSlots.toDouble(), color: const Color(0xFF2563EB), label: 'Available'),
+                            DonutSegment(value: reservedSlots.toDouble(), color: const Color(0xFFF59E0B), label: 'Reserved'),
                           ],
                         ),
                         Expanded(
                           child: Column(
                             children: [
-                              _buildChartLegend('Allocated', '0 (0%)', const Color(0xFF059669)),
+                              _buildChartLegend('Allocated', pct(allocatedSlots), const Color(0xFF059669)),
                               const SizedBox(height: 12),
-                              _buildChartLegend('Available', '0 (0%)', const Color(0xFF2563EB)),
+                              _buildChartLegend('Available', pct(availableSlots), const Color(0xFF2563EB)),
                               const SizedBox(height: 12),
-                              _buildChartLegend('Reserved', '0 (0%)', const Color(0xFFF59E0B)),
+                              _buildChartLegend('Reserved', pct(reservedSlots), const Color(0xFFF59E0B)),
                             ],
                           ),
                         ),
@@ -232,28 +262,15 @@ class ParkingDashboardScreen extends ConsumerWidget {
           ),
           SliverPadding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
-            sliver: MockParkingData.recentActivity.isEmpty
-                ? SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.all(40.0),
-                      child: Center(
-                        child: Column(
-                          children: [
-                            const Icon(Icons.local_parking_rounded, color: Color(0xFF94A3B8), size: 48),
-                            const SizedBox(height: 16),
-                            Text(
-                              'No parking data available.',
-                              style: GoogleFonts.outfit(color: const Color(0xFF64748B)),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  )
-                : SliverList(
-                    delegate: SliverChildBuilderDelegate(
-                      (context, index) {
-                        final activity = MockParkingData.recentActivity[index];
+            sliver: SliverToBoxAdapter(
+              child: violations.isEmpty
+                  ? const LiveEmptyView(
+                      icon: Icons.local_parking_rounded,
+                      message: 'No recent parking activity.',
+                    )
+                  : Column(
+                      children: violations.take(10).map((v) {
+                        final m = v is Map ? v : const {};
                         return Container(
                           margin: const EdgeInsets.only(bottom: 12),
                           padding: const EdgeInsets.all(16),
@@ -266,15 +283,12 @@ class ParkingDashboardScreen extends ConsumerWidget {
                             children: [
                               Container(
                                 padding: const EdgeInsets.all(10),
-                                decoration: BoxDecoration(
-                                  color: Color(activity['color']).withOpacity(0.1),
+                                decoration: const BoxDecoration(
+                                  color: Color(0x1AEF4444),
                                   shape: BoxShape.circle,
                                 ),
-                                child: Icon(
-                                  activity['icon'],
-                                  size: 20,
-                                  color: Color(activity['color']),
-                                ),
+                                child: const Icon(Icons.report_problem_outlined,
+                                    size: 20, color: Color(0xFFEF4444)),
                               ),
                               const SizedBox(width: 16),
                               Expanded(
@@ -282,7 +296,7 @@ class ParkingDashboardScreen extends ConsumerWidget {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      activity['title'],
+                                      (m['type'] ?? m['reason'] ?? 'Violation').toString(),
                                       style: GoogleFonts.outfit(
                                         fontSize: 13,
                                         fontWeight: FontWeight.w600,
@@ -291,7 +305,7 @@ class ParkingDashboardScreen extends ConsumerWidget {
                                     ),
                                     const SizedBox(height: 2),
                                     Text(
-                                      activity['subtitle'],
+                                      (m['slot_id'] ?? m['vehicle_number'] ?? '').toString(),
                                       style: GoogleFonts.outfit(
                                         fontSize: 11,
                                         color: const Color(0xFF94A3B8),
@@ -301,24 +315,25 @@ class ParkingDashboardScreen extends ConsumerWidget {
                                 ),
                               ),
                               StatusBadge(
-                                label: activity['status'],
-                                bgColor: Color(activity['color']),
+                                label: (m['status'] ?? 'Open').toString(),
+                                bgColor: const Color(0xFFEF4444),
                                 textColor: Colors.white,
                               ),
                             ],
                           ),
                         );
-                      },
-                      childCount: MockParkingData.recentActivity.length,
+                      }).toList(),
                     ),
-                  ),
+            ),
           ),
 
-          const SliverToBoxAdapter(child: SizedBox(height: 100)),
-        ],
+              const SliverToBoxAdapter(child: SizedBox(height: 100)),
+            ],
+          );
+        },
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () {},
+        onPressed: () => Navigator.pushNamed(context, '/admin/parking/allocation'),
         backgroundColor: kPrimaryGreen,
         child: const Icon(Icons.add, color: Colors.white),
       ),

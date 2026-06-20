@@ -2,7 +2,9 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter/foundation.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import '../config/env.dart';
 
 // Use centralized environment config
@@ -73,6 +75,100 @@ class AuthService {
     } else {
       throw data['error'] ?? 'Login failed';
     }
+  }
+
+  // ─── Firebase Phone OTP ───────────────────────────────────────────────────
+  // Live SMS OTP via Firebase Phone Authentication (no mock/stub).
+
+  /// Sends an SMS OTP to [e164Phone] (must be in E.164 form, e.g. +91XXXXXXXXXX).
+  ///
+  /// - [onCodeSent] receives the `verificationId` once Firebase dispatches the SMS.
+  /// - [onAutoVerified] fires on Android instant/auto-retrieval with a ready
+  ///   credential (sign in directly, no manual code entry).
+  /// - [onError] receives a human-readable failure message.
+  static Future<void> sendPhoneOtp({
+    required String e164Phone,
+    required void Function(String verificationId, int? resendToken) onCodeSent,
+    required void Function(PhoneAuthCredential credential) onAutoVerified,
+    required void Function(String message) onError,
+    int? resendToken,
+  }) async {
+    await FirebaseAuth.instance.verifyPhoneNumber(
+      phoneNumber: e164Phone,
+      forceResendingToken: resendToken,
+      timeout: const Duration(seconds: 60),
+      verificationCompleted: onAutoVerified,
+      verificationFailed: (FirebaseAuthException e) {
+        onError(e.message ?? 'Phone verification failed (${e.code})');
+      },
+      codeSent: (String verificationId, int? token) {
+        onCodeSent(verificationId, token);
+      },
+      codeAutoRetrievalTimeout: (String verificationId) {
+        // Auto-retrieval window elapsed; manual entry still works with this id.
+      },
+    );
+  }
+
+  /// Verifies a manually-entered [smsCode] against [verificationId] and signs
+  /// the user into Firebase. Returns the Firebase ID token on success.
+  static Future<String> verifyPhoneOtp({
+    required String verificationId,
+    required String smsCode,
+  }) async {
+    final credential = PhoneAuthProvider.credential(
+      verificationId: verificationId,
+      smsCode: smsCode,
+    );
+    return signInWithPhoneCredential(credential);
+  }
+
+  /// Completes phone sign-in from a [credential] (manual or auto-verified) and
+  /// returns the Firebase ID token.
+  static Future<String> signInWithPhoneCredential(
+    PhoneAuthCredential credential,
+  ) async {
+    final result = await FirebaseAuth.instance.signInWithCredential(credential);
+    final idToken = await result.user?.getIdToken();
+    if (idToken == null) {
+      throw 'Could not obtain Firebase ID token after OTP verification';
+    }
+    return idToken;
+  }
+
+  // ─── Google Sign-In ───────────────────────────────────────────────────────
+  // Live Google authentication via Firebase. Used for both sign-up (first time)
+  // and sign-in — the backend `/auth/firebase` endpoint provisions new users.
+
+  /// Runs the Google account picker, signs into Firebase, and returns the
+  /// Firebase ID token to exchange with the backend. Returns null if the user
+  /// cancels the picker.
+  static Future<String?> signInWithGoogle() async {
+    final googleUser = await GoogleSignIn().signIn();
+    if (googleUser == null) return null; // user cancelled
+
+    final googleAuth = await googleUser.authentication;
+    final credential = GoogleAuthProvider.credential(
+      accessToken: googleAuth.accessToken,
+      idToken: googleAuth.idToken,
+    );
+
+    final result = await FirebaseAuth.instance.signInWithCredential(credential);
+    final idToken = await result.user?.getIdToken();
+    if (idToken == null) {
+      throw 'Could not obtain Firebase ID token from Google sign-in';
+    }
+    return idToken;
+  }
+
+  /// Signs out of both Google and Firebase (call alongside backend logout).
+  static Future<void> signOutGoogle() async {
+    try {
+      await GoogleSignIn().signOut();
+    } catch (_) {}
+    try {
+      await FirebaseAuth.instance.signOut();
+    } catch (_) {}
   }
 
   // AI V2.4: Update FCM Token on Backend

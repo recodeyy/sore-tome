@@ -18,8 +18,12 @@ class SocietyEvent {
       id: map['id'] ?? '',
       title: map['title'] ?? '',
       description: map['description'] ?? '',
-      eventDate:
-          DateTime.tryParse(map['eventDate'] ?? '') ?? DateTime.now(),
+      // Accept the Postgres `/events-v2` shape (`starts_at`) as well as the
+      // legacy `eventDate`.
+      eventDate: DateTime.tryParse(
+            (map['eventDate'] ?? map['starts_at'] ?? map['startsAt'] ?? '').toString(),
+          ) ??
+          DateTime.now(),
       location: map['location'] ?? '',
     );
   }

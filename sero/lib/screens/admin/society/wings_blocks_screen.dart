@@ -1,25 +1,75 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:sero/app/theme.dart';
-import 'package:sero/data/mock_data.dart';
+import 'package:sero/providers/admin/admin_domain_providers.dart';
+import 'package:sero/services/admin/admin_society_service.dart';
+import 'package:sero/widgets/common/async_state_views.dart';
 import 'package:sero/widgets/common/sero_search_bar.dart';
-import 'package:sero/widgets/common/stat_card.dart';
 
 /// Wings & Blocks — Screen 5 of 6
 /// Toggle between Wings and Blocks view, search, list, and total overview.
-class WingsBlocksScreen extends StatefulWidget {
+class WingsBlocksScreen extends ConsumerStatefulWidget {
   const WingsBlocksScreen({super.key});
 
   @override
-  State<WingsBlocksScreen> createState() => _WingsBlocksScreenState();
+  ConsumerState<WingsBlocksScreen> createState() => _WingsBlocksScreenState();
 }
 
-class _WingsBlocksScreenState extends State<WingsBlocksScreen> {
+class _WingsBlocksScreenState extends ConsumerState<WingsBlocksScreen> {
   bool _showWings = true; // toggle Wings/Blocks tab
   String _searchQuery = '';
 
+  /// Prompt for a new wing/block name and create it via the structure API.
+  Future<void> _showAddDialog() async {
+    final controller = TextEditingController();
+    final isWing = _showWings;
+    final label = isWing ? 'Wing' : 'Block';
+    final name = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Add $label', style: GoogleFonts.outfit(fontWeight: FontWeight.w700)),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: InputDecoration(hintText: '$label name'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: const Text('Add'),
+          ),
+        ],
+      ),
+    );
+    if (name == null || name.isEmpty) return;
+    try {
+      final ok = isWing
+          ? await AdminSocietyService.addWing(name)
+          : await AdminSocietyService.addBlock(name);
+      if (!mounted) return;
+      if (ok) {
+        ref.invalidate(structureSummaryProvider);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$label "$name" added'), backgroundColor: const Color(0xFF064E3B)),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not add $label'), backgroundColor: const Color(0xFFB91C1C)),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed: $e'), backgroundColor: const Color(0xFFB91C1C)),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final structureAsync = ref.watch(structureSummaryProvider);
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       body: Column(
@@ -41,9 +91,7 @@ class _WingsBlocksScreenState extends State<WingsBlocksScreen> {
                   ),
                 ),
                 GestureDetector(
-                  onTap: () {
-                    // TODO: API integration - add new wing/block
-                  },
+                  onTap: _showAddDialog,
                   child: Container(
                     margin: const EdgeInsets.only(right: 16),
                     width: 36,
@@ -131,7 +179,18 @@ class _WingsBlocksScreenState extends State<WingsBlocksScreen> {
 
           // ── List ──
           Expanded(
-            child: _showWings ? _buildWingsList() : _buildBlocksList(),
+            child: structureAsync.when(
+              loading: () => const LiveLoadingView(label: 'Loading structure…'),
+              error: (e, _) => LiveErrorView(
+                error: e,
+                onRetry: () => ref.invalidate(structureSummaryProvider),
+              ),
+              data: (data) {
+                final wings = (data['wings'] as List?) ?? const [];
+                final blocks = (data['blocks'] as List?) ?? const [];
+                return _showWings ? _buildWingsList(wings) : _buildBlocksList(blocks);
+              },
+            ),
           ),
 
           // ── Total Overview ──
@@ -149,35 +208,49 @@ class _WingsBlocksScreenState extends State<WingsBlocksScreen> {
                   style: GoogleFonts.outfit(fontSize: 14, fontWeight: FontWeight.w700, color: const Color(0xFF1E293B)),
                 ),
                 const SizedBox(height: 10),
-                Row(
-                  children: [
-                    _OverviewBadge(
-                      icon: Icons.view_column,
-                      value: MockSocietyData.totalWings.toString(),
-                      label: 'Wings',
-                    ),
-                    const SizedBox(width: 16),
-                    _OverviewBadge(
-                      icon: Icons.view_module,
-                      value: MockSocietyData.totalBlocks.toString(),
-                      label: 'Blocks',
-                      iconColor: const Color(0xFF2563EB),
-                    ),
-                    const SizedBox(width: 16),
-                    _OverviewBadge(
-                      icon: Icons.apartment,
-                      value: MockSocietyData.totalFlats.toString(),
-                      label: 'Flats',
-                      iconColor: const Color(0xFFEA580C),
-                    ),
-                    const SizedBox(width: 16),
-                    _OverviewBadge(
-                      icon: Icons.people,
-                      value: MockSocietyData.totalMembers.toString(),
-                      label: 'Members',
-                      iconColor: const Color(0xFF7C3AED),
-                    ),
-                  ],
+                Builder(
+                  builder: (context) {
+                    final summary = structureAsync.maybeWhen(
+                      data: (d) => (d['summary'] as Map?) ?? const {},
+                      orElse: () => const {},
+                    );
+                    String count(List<String> keys) {
+                      for (final k in keys) {
+                        if (summary[k] != null) return summary[k].toString();
+                      }
+                      return '0';
+                    }
+                    return Row(
+                      children: [
+                        _OverviewBadge(
+                          icon: Icons.view_column,
+                          value: count(['totalWings', 'total_wings']),
+                          label: 'Wings',
+                        ),
+                        const SizedBox(width: 16),
+                        _OverviewBadge(
+                          icon: Icons.view_module,
+                          value: count(['totalBlocks', 'total_blocks']),
+                          label: 'Blocks',
+                          iconColor: const Color(0xFF2563EB),
+                        ),
+                        const SizedBox(width: 16),
+                        _OverviewBadge(
+                          icon: Icons.apartment,
+                          value: count(['totalFlats', 'total_units', 'total_flats']),
+                          label: 'Flats',
+                          iconColor: const Color(0xFFEA580C),
+                        ),
+                        const SizedBox(width: 16),
+                        _OverviewBadge(
+                          icon: Icons.people,
+                          value: count(['totalMembers', 'total_members']),
+                          label: 'Members',
+                          iconColor: const Color(0xFF7C3AED),
+                        ),
+                      ],
+                    );
+                  },
                 ),
               ],
             ),
@@ -188,17 +261,26 @@ class _WingsBlocksScreenState extends State<WingsBlocksScreen> {
     );
   }
 
-  Widget _buildWingsList() {
-    final wings = MockSocietyData.wings.where((w) {
+  Widget _buildWingsList(List source) {
+    final wings = source.where((w) {
       if (_searchQuery.isEmpty) return true;
-      return (w['name'] as String).toLowerCase().contains(_searchQuery);
+      return (w is Map ? (w['name'] ?? '').toString() : '')
+          .toLowerCase()
+          .contains(_searchQuery);
     }).toList();
+
+    if (wings.isEmpty) {
+      return const LiveEmptyView(
+        icon: Icons.view_column_outlined,
+        message: 'No wings found.',
+      );
+    }
 
     return ListView.builder(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
       itemCount: wings.length,
       itemBuilder: (context, index) {
-        final wing = wings[index];
+        final wing = (wings[index] as Map?) ?? const {};
         return Container(
           margin: const EdgeInsets.only(bottom: 10),
           padding: const EdgeInsets.all(16),
@@ -223,12 +305,12 @@ class _WingsBlocksScreenState extends State<WingsBlocksScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      wing['name'] as String,
+                      (wing['name'] ?? '').toString(),
                       style: GoogleFonts.outfit(fontSize: 15, fontWeight: FontWeight.w700, color: const Color(0xFF1E293B)),
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      '${wing['blocks']} Blocks · ${wing['flats']} Flats',
+                      '${wing['blocks'] ?? 0} Blocks · ${wing['flats'] ?? wing['units'] ?? 0} Flats',
                       style: GoogleFonts.outfit(fontSize: 12, color: const Color(0xFF94A3B8)),
                     ),
                   ],
@@ -242,18 +324,26 @@ class _WingsBlocksScreenState extends State<WingsBlocksScreen> {
     );
   }
 
-  Widget _buildBlocksList() {
-    final blocks = MockSocietyData.blocks.where((b) {
+  Widget _buildBlocksList(List source) {
+    final blocks = source.where((b) {
       if (_searchQuery.isEmpty) return true;
-      return (b['name'] as String).toLowerCase().contains(_searchQuery) ||
-          (b['wing'] as String).toLowerCase().contains(_searchQuery);
+      final m = b is Map ? b : const {};
+      return (m['name'] ?? '').toString().toLowerCase().contains(_searchQuery) ||
+          (m['wing'] ?? '').toString().toLowerCase().contains(_searchQuery);
     }).toList();
+
+    if (blocks.isEmpty) {
+      return const LiveEmptyView(
+        icon: Icons.view_module_outlined,
+        message: 'No blocks found.',
+      );
+    }
 
     return ListView.builder(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
       itemCount: blocks.length,
       itemBuilder: (context, index) {
-        final block = blocks[index];
+        final block = (blocks[index] as Map?) ?? const {};
         return Container(
           margin: const EdgeInsets.only(bottom: 10),
           padding: const EdgeInsets.all(16),
@@ -278,12 +368,12 @@ class _WingsBlocksScreenState extends State<WingsBlocksScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      block['name'] as String,
+                      (block['name'] ?? '').toString(),
                       style: GoogleFonts.outfit(fontSize: 15, fontWeight: FontWeight.w700, color: const Color(0xFF1E293B)),
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      '${block['wing']} · ${block['flats']} Flats',
+                      '${block['wing'] ?? ''} · ${block['flats'] ?? block['units'] ?? 0} Flats',
                       style: GoogleFonts.outfit(fontSize: 12, color: const Color(0xFF94A3B8)),
                     ),
                   ],

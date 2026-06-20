@@ -2,12 +2,25 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:sero/app/theme.dart';
-import 'package:sero/data/mock_data.dart';
 import 'package:sero/widgets/common/main_summary_card.dart';
 import 'package:sero/widgets/common/section_header.dart';
 import 'package:sero/widgets/common/status_badge.dart';
+import 'package:sero/widgets/common/async_state_views.dart';
 import 'package:sero/providers/shared/notification_provider.dart';
+import 'package:sero/providers/admin/admin_domain_providers.dart';
+import 'package:sero/widgets/admin/admin_actions.dart';
 import 'package:sero/widgets/shared/admin_drawer.dart';
+
+const _kCategoryColors = <String, int>{
+  'lift': 0xFF2563EB,
+  'generator': 0xFFF59E0B,
+  'pump': 0xFF059669,
+  'cctv': 0xFF7C3AED,
+  'fire': 0xFFEF4444,
+  'other': 0xFF64748B,
+};
+
+int _colorForType(String? type) => _kCategoryColors[type] ?? 0xFF64748B;
 
 class AssetsDashboardScreen extends ConsumerWidget {
   const AssetsDashboardScreen({super.key});
@@ -65,7 +78,20 @@ class AssetsDashboardScreen extends ConsumerWidget {
           const SizedBox(width: 8),
         ],
       ),
-      body: CustomScrollView(
+      body: ref.watch(assetsDashboardProvider).when(
+        loading: () => const LiveLoadingView(label: 'Loading assets…'),
+        error: (e, _) => LiveErrorView(
+          error: e,
+          onRetry: () => ref.invalidate(assetsDashboardProvider),
+        ),
+        data: (dash) {
+          final totals = (dash['totals'] as Map?)?.cast<String, dynamic>() ?? const {};
+          final categories = (dash['categories'] as List?) ?? const [];
+          final upcoming = (dash['upcomingMaintenance'] as List?) ?? const [];
+          final recent = (dash['recentActivity'] as List?) ?? const [];
+          return RefreshIndicator(
+            onRefresh: () async => ref.invalidate(assetsDashboardProvider),
+            child: CustomScrollView(
         physics: const BouncingScrollPhysics(),
         slivers: [
           const SliverToBoxAdapter(child: SizedBox(height: 20)),
@@ -76,12 +102,12 @@ class AssetsDashboardScreen extends ConsumerWidget {
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: MainSummaryCard(
                 title: 'Total Assets',
-                value: MockAssetsData.totalAssets.toString(),
+                value: (totals['total'] ?? 0).toString(),
                 icon: Icons.inventory_2_outlined,
                 subStats: [
-                  SummarySubStat('Operational', MockAssetsData.operational.toString()),
-                  SummarySubStat('Under Maintenance', MockAssetsData.underMaintenance.toString()),
-                  SummarySubStat('Out of Service', MockAssetsData.outOfService.toString()),
+                  SummarySubStat('Operational', (totals['operational'] ?? 0).toString()),
+                  SummarySubStat('Under Maintenance', (totals['underMaintenance'] ?? 0).toString()),
+                  SummarySubStat('Out of Service', (totals['outOfService'] ?? 0).toString()),
                 ],
               ),
             ),
@@ -97,8 +123,8 @@ class AssetsDashboardScreen extends ConsumerWidget {
               mainAxisSpacing: 12,
               crossAxisSpacing: 12,
               childAspectRatio: 0.8,
-              children: MockAssetsData.categories.map((cat) {
-                return _buildCategoryCard(context, cat);
+              children: categories.map((cat) {
+                return _buildCategoryCard(context, cat as Map<String, dynamic>);
               }).toList(),
             ),
           ),
@@ -115,7 +141,7 @@ class AssetsDashboardScreen extends ConsumerWidget {
           ),
           SliverPadding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
-            sliver: MockAssetsData.upcomingMaintenance.isEmpty
+            sliver: upcoming.isEmpty
                 ? SliverToBoxAdapter(
                     child: Padding(
                       padding: const EdgeInsets.all(20.0),
@@ -130,7 +156,8 @@ class AssetsDashboardScreen extends ConsumerWidget {
                 : SliverList(
                     delegate: SliverChildBuilderDelegate(
                       (context, index) {
-                        final item = MockAssetsData.upcomingMaintenance[index];
+                        final item = upcoming[index] as Map<String, dynamic>;
+                        final color = _colorForType(item['asset_type'] as String?);
                         return Container(
                           margin: const EdgeInsets.only(bottom: 12),
                           padding: const EdgeInsets.all(16),
@@ -144,13 +171,13 @@ class AssetsDashboardScreen extends ConsumerWidget {
                               Container(
                                 padding: const EdgeInsets.all(10),
                                 decoration: BoxDecoration(
-                                  color: Color(item['color']).withOpacity(0.1),
+                                  color: Color(color).withOpacity(0.1),
                                   borderRadius: BorderRadius.circular(12),
                                 ),
                                 child: Icon(
-                                  _getIconForMaintenance(item['title']),
+                                  _getIconForMaintenance((item['asset_name'] ?? '').toString()),
                                   size: 20,
-                                  color: Color(item['color']),
+                                  color: Color(color),
                                 ),
                               ),
                               const SizedBox(width: 16),
@@ -159,7 +186,7 @@ class AssetsDashboardScreen extends ConsumerWidget {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      item['title'],
+                                      (item['title'] ?? '').toString(),
                                       style: GoogleFonts.outfit(
                                         fontSize: 13,
                                         fontWeight: FontWeight.w600,
@@ -168,7 +195,7 @@ class AssetsDashboardScreen extends ConsumerWidget {
                                     ),
                                     const SizedBox(height: 2),
                                     Text(
-                                      item['date'],
+                                      '${item['asset_name'] ?? ''} · Due ${(item['next_due_on'] ?? '').toString().split('T').first}',
                                       style: GoogleFonts.outfit(
                                         fontSize: 11,
                                         color: const Color(0xFF94A3B8),
@@ -177,16 +204,11 @@ class AssetsDashboardScreen extends ConsumerWidget {
                                   ],
                                 ),
                               ),
-                              StatusBadge(
-                                label: item['dueIn'],
-                                bgColor: Color(item['color']),
-                                textColor: Colors.white,
-                              ),
                             ],
                           ),
                         );
                       },
-                      childCount: MockAssetsData.upcomingMaintenance.length,
+                      childCount: upcoming.length,
                     ),
                   ),
           ),
@@ -203,7 +225,7 @@ class AssetsDashboardScreen extends ConsumerWidget {
           ),
           SliverPadding(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-            sliver: MockAssetsData.recentActivity.isEmpty
+            sliver: recent.isEmpty
                 ? SliverToBoxAdapter(
                     child: Padding(
                       padding: const EdgeInsets.all(30.0),
@@ -218,7 +240,13 @@ class AssetsDashboardScreen extends ConsumerWidget {
                 : SliverList(
                     delegate: SliverChildBuilderDelegate(
                       (context, index) {
-                        final activity = MockAssetsData.recentActivity[index];
+                        final activity = recent[index] as Map<String, dynamic>;
+                        final statusLabel = (activity['status'] ?? '').toString();
+                        final color = statusLabel == 'completed'
+                            ? 0xFF059669
+                            : statusLabel == 'in_progress'
+                                ? 0xFFF59E0B
+                                : 0xFF2563EB;
                         return Container(
                           margin: const EdgeInsets.only(bottom: 12),
                           padding: const EdgeInsets.all(16),
@@ -232,13 +260,13 @@ class AssetsDashboardScreen extends ConsumerWidget {
                               Container(
                                 padding: const EdgeInsets.all(10),
                                 decoration: BoxDecoration(
-                                  color: Color(activity['color']).withOpacity(0.1),
+                                  color: Color(color).withOpacity(0.1),
                                   shape: BoxShape.circle,
                                 ),
                                 child: Icon(
                                   Icons.history_rounded,
                                   size: 20,
-                                  color: Color(activity['color']),
+                                  color: Color(color),
                                 ),
                               ),
                               const SizedBox(width: 16),
@@ -247,7 +275,7 @@ class AssetsDashboardScreen extends ConsumerWidget {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      activity['title'],
+                                      (activity['title'] ?? '').toString(),
                                       style: GoogleFonts.outfit(
                                         fontSize: 13,
                                         fontWeight: FontWeight.w600,
@@ -256,7 +284,7 @@ class AssetsDashboardScreen extends ConsumerWidget {
                                     ),
                                     const SizedBox(height: 2),
                                     Text(
-                                      activity['subtitle'],
+                                      '${activity['asset_name'] ?? ''} · ${activity['kind'] ?? ''}',
                                       style: GoogleFonts.outfit(
                                         fontSize: 11,
                                         color: const Color(0xFF94A3B8),
@@ -266,24 +294,27 @@ class AssetsDashboardScreen extends ConsumerWidget {
                                 ),
                               ),
                               StatusBadge(
-                                label: activity['status'],
-                                bgColor: Color(activity['color']),
+                                label: statusLabel,
+                                bgColor: Color(color),
                                 textColor: Colors.white,
                               ),
                             ],
                           ),
                         );
                       },
-                      childCount: MockAssetsData.recentActivity.length,
+                      childCount: recent.length,
                     ),
                   ),
           ),
 
           const SliverToBoxAdapter(child: SizedBox(height: 100)),
         ],
+            ),
+          );
+        },
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () {},
+        onPressed: () => AdminActions.comingSoon(context, 'Adding assets'),
         backgroundColor: kPrimaryGreen,
         child: const Icon(Icons.add, color: Colors.white),
       ),
@@ -315,9 +346,14 @@ class AssetsDashboardScreen extends ConsumerWidget {
   }
 
   Widget _buildCategoryCard(BuildContext context, Map<String, dynamic> cat) {
+    final type = (cat['type'] ?? 'other').toString();
+    final color = _colorForType(type);
+    final count = (cat['count'] ?? 0).toString();
+    final operational = (cat['operational'] ?? 0);
+    final label = type.isEmpty ? 'Other' : '${type[0].toUpperCase()}${type.substring(1)}';
     return GestureDetector(
       onTap: () {
-        if (cat['name'] == 'Lifts') {
+        if (type == 'lift') {
           Navigator.pushNamed(context, '/admin/assets/details');
         }
       },
@@ -333,14 +369,14 @@ class AssetsDashboardScreen extends ConsumerWidget {
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: Color(cat['color']).withOpacity(0.1),
+                color: Color(color).withOpacity(0.1),
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: Icon(cat['icon'], color: Color(cat['color']), size: 20),
+              child: Icon(_iconForType(type), color: Color(color), size: 20),
             ),
             const SizedBox(height: 8),
             Text(
-              cat['name'],
+              label,
               textAlign: TextAlign.center,
               style: GoogleFonts.outfit(
                 fontSize: 11,
@@ -350,7 +386,7 @@ class AssetsDashboardScreen extends ConsumerWidget {
             ),
             const SizedBox(height: 4),
             Text(
-              cat['count'].toString(),
+              count,
               style: GoogleFonts.outfit(
                 fontSize: 18,
                 fontWeight: FontWeight.w800,
@@ -359,17 +395,34 @@ class AssetsDashboardScreen extends ConsumerWidget {
             ),
             const SizedBox(height: 2),
             Text(
-              cat['status'],
+              '$operational operational',
               style: GoogleFonts.outfit(
                 fontSize: 9,
                 fontWeight: FontWeight.w700,
-                color: Color(cat['color']),
+                color: Color(color),
               ),
             ),
           ],
         ),
       ),
     );
+  }
+
+  IconData _iconForType(String type) {
+    switch (type) {
+      case 'lift':
+        return Icons.elevator_outlined;
+      case 'generator':
+        return Icons.ev_station_outlined;
+      case 'pump':
+        return Icons.water_drop_outlined;
+      case 'cctv':
+        return Icons.videocam_outlined;
+      case 'fire':
+        return Icons.local_fire_department_outlined;
+      default:
+        return Icons.inventory_2_outlined;
+    }
   }
 
   IconData _getIconForMaintenance(String title) {

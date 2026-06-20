@@ -38,6 +38,61 @@ export const AssetService = {
     }
   },
 
+  /**
+   * Aggregated assets dashboard for the admin overview screen.
+   * All counts are computed in Postgres (no client-side totals from list
+   * responses). Tenant-scoped by society_id.
+   */
+  async getDashboard(societyId: string) {
+    const [counts, byCategory, upcoming, recent] = await Promise.all([
+      db.query(
+        `SELECT
+           COUNT(*)::int AS total,
+           COUNT(*) FILTER (WHERE status = 'operational')::int AS operational,
+           COUNT(*) FILTER (WHERE status = 'down')::int AS down,
+           COUNT(*) FILTER (WHERE status = 'retired')::int AS retired
+         FROM assets WHERE society_id = $1`,
+        [societyId]
+      ),
+      db.query(
+        `SELECT type,
+                COUNT(*)::int AS count,
+                COUNT(*) FILTER (WHERE status = 'operational')::int AS operational
+         FROM assets WHERE society_id = $1 GROUP BY type ORDER BY type`,
+        [societyId]
+      ),
+      db.query(
+        `SELECT s.id, s.title, s.next_due_on, a.name AS asset_name, a.type AS asset_type
+         FROM maintenance_schedules s
+         JOIN assets a ON a.id = s.asset_id
+         WHERE s.society_id = $1 AND s.is_active = true
+         ORDER BY s.next_due_on ASC LIMIT 10`,
+        [societyId]
+      ),
+      db.query(
+        `SELECT w.id, w.title, w.kind, w.status, w.updated_at, a.name AS asset_name
+         FROM maintenance_work_orders w
+         JOIN assets a ON a.id = w.asset_id
+         WHERE w.society_id = $1
+         ORDER BY w.updated_at DESC LIMIT 10`,
+        [societyId]
+      ),
+    ]);
+    const c = counts.rows[0] || { total: 0, operational: 0, down: 0, retired: 0 };
+    return {
+      totals: {
+        total: c.total,
+        operational: c.operational,
+        underMaintenance: c.down,
+        outOfService: c.retired,
+        categories: byCategory.rows.length,
+      },
+      categories: byCategory.rows,
+      upcomingMaintenance: upcoming.rows,
+      recentActivity: recent.rows,
+    };
+  },
+
   async listAssets(societyId: string, opts: { status?: string } = {}) {
     const params: any[] = [societyId];
     let where = `society_id = $1`;

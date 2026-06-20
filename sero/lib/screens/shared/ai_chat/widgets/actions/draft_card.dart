@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:sero/app/theme.dart';
 
@@ -68,7 +69,13 @@ class DraftCard extends StatelessWidget {
                   children: [
                     Expanded(
                       child: ElevatedButton.icon(
-                        onPressed: () {},
+                        onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'Ask the Copilot to "post this as a notice" — it will create a confirmable action proposal.',
+                            ),
+                          ),
+                        ),
                         icon: const Icon(Icons.send_rounded, size: 14),
                         label: const Text('Send to All'),
                         style: ElevatedButton.styleFrom(
@@ -85,7 +92,15 @@ class DraftCard extends StatelessWidget {
                     const SizedBox(width: 10),
                     Expanded(
                       child: ElevatedButton.icon(
-                        onPressed: () {},
+                        onPressed: () async {
+                          await Clipboard.setData(
+                            ClipboardData(text: '$title\n\n$body'),
+                          );
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Draft copied to clipboard for editing.')),
+                          );
+                        },
                         icon: const Icon(Icons.edit_rounded, size: 14),
                         label: const Text('Edit Draft'),
                         style: ElevatedButton.styleFrom(

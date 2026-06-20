@@ -2,9 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:sero/app/theme.dart';
-import 'package:sero/data/mock_data.dart';
 import 'package:sero/widgets/common/mini_chart.dart';
+import 'package:sero/widgets/common/async_state_views.dart';
 import 'package:sero/providers/shared/notification_provider.dart';
+import 'package:sero/providers/admin/admin_domain_providers.dart';
 
 /// Dashboard Revenue Overview — Screen 2 of 4
 /// Shows total collection, finance cards, revenue line chart,
@@ -15,9 +16,29 @@ class DashboardRevenueScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final unreadCount = ref.watch(notificationProvider.notifier).unreadCount;
+    final financeAsync = ref.watch(financeDashboardProvider);
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
-      body: CustomScrollView(
+      body: financeAsync.when(
+        loading: () => const LiveLoadingView(label: 'Loading revenue…'),
+        error: (e, _) => LiveErrorView(
+          error: e,
+          onRetry: () => ref.invalidate(financeDashboardProvider),
+        ),
+        data: (data) {
+          final summary = (data['summary'] as Map?) ?? const {};
+          num numOf(String k) {
+            final v = summary[k];
+            return v is num ? v : num.tryParse('${v ?? ''}') ?? 0;
+          }
+          String money(num v) => '₹ ${v.toStringAsFixed(0)}';
+          final collected = numOf('collection') != 0 ? numOf('collection') : numOf('totalCollected');
+          final income = numOf('income') != 0 ? numOf('income') : numOf('totalIncome');
+          final expense = numOf('expense') != 0 ? numOf('expense') : numOf('totalExpense');
+          final balance = numOf('balance');
+          final pending = numOf('pending') != 0 ? numOf('pending') : numOf('outstanding');
+          final overdue = numOf('overdue');
+          return CustomScrollView(
         physics: const BouncingScrollPhysics(),
         slivers: [
           // ── App Bar ──
@@ -43,7 +64,14 @@ class DashboardRevenueScreen extends ConsumerWidget {
                 children: [
                   IconButton(
                     icon: const Icon(Icons.calendar_today_outlined, color: Color(0xFF1E293B), size: 20),
-                    onPressed: () {},
+                    onPressed: () async {
+                      await showDatePicker(
+                        context: context,
+                        initialDate: DateTime.now(),
+                        firstDate: DateTime(2020),
+                        lastDate: DateTime(2030),
+                      );
+                    },
                   ),
                 ],
               ),
@@ -104,7 +132,7 @@ class DashboardRevenueScreen extends ConsumerWidget {
                     child: Row(
                       children: [
                         Text(
-                          MockDashboardData.monthLabel,
+                          'This Month',
                           style: GoogleFonts.outfit(fontSize: 12, fontWeight: FontWeight.w500, color: const Color(0xFF64748B)),
                         ),
                         const SizedBox(width: 4),
@@ -147,7 +175,7 @@ class DashboardRevenueScreen extends ConsumerWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      MockDashboardData.totalCollection,
+                      money(collected),
                       style: GoogleFonts.outfit(
                         fontSize: 28,
                         fontWeight: FontWeight.w800,
@@ -168,7 +196,7 @@ class DashboardRevenueScreen extends ConsumerWidget {
                               const Icon(Icons.trending_up, size: 12, color: Colors.white),
                               const SizedBox(width: 4),
                               Text(
-                                MockDashboardData.totalCollectionTrend,
+                                'Live',
                                 style: GoogleFonts.outfit(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.white),
                               ),
                             ],
@@ -210,17 +238,17 @@ class DashboardRevenueScreen extends ConsumerWidget {
               children: [
                 _MiniFinanceCard(
                   label: 'Collected',
-                  value: MockDashboardData.collectedAmount,
+                  value: money(collected),
                   color: const Color(0xFF059669),
                 ),
                 _MiniFinanceCard(
                   label: 'Pending',
-                  value: MockDashboardData.pendingAmount,
+                  value: money(pending),
                   color: const Color(0xFFD97706),
                 ),
                 _MiniFinanceCard(
                   label: 'Overdue',
-                  value: MockDashboardData.overdueAmount,
+                  value: money(overdue),
                   color: const Color(0xFFDC2626),
                 ),
               ],
@@ -238,26 +266,23 @@ class DashboardRevenueScreen extends ConsumerWidget {
               children: [
                 _FinanceDetailCard(
                   title: 'Pending Dues',
-                  value: MockDashboardData.pendingDues,
-                  trend: MockDashboardData.pendingDuesTrend,
+                  value: money(pending),
                   trendUp: false,
                   trendColor: const Color(0xFFDC2626),
                 ),
                 _FinanceDetailCard(
                   title: 'This Month Revenue',
-                  value: MockDashboardData.thisMonthRevenue,
+                  value: money(income),
                   showSparkline: true,
                 ),
                 _FinanceDetailCard(
                   title: 'Total Expenses',
-                  value: MockDashboardData.totalExpenses,
-                  trend: MockDashboardData.totalExpensesTrend,
+                  value: money(expense),
                   trendUp: true,
                 ),
                 _FinanceDetailCard(
-                  title: 'Maintenance Due',
-                  value: MockDashboardData.maintenanceDueAmount,
-                  subtitle: '${MockDashboardData.maintenanceDueFlats} Flats',
+                  title: 'Balance',
+                  value: money(balance),
                 ),
               ],
             ),
@@ -322,8 +347,8 @@ class DashboardRevenueScreen extends ConsumerWidget {
                             const SizedBox(width: 8),
                             Expanded(
                               child: MiniLineChart(
-                                data: MockDashboardData.revenueLineData,
-                                labels: MockDashboardData.revenueLabels,
+                                data: const [],
+                                labels: const [],
                                 lineColor: kPrimaryGreen,
                                 height: 160,
                               ),
@@ -377,8 +402,8 @@ class DashboardRevenueScreen extends ConsumerWidget {
                       border: Border.all(color: const Color(0xFFF1F5F9)),
                     ),
                     child: MiniBarChart(
-                      data: MockDashboardData.collectionTrend,
-                      labels: MockDashboardData.collectionWeeks,
+                      data: const [],
+                      labels: const [],
                       barColor: kPrimaryGreen,
                       height: 140,
                     ),
@@ -407,79 +432,9 @@ class DashboardRevenueScreen extends ConsumerWidget {
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(color: const Color(0xFFF1F5F9)),
                     ),
-                    child: MockDashboardData.categoryBreakdown.isEmpty 
-                        ? Center(
-                            child: Padding(
-                              padding: const EdgeInsets.all(20.0),
-                              child: Text(
-                                'No financial records found.',
-                                style: GoogleFonts.outfit(color: const Color(0xFF64748B)),
-                              ),
-                            ),
-                          )
-                        : Row(
-                          children: [
-                            DonutChart(
-                              segments: MockDashboardData.categoryBreakdown
-                                  .map((c) => DonutSegment(
-                                        value: c['percent'].toDouble(),
-                                        color: Color(c['color'] as int),
-                                        label: c['label'] as String,
-                                      ))
-                                  .toList(),
-                              centerValue: MockDashboardData.categoryTotal,
-                              centerLabel: 'Total',
-                              size: 120,
-                            ),
-                            const SizedBox(width: 24),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: MockDashboardData.categoryBreakdown
-                                    .map((c) => Padding(
-                                          padding: const EdgeInsets.only(bottom: 12),
-                                      child: Row(
-                                        children: [
-                                          Container(
-                                            width: 10,
-                                            height: 10,
-                                            decoration: BoxDecoration(
-                                              color: Color(c['color'] as int),
-                                              shape: BoxShape.circle,
-                                            ),
-                                          ),
-                                          const SizedBox(width: 8),
-                                          Expanded(
-                                            child: Column(
-                                              crossAxisAlignment: CrossAxisAlignment.start,
-                                              children: [
-                                                Row(
-                                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                                  children: [
-                                                    Text(
-                                                      c['label'] as String,
-                                                      style: GoogleFonts.outfit(fontSize: 12, fontWeight: FontWeight.w500, color: const Color(0xFF1E293B)),
-                                                    ),
-                                                    Text(
-                                                      '${c['percent']}%',
-                                                      style: GoogleFonts.outfit(fontSize: 11, fontWeight: FontWeight.w600, color: const Color(0xFF64748B)),
-                                                    ),
-                                                  ],
-                                                ),
-                                                Text(
-                                                  c['amount'] as String,
-                                                  style: GoogleFonts.outfit(fontSize: 11, color: const Color(0xFF94A3B8)),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ))
-                                .toList(),
-                          ),
-                        ),
-                      ],
+                    child: const LiveEmptyView(
+                      icon: Icons.pie_chart_outline,
+                      message: 'No category breakdown yet.',
                     ),
                   ),
                 ],
@@ -489,9 +444,11 @@ class DashboardRevenueScreen extends ConsumerWidget {
 
           const SliverToBoxAdapter(child: SizedBox(height: 100)),
         ],
+      );
+        },
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () {},
+        onPressed: () => Navigator.pushNamed(context, '/admin/finance/generate-bills'),
         backgroundColor: kPrimaryGreen,
         child: const Icon(Icons.add, color: Colors.white),
       ),

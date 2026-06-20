@@ -7,6 +7,9 @@ const isDevelopment = process.env.NODE_ENV === "development";
 
 export const logger = pino({
   level: process.env.LOG_LEVEL || "info",
+  // Custom security level used by abuse-protection / auth for high-priority
+  // security events (e.g. `logger.alert(...)`). Sits above `error`.
+  customLevels: { alert: 70 },
   redact: {
     paths: [
       "password",

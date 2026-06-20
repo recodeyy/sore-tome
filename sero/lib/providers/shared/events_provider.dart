@@ -29,7 +29,7 @@ class EventsNotifier extends StateNotifier<AsyncValue<List<SocietyEvent>>> {
     }
 
     try {
-      final res = await ApiService.get('/events');
+      final res = await ApiService.get('/events-v2');
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
         final list = (data['events'] as List).map((x) => SocietyEvent.fromMap(x)).toList();
@@ -58,10 +58,10 @@ class EventsNotifier extends StateNotifier<AsyncValue<List<SocietyEvent>>> {
 
   Future<void> addEvent(String title, String description, DateTime date, String location) async {
     try {
-      final res = await ApiService.post('/events', {
+      final res = await ApiService.post('/events-v2', {
         'title': title,
         'description': description,
-        'date': date.toIso8601String(),
+        'starts_at': date.toIso8601String(),
         'location': location,
       });
       if (res.statusCode == 201) {
@@ -76,7 +76,7 @@ class EventsNotifier extends StateNotifier<AsyncValue<List<SocietyEvent>>> {
 
   Future<void> deleteEvent(String id) async {
     try {
-      final res = await ApiService.delete('/events/$id');
+      final res = await ApiService.delete('/events-v2/$id');
       if (res.statusCode == 200) {
         fetchEvents();
       } else {

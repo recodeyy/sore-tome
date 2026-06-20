@@ -1,3 +1,5 @@
+import 'package:sero/core/permissions/role_utils.dart';
+
 class UserModel {
   final String id;
   final String name;
@@ -32,7 +34,7 @@ class UserModel {
       phone: map['phone'] ?? '',
       flatNumber: map['flatNumber'] ?? '',
       block: map['blockName'] ?? map['block'] ?? '',
-      role: map['role'] ?? 'resident',
+      role: RoleUtils.normalize(map['role']?.toString() ?? 'resident'),
       status: map['status'] ?? 'pending',
       societyId: map['society_id'] ?? '',
       residentType: map['residentType'] ?? 'owner',
@@ -57,5 +59,4 @@ class UserModel {
     };
   }
 }
-
 

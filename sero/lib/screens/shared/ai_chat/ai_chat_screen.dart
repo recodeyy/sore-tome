@@ -1,65 +1,59 @@
-import 'dart:convert';
-import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:sero/app/theme.dart';
-import 'package:sero/services/ai_service.dart';
+import 'package:sero/models/ai_copilot/ai_copilot_models.dart';
+import 'package:sero/providers/ai_copilot/ai_copilot_provider.dart';
 
-// Modularized Widgets
-import 'widgets/quick_action_tiles.dart';
 import 'widgets/concierge_bubble.dart';
 import 'widgets/input_console.dart';
-import 'package:sero/services/firestore_service.dart';
+import 'widgets/quick_action_tiles.dart';
 
-class AiChatScreen extends StatefulWidget {
+class AiChatScreen extends ConsumerStatefulWidget {
   final String? initialMessage;
   final Map<String, dynamic>? initialContext;
-  final String userRole; // 'resident' or 'admin'
+  final String userRole;
 
   const AiChatScreen({
-    super.key, 
-    this.initialMessage, 
+    super.key,
+    this.initialMessage,
     this.initialContext,
     this.userRole = 'resident',
   });
 
   @override
-  State<AiChatScreen> createState() => _AiChatScreenState();
+  ConsumerState<AiChatScreen> createState() => _AiChatScreenState();
 }
 
-class _AiChatScreenState extends State<AiChatScreen> {
-  final _aiService = AiService();
-  final _firestore = FirestoreService();
+class _AiChatScreenState extends ConsumerState<AiChatScreen> {
+  final _scaffoldKey = GlobalKey<ScaffoldState>();
   final _msgCtrl = TextEditingController();
   final _scrollCtrl = ScrollController();
-  final _focusNode = FocusNode(); // Track input focus
-  final List<Map<String, dynamic>> _messages = [];
-  bool _loading = false;
-  bool _isFocused = false; // Add focus state
-
-  // Attachment State
+  final _focusNode = FocusNode();
   final ImagePicker _picker = ImagePicker();
-  XFile? _selectedImage;
-  String? _base64Image;
+  bool _isFocused = false;
 
   @override
   void initState() {
     super.initState();
-
-    // Add listener to track focus changes for animation
-    _focusNode.addListener(() {
-      if (mounted) {
-        setState(() {
-          _isFocused = _focusNode.hasFocus;
-        });
+    _focusNode.addListener(_handleFocusChange);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _syncRoleContext();
+      if (widget.initialMessage != null) {
+        ref.read(aiCopilotProvider.notifier).sendMessage(
+              widget.initialMessage!,
+              context: widget.initialContext,
+            );
       }
     });
+  }
 
-    // V3.11: Handle initial message and context
-    if (widget.initialMessage != null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _send(message: widget.initialMessage, context: widget.initialContext);
-      });
+  @override
+  void didUpdateWidget(covariant AiChatScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.userRole != widget.userRole) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _syncRoleContext());
     }
   }
 
@@ -67,108 +61,120 @@ class _AiChatScreenState extends State<AiChatScreen> {
   void dispose() {
     _msgCtrl.dispose();
     _scrollCtrl.dispose();
-    _focusNode.dispose(); // Cleanup
+    _focusNode.removeListener(_handleFocusChange);
+    _focusNode.dispose();
     super.dispose();
   }
 
-  Future<void> _pickImage() async {
-    final XFile? image = await _picker.pickImage(
-      source: ImageSource.gallery,
-      imageQuality: 70,
-    );
-    if (image != null) {
-      final bytes = await image.readAsBytes();
-      setState(() {
-        _selectedImage = image;
-        _base64Image = 'data:image/png;base64,${base64Encode(bytes)}';
-      });
+  void _handleFocusChange() {
+    if (mounted) {
+      setState(() => _isFocused = _focusNode.hasFocus);
     }
   }
 
-  void _removeImage() {
-    setState(() {
-      _selectedImage = null;
-      _base64Image = null;
-    });
+  void _syncRoleContext() {
+    ref.read(aiCopilotProvider.notifier).setRoleContext(
+          AiRoleContext.fromRole(
+            widget.userRole,
+            societyId: ref.read(aiCopilotProvider).roleContext.societyId,
+          ),
+        );
   }
 
-  void _send({String? message, Map<String, dynamic>? context}) async {
-    final text = (message ?? _msgCtrl.text).trim();
-    if ((text.isEmpty && _selectedImage == null) || _loading) return;
-
-    final currentImage = _selectedImage;
-    final currentBase64 = _base64Image;
-
-    _msgCtrl.clear();
-    _removeImage(); // Clear selection after sending
-
-    setState(() {
-      _messages.add({
-        'role': 'user',
-        'content': text,
-        'imagePath': currentImage?.path,
-      });
-      _loading = true;
-    });
-    _scrollToBottom();
-
-    final data = await _aiService.sendMessage(
-      text,
-      base64Image: currentBase64,
-      context: {
-        ...(context ?? {}),
-        'userRole': widget.userRole,
-      },
+  Future<void> _pickImage() async {
+    final image = await _picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 70,
     );
-    if (!mounted) return;
-    setState(() {
-      _messages.add({'role': 'assistant', ...data});
-      _loading = false;
-    });
-    _scrollToBottom();
+    if (image == null) return;
+    ref.read(aiCopilotProvider.notifier).setPendingAttachment(
+          AiAttachmentDraft(
+            localPath: image.path,
+            fileName: image.name,
+            mimeHint: 'image/*',
+          ),
+        );
+  }
+
+  void _send() {
+    final text = _msgCtrl.text.trim();
+    if (text.isEmpty && ref.read(aiCopilotProvider).pendingAttachment == null) {
+      return;
+    }
+    _msgCtrl.clear();
+    ref.read(aiCopilotProvider.notifier).sendMessage(text);
   }
 
   void _scrollToBottom() {
     Future.delayed(const Duration(milliseconds: 100), () {
-      if (_scrollCtrl.hasClients) {
-        _scrollCtrl.animateTo(
-          _scrollCtrl.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-        );
-      }
+      if (!_scrollCtrl.hasClients) return;
+      _scrollCtrl.animateTo(
+        _scrollCtrl.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 280),
+        curve: Curves.easeOut,
+      );
     });
   }
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<int>(
+      aiCopilotProvider.select((state) => state.messages.length),
+      (_, __) => _scrollToBottom(),
+    );
+
+    final state = ref.watch(aiCopilotProvider);
+    final notifier = ref.read(aiCopilotProvider.notifier);
+    final aiService = ref.watch(aiServiceProvider);
+    final role = state.roleContext.normalizedRole;
+
     return Scaffold(
+      key: _scaffoldKey,
       backgroundColor: kSlateBg,
+      drawer: _ConversationDrawer(state: state, notifier: notifier),
       body: Stack(
         children: [
           CustomScrollView(
             controller: _scrollCtrl,
             physics: const BouncingScrollPhysics(),
             slivers: [
-               const SliverToBoxAdapter(child: SizedBox(height: 24)),
-               QuickActionTiles(
-                 userRole: widget.userRole,
-                 onAction: (prompt, key) async {
-                Map<String, dynamic>? context;
-                if (key == 'financials') {
-                  final summary = await _firestore.getFundSummary();
-                  context = {
-                    'totalCollected': summary.totalCollected,
-                    'totalSpent': summary.totalSpent,
-                    'outstandingDues': summary.outstandingDues,
-                    'categories': summary.categoryBreakdown,
-                    'databaseStatus': 'Live Data from Firestore',
-                    'groundingRule': 'CRITICAL: Use these EXACT numbers. If any value is 0, report it as 0. Do NOT hallucinate placeholder values.',
-                  };
-                }
-                _send(message: prompt, context: context);
-              }),
-
+              SliverToBoxAdapter(
+                child: SafeArea(
+                  bottom: false,
+                  child: _CopilotHeader(
+                    roleContext: state.roleContext,
+                    language: state.language,
+                    isStreaming: state.isStreaming,
+                    onOpenHistory: () =>
+                        _scaffoldKey.currentState?.openDrawer(),
+                    onNewChat: notifier.newChat,
+                    onStop: notifier.stopGeneration,
+                  ),
+                ),
+              ),
+              SliverToBoxAdapter(
+                child: _LanguageSelector(
+                  selected: state.language,
+                  onSelected: notifier.setLanguage,
+                ),
+              ),
+              SliverToBoxAdapter(
+                child: _ConversationSearch(
+                  query: state.searchQuery,
+                  onChanged: notifier.setSearchQuery,
+                ),
+              ),
+              QuickActionTiles(
+                userRole: role,
+                actions: state.quickActions,
+                onQuickAction: notifier.sendQuickAction,
+                onAction: (prompt, key) => notifier.sendMessage(
+                  prompt,
+                  intentKey: key,
+                ),
+              ),
+              if (state.messages.isEmpty)
+                const SliverToBoxAdapter(child: _EmptyCopilotState()),
               SliverPadding(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 20,
@@ -176,38 +182,40 @@ class _AiChatScreenState extends State<AiChatScreen> {
                 ),
                 sliver: SliverList(
                   delegate: SliverChildBuilderDelegate((context, index) {
-                    final msg = _messages[index];
+                    final msg = state.messages[index];
                     return ConciergeBubble(
-                      message: msg,
-                      isUser: msg['role'] == 'user',
-                      aiService: _aiService,
-                      userRole: widget.userRole,
+                      message: msg.toBubbleMap(),
+                      isUser: msg.role == AiCopilotMessageRole.user,
+                      aiService: aiService,
+                      userRole: role,
                       onActionExecuted: () => setState(() {}),
                     );
-                  }, childCount: _messages.length),
+                  }, childCount: state.messages.length),
                 ),
               ),
-
-              if (_loading)
+              if (state.isStreaming)
                 const SliverToBoxAdapter(
                   child: Padding(
                     padding: EdgeInsets.symmetric(horizontal: 24),
                     child: TypingIndicator(),
                   ),
                 ),
-
               const SliverToBoxAdapter(child: SizedBox(height: 300)),
             ],
           ),
-
           FloatingInputConsole(
             controller: _msgCtrl,
             focusNode: _focusNode,
             isFocused: _isFocused,
+            isStreaming: state.isStreaming,
             onSend: _send,
+            onStop: notifier.stopGeneration,
             onPickImage: _pickImage,
-            onRemoveImage: _removeImage,
-            imagePath: _selectedImage?.path,
+            onRemoveImage: notifier.clearPendingAttachment,
+            imagePath: state.pendingAttachment?.localPath,
+            attachmentNotice: state.pendingAttachment == null
+                ? null
+                : 'Attachment preview only. Backend signed upload/token support is required before AI ingestion.',
           ),
         ],
       ),
@@ -215,13 +223,498 @@ class _AiChatScreenState extends State<AiChatScreen> {
   }
 }
 
+class _CopilotHeader extends StatelessWidget {
+  const _CopilotHeader({
+    required this.roleContext,
+    required this.language,
+    required this.isStreaming,
+    required this.onOpenHistory,
+    required this.onNewChat,
+    required this.onStop,
+  });
 
+  final AiRoleContext roleContext;
+  final AiCopilotLanguage language;
+  final bool isStreaming;
+  final VoidCallback onOpenHistory;
+  final VoidCallback onNewChat;
+  final VoidCallback onStop;
 
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 14, 20, 18),
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          gradient: kPremiumGradient,
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [
+            BoxShadow(
+              color: kPrimaryGreen.withValues(alpha: 0.18),
+              blurRadius: 24,
+              offset: const Offset(0, 12),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                _HeaderIconButton(
+                  icon: Icons.menu_rounded,
+                  tooltip: 'Conversation history',
+                  onTap: onOpenHistory,
+                ),
+                const Spacer(),
+                _HeaderIconButton(
+                  icon: Icons.add_comment_rounded,
+                  tooltip: 'New chat',
+                  onTap: onNewChat,
+                ),
+                const SizedBox(width: 10),
+                _HeaderIconButton(
+                  icon: isStreaming ? Icons.stop_rounded : Icons.auto_awesome,
+                  tooltip: isStreaming ? 'Stop generation' : 'SERO Copilot',
+                  onTap: isStreaming ? onStop : () {},
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+            Text(
+              'SERO Copilot',
+              style: GoogleFonts.outfit(
+                fontSize: 32,
+                fontWeight: FontWeight.w800,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Role-aware society assistant for rules, complaints, facilities, notices, and authorized operational summaries.',
+              style: GoogleFonts.outfit(
+                fontSize: 13,
+                color: Colors.white.withValues(alpha: 0.82),
+                height: 1.45,
+              ),
+            ),
+            const SizedBox(height: 18),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _HeaderBadge(
+                  icon: Icons.verified_user_rounded,
+                  label: _roleLabel(roleContext.normalizedRole),
+                ),
+                _HeaderBadge(
+                  icon: Icons.translate_rounded,
+                  label: language.label,
+                ),
+                _HeaderBadge(
+                  icon: Icons.apartment_rounded,
+                  label: roleContext.societyId.isEmpty
+                      ? 'Current society'
+                      : roleContext.societyId,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
+  String _roleLabel(String role) {
+    return role
+        .split('_')
+        .map((part) => part.isEmpty
+            ? part
+            : '${part[0].toUpperCase()}${part.substring(1)}')
+        .join(' ');
+  }
+}
 
+class _HeaderIconButton extends StatelessWidget {
+  const _HeaderIconButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+  });
 
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onTap;
 
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          width: 42,
+          height: 42,
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
+          ),
+          child: Icon(icon, color: Colors.white, size: 20),
+        ),
+      ),
+    );
+  }
+}
 
+class _HeaderBadge extends StatelessWidget {
+  const _HeaderBadge({required this.icon, required this.label});
 
+  final IconData icon;
+  final String label;
 
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: Colors.white),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: GoogleFonts.outfit(
+              color: Colors.white,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
+class _LanguageSelector extends StatelessWidget {
+  const _LanguageSelector({
+    required this.selected,
+    required this.onSelected,
+  });
+
+  final AiCopilotLanguage selected;
+  final ValueChanged<AiCopilotLanguage> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
+      child: Container(
+        padding: const EdgeInsets.all(6),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: kSlateBorder.withValues(alpha: 0.7)),
+        ),
+        child: Row(
+          children: AiCopilotLanguage.values.map((language) {
+            final isSelected = language == selected;
+            return Expanded(
+              child: Semantics(
+                button: true,
+                selected: isSelected,
+                label: 'Reply language ${language.label}',
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(14),
+                  onTap: () => onSelected(language),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    decoration: BoxDecoration(
+                      color: isSelected ? kPrimaryGreen : Colors.transparent,
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Text(
+                      language.label,
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.outfit(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color:
+                            isSelected ? Colors.white : const Color(0xFF64748B),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }).toList(growable: false),
+        ),
+      ),
+    );
+  }
+}
+
+class _ConversationSearch extends StatelessWidget {
+  const _ConversationSearch({
+    required this.query,
+    required this.onChanged,
+  });
+
+  final String query;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 18),
+      child: TextField(
+        onChanged: onChanged,
+        style: GoogleFonts.outfit(fontSize: 13),
+        decoration: InputDecoration(
+          hintText: 'Search current conversation history',
+          prefixIcon: const Icon(Icons.search_rounded, size: 20),
+          suffixIcon: query.isEmpty
+              ? null
+              : IconButton(
+                  icon: const Icon(Icons.close_rounded),
+                  onPressed: () => onChanged(''),
+                ),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+        ),
+      ),
+    );
+  }
+}
+
+class _ConversationDrawer extends StatelessWidget {
+  const _ConversationDrawer({
+    required this.state,
+    required this.notifier,
+  });
+
+  final AiCopilotState state;
+  final AiCopilotNotifier notifier;
+
+  @override
+  Widget build(BuildContext context) {
+    return Drawer(
+      backgroundColor: kSlateBg,
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(18),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Text(
+                    'Copilot chats',
+                    style: GoogleFonts.outfit(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                      color: const Color(0xFF1E293B),
+                    ),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    tooltip: 'New chat',
+                    onPressed: () {
+                      notifier.newChat();
+                      Navigator.of(context).pop();
+                    },
+                    icon: const Icon(Icons.add_comment_rounded),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                onChanged: notifier.setSearchQuery,
+                decoration: const InputDecoration(
+                  hintText: 'Search conversations',
+                  prefixIcon: Icon(Icons.search_rounded),
+                ),
+              ),
+              const SizedBox(height: 18),
+              Expanded(
+                child: ListView.separated(
+                  itemCount: state.visibleConversations.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 10),
+                  itemBuilder: (context, index) {
+                    final conversation = state.visibleConversations[index];
+                    final selected =
+                        conversation.id == state.activeConversationId;
+                    return Container(
+                      decoration: BoxDecoration(
+                        color: selected ? kPrimaryGreen : Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: selected
+                              ? kPrimaryGreen
+                              : kSlateBorder.withValues(alpha: 0.7),
+                        ),
+                      ),
+                      child: ListTile(
+                        onTap: () {
+                          notifier.selectConversation(conversation.id);
+                          Navigator.of(context).pop();
+                        },
+                        title: Text(
+                          conversation.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.outfit(
+                            fontWeight: FontWeight.w700,
+                            color: selected
+                                ? Colors.white
+                                : const Color(0xFF1E293B),
+                          ),
+                        ),
+                        subtitle: Text(
+                          '${conversation.messages.length} messages',
+                          style: GoogleFonts.outfit(
+                            fontSize: 11,
+                            color: selected
+                                ? Colors.white.withValues(alpha: 0.75)
+                                : const Color(0xFF94A3B8),
+                          ),
+                        ),
+                        trailing: PopupMenuButton<String>(
+                          icon: Icon(
+                            Icons.more_vert_rounded,
+                            color: selected
+                                ? Colors.white
+                                : const Color(0xFF64748B),
+                          ),
+                          onSelected: (value) {
+                            if (value == 'rename') {
+                              _showRenameDialog(context, conversation);
+                            } else if (value == 'archive') {
+                              notifier.archiveConversation(conversation.id);
+                            } else if (value == 'delete') {
+                              notifier.deleteConversation(conversation.id);
+                            }
+                          },
+                          itemBuilder: (context) => const [
+                            PopupMenuItem(
+                              value: 'rename',
+                              child: Text('Rename'),
+                            ),
+                            PopupMenuItem(
+                              value: 'archive',
+                              child: Text('Archive'),
+                            ),
+                            PopupMenuItem(
+                              value: 'delete',
+                              child: Text('Delete'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'History is currently held in frontend state. Server persistence and cross-device sync require backend conversation APIs.',
+                style: GoogleFonts.outfit(
+                  fontSize: 11,
+                  color: const Color(0xFF64748B),
+                  height: 1.35,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showRenameDialog(
+    BuildContext context,
+    AiCopilotConversation conversation,
+  ) {
+    final controller = TextEditingController(text: conversation.title);
+    showDialog<void>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Rename chat'),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            decoration: const InputDecoration(hintText: 'Conversation title'),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                notifier.renameConversation(conversation.id, controller.text);
+                Navigator.of(context).pop();
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _EmptyCopilotState extends StatelessWidget {
+  const _EmptyCopilotState();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 22, 20, 8),
+      child: Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: kSlateBorder.withValues(alpha: 0.7)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: kPrimaryGreen.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: const Icon(
+                Icons.auto_awesome_rounded,
+                color: kPrimaryGreen,
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Text(
+                'Ask in English, Hindi, or Hinglish. Copilot will request backend-grounded society data instead of relying on client-side totals.',
+                style: GoogleFonts.outfit(
+                  fontSize: 12,
+                  color: const Color(0xFF64748B),
+                  height: 1.45,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

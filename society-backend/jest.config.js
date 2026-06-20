@@ -10,6 +10,7 @@ module.exports = {
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
   moduleNameMapper: {
     '^(\\.\\.\\/|\\.\\/)(.+)\\.js$': '$1$2',
+    'pdfjs-dist/legacy/build/pdf.mjs': '<rootDir>/__tests__/mocks/pdfjsMock.ts',
   },
   transform: {
     '^.+\\.tsx?$': ['ts-jest', {

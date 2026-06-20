@@ -25,7 +25,7 @@ async function tick(): Promise<void> {
 
     const ids = rows.map((r: any) => r.id);
     await db.query(
-      `UPDATE outbox_events SET published = true WHERE id = ANY($1::int[])`,
+      `UPDATE outbox_events SET published = true WHERE id = ANY($1::uuid[])`,
       [ids]
     );
 

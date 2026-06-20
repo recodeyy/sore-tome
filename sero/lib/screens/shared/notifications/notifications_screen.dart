@@ -11,7 +11,6 @@ class NotificationsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final notifications = ref.watch(notificationProvider);
-    final unreadCount = ref.read(notificationProvider.notifier).unreadCount;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
@@ -49,7 +48,7 @@ class NotificationsScreen extends ConsumerWidget {
       body: notifications.isEmpty
           ? _buildEmptyState()
           : RefreshIndicator(
-              onRefresh: () async => await Future.delayed(const Duration(seconds: 1)),
+              onRefresh: () => ref.read(notificationProvider.notifier).refresh(),
               color: kPrimaryGreen,
               child: ListView.separated(
                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),

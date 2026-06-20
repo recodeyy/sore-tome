@@ -21,6 +21,10 @@ function authMiddleware(req, res, next) {
       role: decoded.role, // "resident" | "main_admin" | "superadmin" | "treasurer" | "secretary"
       society_id: decoded.society_id,
     };
+    if (req.context) {
+      req.context.userId = decoded.uid;
+      req.context.societyId = decoded.society_id;
+    }
     next();
   } catch (err) {
     if (err.name === "TokenExpiredError") {

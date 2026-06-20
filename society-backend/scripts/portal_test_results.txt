@@ -1,0 +1,31 @@
+SERO portal test — 2026-06-16T17:01:00.799Z
+[0] still rate-limited, waiting 60s...
+[1] still rate-limited, waiting 60s...
+[2] still rate-limited, waiting 60s...
+[3] still rate-limited, waiting 60s...
+Rate limit clear after ~4 min (probe status 401).
+
+### STAFF / Security  (9000000001/123456, portal=staff)
+  login OK [200] society_id=hubtown-sunmist
+    /staff/me [404]
+    /staff/shift [404]
+    /visitors [200]
+    /staff/dashboard [404]
+    /notices-v2 [200]
+
+### SUPER ADMIN  (superadmin/123456, portal=super-admin)
+  login OK [200] society_id=platform
+    /super-admin/overview [200]
+    /super-admin/societies [200]
+    /super-admin/analytics [404]
+    /super-admin/system-health [200]
+
+### RESIDENT  (9876543200/123456, portal=resident)
+  login OK [200] society_id=hubtown-sunmist
+    /notices-v2 [200]
+    /events-v2 [200]
+    /finance/invoices [200]
+    /complaints [200]
+    /amenities [200]
+
+DONE.

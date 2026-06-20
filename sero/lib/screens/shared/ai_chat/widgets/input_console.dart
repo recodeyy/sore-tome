@@ -11,7 +11,10 @@ class FloatingInputConsole extends StatelessWidget {
   final VoidCallback onSend;
   final VoidCallback onPickImage;
   final VoidCallback onRemoveImage;
+  final VoidCallback? onStop;
   final String? imagePath;
+  final bool isStreaming;
+  final String? attachmentNotice;
 
   const FloatingInputConsole({
     super.key,
@@ -21,7 +24,10 @@ class FloatingInputConsole extends StatelessWidget {
     required this.onSend,
     required this.onPickImage,
     required this.onRemoveImage,
+    this.onStop,
     this.imagePath,
+    this.isStreaming = false,
+    this.attachmentNotice,
   });
 
   @override
@@ -87,6 +93,28 @@ class FloatingInputConsole extends StatelessWidget {
                     ],
                   ),
                 ).animate().fade().scale(),
+              ),
+            if (attachmentNotice != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Container(
+                  width: double.infinity,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFFBEB),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFFDE68A)),
+                  ),
+                  child: Text(
+                    attachmentNotice!,
+                    style: GoogleFonts.outfit(
+                      fontSize: 11,
+                      color: const Color(0xFF92400E),
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
               ),
             const SizedBox(height: 12),
             Row(
@@ -196,7 +224,7 @@ class FloatingInputConsole extends StatelessWidget {
 
                         // Waveform FAB / Send Button
                         GestureDetector(
-                          onTap: onSend,
+                          onTap: isStreaming ? onStop : onSend,
                           child: AnimatedContainer(
                             duration: const Duration(milliseconds: 200),
                             width: 38,
@@ -208,7 +236,9 @@ class FloatingInputConsole extends StatelessWidget {
                               shape: BoxShape.circle,
                             ),
                             child: Icon(
-                              Icons.arrow_upward_rounded,
+                              isStreaming
+                                  ? Icons.stop_rounded
+                                  : Icons.arrow_upward_rounded,
                               color: isFocused
                                   ? Colors.white
                                   : const Color(0xFF64748B),
@@ -276,13 +306,3 @@ class TypingIndicator extends StatelessWidget {
     ).animate(onPlay: (c) => c.repeat()).shimmer(duration: 1200.ms);
   }
 }
-
-
-
-
-
-
-
-
-
-

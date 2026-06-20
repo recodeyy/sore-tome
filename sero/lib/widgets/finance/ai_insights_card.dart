@@ -54,8 +54,12 @@ class _AiInsightsCardState extends ConsumerState<AiInsightsCard> {
     final data = finance.analysis ?? {};
     final totalSpent = data['totalSpent'] ?? 0;
     final topCategory = data['topCategory'] ?? 'N/A';
-    // Dummy trend data for visual purposes (backend could provide actual monthly trends)
-    final trendData = <double>[0.8, 1.2, 0.9, 1.5, 1.1, 1.6, totalSpent.toDouble() % 2]; 
+    // Live monthly trend from the backend analysis. No fabricated series:
+    // if the backend did not provide a trend, the sparkline is hidden.
+    final rawTrend = data['monthlyTrend'] ?? data['trend'];
+    final trendData = rawTrend is List
+        ? rawTrend.map((e) => (e is num ? e.toDouble() : 0.0)).toList()
+        : <double>[];
 
     return _buildCompactCard([
       Row(
@@ -81,11 +85,12 @@ class _AiInsightsCardState extends ConsumerState<AiInsightsCard> {
               Text('₹${totalSpent.toStringAsFixed(0)}', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.black87)),
             ],
           ),
-          SparklineWidget(
-            data: trendData,
-            lineColor: Theme.of(context).primaryColor,
-            baseColor: Theme.of(context).primaryColor.withValues(alpha: 0.5),
-          ),
+          if (trendData.length > 1)
+            SparklineWidget(
+              data: trendData,
+              lineColor: Theme.of(context).primaryColor,
+              baseColor: Theme.of(context).primaryColor.withValues(alpha: 0.5),
+            ),
         ],
       ),
       const SizedBox(height: 12),

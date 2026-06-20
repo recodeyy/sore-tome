@@ -1,17 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:sero/app/theme.dart';
-import 'package:sero/data/mock_data.dart';
+import 'package:sero/providers/admin/admin_domain_providers.dart';
+import 'package:sero/widgets/common/async_state_views.dart';
+import 'package:sero/widgets/admin/admin_actions.dart';
 import 'society_information_screen.dart';
-import 'society_logo_screen.dart';
 
 /// Society Profile — Screen 2 of 6
 /// Shows society cover image, logo, and key info details with Edit button.
-class SocietyProfileScreen extends StatelessWidget {
+class SocietyProfileScreen extends ConsumerWidget {
   const SocietyProfileScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final profileAsync = ref.watch(societyProfileProvider);
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       body: Column(
@@ -36,14 +39,36 @@ class SocietyProfileScreen extends StatelessWidget {
                 ),
                 IconButton(
                   icon: const Icon(Icons.more_horiz, color: Color(0xFF1E293B)),
-                  onPressed: () {},
+                  onPressed: () => AdminActions.comingSoon(context, 'Profile options'),
                 ),
               ],
             ),
           ),
 
           Expanded(
-            child: SingleChildScrollView(
+            child: profileAsync.when(
+              loading: () => const LiveLoadingView(label: 'Loading society profile…'),
+              error: (e, _) => LiveErrorView(
+                error: e,
+                onRetry: () => ref.invalidate(societyProfileProvider),
+              ),
+              data: (data) {
+                final profile = (data['profile'] as Map?) ?? const {};
+                final structure = (data['structure'] as Map?) ?? const {};
+                final name = (profile['name'] ?? '').toString();
+                final code = (profile['code'] ?? '').toString();
+                final type = (profile['type'] ?? '').toString();
+                final regNumber =
+                    (profile['registrationNumber'] ?? profile['registration_number'] ?? '').toString();
+                final totalMembers =
+                    (structure['totalMembers'] ?? structure['total_members'] ?? profile['totalMembers'] ?? 0).toString();
+                final totalFlats =
+                    (structure['totalFlats'] ?? structure['total_units'] ?? structure['total_flats'] ?? 0).toString();
+                final totalWings =
+                    (structure['totalWings'] ?? structure['total_wings'] ?? 0).toString();
+                final totalBlocks =
+                    (structure['totalBlocks'] ?? structure['total_blocks'] ?? 0).toString();
+                return SingleChildScrollView(
               physics: const BouncingScrollPhysics(),
               child: Column(
                 children: [
@@ -51,32 +76,32 @@ class SocietyProfileScreen extends StatelessWidget {
                   Stack(
                     clipBehavior: Clip.none,
                     children: [
-                      Container(
+                      SizedBox(
                         height: 180,
                         width: double.infinity,
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [kPrimaryGreen, kPrimaryGreen.withValues(alpha: 0.7)],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ),
-                        ),
                         child: Stack(
+                          fit: StackFit.expand,
                           children: [
-                            // Simulated building pattern
-                            Positioned(
-                              right: 0,
-                              bottom: 0,
-                              child: Opacity(
-                                opacity: 0.15,
-                                child: Icon(Icons.apartment_rounded, size: 200, color: Colors.white),
+                            // Society building photo
+                            Image.asset(
+                              'assets/images/society_building.png',
+                              fit: BoxFit.cover,
+                            ),
+                            // Dark gradient overlay for legibility
+                            Container(
+                              decoration: const BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: [Colors.transparent, Colors.black54],
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                ),
                               ),
                             ),
                             Positioned(
                               left: 20,
                               top: 20,
                               child: Text(
-                                'Green Residency',
+                                name,
                                 style: GoogleFonts.outfit(
                                   fontSize: 24,
                                   fontWeight: FontWeight.w800,
@@ -137,42 +162,42 @@ class SocietyProfileScreen extends StatelessWidget {
                         _ProfileInfoRow(
                           icon: Icons.business,
                           label: 'Society Name',
-                          value: MockSocietyData.name,
+                          value: name,
                         ),
                         _ProfileInfoRow(
                           icon: Icons.tag,
                           label: 'Society Code',
-                          value: MockSocietyData.code,
+                          value: code,
                         ),
                         _ProfileInfoRow(
                           icon: Icons.category_outlined,
                           label: 'Type',
-                          value: MockSocietyData.type,
+                          value: type,
                         ),
                         _ProfileInfoRow(
                           icon: Icons.description_outlined,
                           label: 'Registration Number',
-                          value: MockSocietyData.registrationNumber,
+                          value: regNumber,
                         ),
                         _ProfileInfoRow(
                           icon: Icons.people_outline,
                           label: 'Total Members',
-                          value: MockSocietyData.totalMembers.toString(),
+                          value: totalMembers,
                         ),
                         _ProfileInfoRow(
                           icon: Icons.apartment_outlined,
                           label: 'Total Flats',
-                          value: MockSocietyData.totalFlats.toString(),
+                          value: totalFlats,
                         ),
                         _ProfileInfoRow(
                           icon: Icons.view_column_outlined,
                           label: 'Total Wings',
-                          value: MockSocietyData.totalWings.toString(),
+                          value: totalWings,
                         ),
                         _ProfileInfoRow(
                           icon: Icons.view_module_outlined,
                           label: 'Total Blocks',
-                          value: MockSocietyData.totalBlocks.toString(),
+                          value: totalBlocks,
                         ),
                       ],
                     ),
@@ -208,6 +233,8 @@ class SocietyProfileScreen extends StatelessWidget {
                   const SizedBox(height: 100),
                 ],
               ),
+            );
+              },
             ),
           ),
         ],

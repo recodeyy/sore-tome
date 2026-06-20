@@ -1,18 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:sero/app/theme.dart';
-import 'package:sero/data/mock_data.dart';
+import 'package:sero/providers/admin/admin_domain_providers.dart';
+import 'package:sero/widgets/common/async_state_views.dart';
+import 'package:sero/widgets/admin/admin_actions.dart';
 
 /// Financial Ledger — Screen 5 of 6
 /// Date-filtered ledger view with summary tabs and income vs expense bar charts.
-class FinancialLedgerScreen extends StatefulWidget {
+class FinancialLedgerScreen extends ConsumerStatefulWidget {
   const FinancialLedgerScreen({super.key});
 
   @override
-  State<FinancialLedgerScreen> createState() => _FinancialLedgerScreenState();
+  ConsumerState<FinancialLedgerScreen> createState() => _FinancialLedgerScreenState();
 }
 
-class _FinancialLedgerScreenState extends State<FinancialLedgerScreen> with SingleTickerProviderStateMixin {
+class _FinancialLedgerScreenState extends ConsumerState<FinancialLedgerScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
 
   @override
@@ -38,7 +40,7 @@ class _FinancialLedgerScreenState extends State<FinancialLedgerScreen> with Sing
         leading: IconButton(icon: const Icon(Icons.arrow_back, color: Color(0xFF1E293B)), onPressed: () => Navigator.pop(context)),
         title: Text('Financial Ledger', style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.w700, color: const Color(0xFF1E293B))),
         actions: [
-          IconButton(icon: const Icon(Icons.tune, color: Color(0xFF1E293B)), onPressed: () {}),
+          IconButton(icon: const Icon(Icons.tune, color: Color(0xFF1E293B)), onPressed: () => AdminActions.comingSoon(context, 'Ledger filters')),
         ],
       ),
       body: Column(
@@ -101,8 +103,41 @@ class _FinancialLedgerScreenState extends State<FinancialLedgerScreen> with Sing
   }
 
   Widget _buildSummaryTab() {
-    final summary = MockFinanceData.ledgerSummary;
+    final ledgerAsync = ref.watch(financeLedgerProvider);
+    return ledgerAsync.when(
+      loading: () => const LiveLoadingView(label: 'Loading ledger…'),
+      error: (e, _) => LiveErrorView(
+        error: e,
+        onRetry: () => ref.invalidate(financeLedgerProvider),
+      ),
+      data: (ledger) {
+        final totalIncome = ledger['total_income'] ?? ledger['totalIncome'] ?? ledger['income'] ?? 0;
+        final totalExpenses = ledger['total_expense'] ?? ledger['totalExpenses'] ?? ledger['expense'] ?? 0;
+        final netBalance = ledger['net_balance'] ?? ledger['netBalance'] ?? ledger['balance'] ?? 0;
+        final transactions = ledger['transactions'] ?? ledger['transaction_count'] ?? 0;
+        final summary = <String, dynamic>{
+          'totalIncome': '₹ $totalIncome',
+          'totalExpenses': '₹ $totalExpenses',
+          'netBalance': '₹ $netBalance',
+          'transactions': transactions,
+        };
+        final incomeVsExpense = ((ledger['series'] ?? ledger['income_vs_expense']) as List?)
+                ?.map((e) {
+                  final m = e is Map ? e : const {};
+                  return {
+                    'label': (m['label'] ?? '').toString(),
+                    'income': (m['income'] is num ? (m['income'] as num).toDouble() : 0.0),
+                    'expense': (m['expense'] is num ? (m['expense'] as num).toDouble() : 0.0),
+                  };
+                })
+                .toList() ??
+            const <Map<String, dynamic>>[];
+        return _buildSummaryContent(summary, incomeVsExpense);
+      },
+    );
+  }
 
+  Widget _buildSummaryContent(Map<String, dynamic> summary, List<Map<String, dynamic>> incomeVsExpense) {
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 100),
       physics: const BouncingScrollPhysics(),
@@ -124,13 +159,18 @@ class _FinancialLedgerScreenState extends State<FinancialLedgerScreen> with Sing
              ],
           ),
           const SizedBox(height: 20),
-          _buildBarChart(),
+          incomeVsExpense.isEmpty
+              ? const LiveEmptyView(
+                  icon: Icons.bar_chart_rounded,
+                  message: 'No income/expense breakdown available.',
+                )
+              : _buildBarChart(incomeVsExpense),
           const SizedBox(height: 32),
           SizedBox(
             width: double.infinity,
             height: 52,
             child: OutlinedButton.icon(
-              onPressed: () {},
+              onPressed: () => Navigator.pushNamed(context, '/admin/finance/history'),
               icon: const Icon(Icons.list_alt_outlined, size: 20, color: Color(0xFF064E3B)),
               label: Text('View Transactions', style: GoogleFonts.outfit(fontSize: 15, fontWeight: FontWeight.w700, color: const Color(0xFF064E3B))),
               style: OutlinedButton.styleFrom(
@@ -166,12 +206,12 @@ class _FinancialLedgerScreenState extends State<FinancialLedgerScreen> with Sing
     );
   }
 
-  Widget _buildBarChart() {
+  Widget _buildBarChart(List<Map<String, dynamic>> data) {
     return SizedBox(
       height: 200,
       width: double.infinity,
       child: CustomPaint(
-        painter: _SimpleBarChartPainter(),
+        painter: _SimpleBarChartPainter(data),
       ),
     );
   }
@@ -220,13 +260,22 @@ class _LegendItem extends StatelessWidget {
 }
 
 class _SimpleBarChartPainter extends CustomPainter {
+  final List<Map<String, dynamic>> data;
+  _SimpleBarChartPainter(this.data);
+
   @override
   void paint(Canvas canvas, Size size) {
+    if (data.isEmpty) return;
     final incomePaint = Paint()..color = const Color(0xFF036B52);
     final expensePaint = Paint()..color = const Color(0xFFEA580C);
-    
-    final data = MockFinanceData.incomeVsExpenseData;
-    final double maxVal = 5.0;
+
+    double maxVal = 1.0;
+    for (final d in data) {
+      final i = (d['income'] as double?) ?? 0.0;
+      final e = (d['expense'] as double?) ?? 0.0;
+      if (i > maxVal) maxVal = i;
+      if (e > maxVal) maxVal = e;
+    }
     final double groupWidth = size.width / data.length;
     final double barWidth = 10;
     final double spacing = 4;
@@ -251,5 +300,5 @@ class _SimpleBarChartPainter extends CustomPainter {
     }
   }
 
-  @override bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  @override bool shouldRepaint(covariant _SimpleBarChartPainter oldDelegate) => oldDelegate.data != data;
 }

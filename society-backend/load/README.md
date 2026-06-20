@@ -19,6 +19,7 @@ Quick sanity check (5 VUs, 30s) against the health endpoint:
 
 ```
 k6 run -e BASE_URL=http://localhost:4000 load/k6_smoke.js
+# Note: health is served at top-level /health (not /api/v1/health).
 ```
 
 ## Load test
@@ -76,12 +77,43 @@ k6 run -e BASE_URL=http://localhost:4000 -e TOKEN=<jwt> \
   -e MAX_VUS=200 -e RT_VUS=200 -e BURST_RPS=100 load/k6_10k.js
 ```
 
+### Self-authentication (no pre-issued TOKEN needed)
+
+`k6_auth_ramp.js` implements the pack's `auth_ramp` scenario (login ramp +
+session validation + refresh) **and** exports `mintToken()`. The scale/spike/soak
+scripts now call it from k6 `setup()`: if you don't pass `-e TOKEN=<jwt>`, they log
+in a seeded user and use that JWT automatically.
+
+```
+# Standalone auth ramp (Stage: login)
+k6 run -e BASE_URL=https://staging.api.example.com \
+  -e PHONE_PREFIX=+9190000 -e USER_COUNT=10000 -e PASSWORD=LoadTest@123 \
+  load/k6_auth_ramp.js
+
+# Scale run that self-authenticates (no TOKEN)
+k6 run -e BASE_URL=https://staging.api.example.com \
+  -e PHONE_PREFIX=+9190000 -e PASSWORD=LoadTest@123 load/k6_10k.js
+```
+
+Align `PHONE_PREFIX` / `USER_COUNT` / `PASSWORD` with your §5 seed command.
+Auth thresholds (pack §7): login p95 < 1s, session p95 < 200ms, refresh p95 < 300ms.
+
 ### Env vars
 
 - `BASE_URL` — target host (default `http://localhost:4000`).
-- `TOKEN` — bearer JWT. Supply a pre-issued token (recommended for scale runs).
+- `TOKEN` — bearer JWT. Optional now; if omitted, scripts self-auth via `auth_ramp`.
 - `TARGET` — `10k` or `20k` (k6_scale.js only).
-- `MAX_VUS`, `RT_VUS`, `BURST_RPS`, `SUSTAIN_MIN`, `SOAK_HOURS` — overrides.
+- `PHONE_PREFIX`, `USER_COUNT`, `PHONE_PAD`, `PASSWORD`, `LOGIN_PHONE`, `PORTAL` — seeded-login config.
+- `MAX_VUS`, `RT_VUS`, `BURST_RPS`, `SUSTAIN_MIN`, `SOAK_HOURS`, `LOGIN_RPS`, `BURST_LOGIN_RPS` — overrides.
+
+### Connection pooling (addresses the readiness-check RISK)
+
+The app pool is now env-tunable (`src/shared/Database.ts`): `DB_POOL_MAX`
+(default 10), `DB_POOL_IDLE_MS`, `DB_POOL_CONN_TIMEOUT_MS`. `docker-compose.yml`
+adds a **PgBouncer** (transaction mode) service. For 10K–20K runs put the API
+behind PgBouncer (`DATABASE_URL=...@pgbouncer:6432/db`) and raise `DB_POOL_MAX`
+(50–100) — PgBouncer caps real server connections via `DEFAULT_POOL_SIZE`.
+Without a pooler keep `replicas × DB_POOL_MAX < Postgres max_connections`.
 
 ### Pass criteria (thresholds, from pack §21)
 

@@ -9,7 +9,11 @@
   "scripts": {
     "start": "tsx server.js",
     "dev": "tsx watch server.js",
-    "test": "jest"
+    "test": "jest",
+    "seed:loadtest": "node load/seed_loadtest_users.js",
+    "seed:loadtest:10k": "node load/seed_loadtest_users.js --count=10000",
+    "seed:loadtest:20k": "node load/seed_loadtest_users.js --count=20000",
+    "seed:loadtest:cleanup": "node load/seed_loadtest_users.js --cleanup"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.20.0",

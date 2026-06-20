@@ -13,9 +13,26 @@
 import http from 'k6/http';
 import { check, sleep, group } from 'k6';
 import { Rate, Trend } from 'k6/metrics';
+import { mintToken } from './k6_auth_ramp.js';
 
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:4000';
 const TOKEN = __ENV.TOKEN || '';
+
+// k6 setup(): runs once before scenarios. If no TOKEN was supplied, mint one by
+// logging in a seeded user so the suite is self-contained (no pre-issued JWT).
+export function setup() {
+  if (TOKEN) return { token: TOKEN };
+  const creds = mintToken(0);
+  if (!creds || !creds.token) {
+    throw new Error('No TOKEN provided and auth login failed — check seeded creds / PHONE_PREFIX / PASSWORD');
+  }
+  return { token: creds.token };
+}
+
+// Resolve the bearer token: explicit TOKEN env wins, else setup()-minted token.
+function tokenFrom(data) {
+  return TOKEN || (data && data.token) || '';
+}
 // Custom metrics split read vs write so thresholds map to the pass criteria.
 const readDur = new Trend('read_duration', true);
 const writeDur = new Trend('write_duration', true);
@@ -99,10 +116,10 @@ export function buildOptions(target) {
 // Default export options when this file is run directly (TARGET env, default 10k).
 export const options = buildOptions(__ENV.TARGET);
 
-function authHeaders() {
+function authHeaders(token) {
   return {
     headers: {
-      Authorization: TOKEN ? `Bearer ${TOKEN}` : '',
+      Authorization: token ? `Bearer ${token}` : '',
       'Content-Type': 'application/json',
     },
   };
@@ -110,7 +127,7 @@ function authHeaders() {
 
 // Read-heavy endpoint families pulled from server.js v1 routes.
 const READS = [
-  '/api/v1/admin/dashboard',
+  '/api/v1/admin/dashboard/summary',
   '/api/v1/finance/invoices',
   '/api/v1/notices',
   '/api/v1/notices-v2',
@@ -125,17 +142,17 @@ const READS = [
   '/api/v1/notifications',
 ];
 
-function doRead(path) {
-  const res = http.get(`${BASE_URL}${path}`, Object.assign({ tags: { op: 'read' } }, authHeaders()));
+function doRead(path, token) {
+  const res = http.get(`${BASE_URL}${path}`, Object.assign({ tags: { op: 'read' } }, authHeaders(token)));
   readDur.add(res.timings.duration);
   const ok = check(res, { 'read 2xx/3xx': (r) => r.status >= 200 && r.status < 400 });
   errors.add(!ok);
   return res;
 }
 
-function doWrite(path, body) {
+function doWrite(path, body, token) {
   const res = http.post(`${BASE_URL}${path}`, JSON.stringify(body),
-    Object.assign({ tags: { op: 'write' } }, authHeaders()));
+    Object.assign({ tags: { op: 'write' } }, authHeaders(token)));
   writeDur.add(res.timings.duration);
   // Accept 2xx, plus 4xx auth/validation as "served" (not a server failure).
   const ok = check(res, { 'write handled': (r) => r.status < 500 });
@@ -144,35 +161,38 @@ function doWrite(path, body) {
 }
 
 // Realistic weighted mix: mostly dashboard/finance reads, some writes/search.
-export function mixed() {
+// `data` is the setup() return ({ token }).
+export function mixed(data) {
+  const token = tokenFrom(data);
   const roll = Math.random();
   if (roll < 0.55) {
     // Dashboard + finance reads (the dominant traffic).
     group('reads', () => {
-      doRead(READS[Math.floor(Math.random() * READS.length)]);
-      doRead('/api/v1/admin/dashboard');
+      doRead(READS[Math.floor(Math.random() * READS.length)], token);
+      doRead('/api/v1/admin/dashboard/summary', token);
     });
   } else if (roll < 0.75) {
     // Search-style read with query params.
-    doRead(`/api/v1/visitors?search=ramp&page=1`);
+    doRead(`/api/v1/visitors?search=ramp&page=1`, token);
   } else if (roll < 0.90) {
     // Complaint create (write path).
-    doWrite('/api/v1/complaints', { title: 'Load test complaint', category: 'maintenance', description: 'k6' });
+    doWrite('/api/v1/complaints', { title: 'Load test complaint', category: 'maintenance', description: 'k6' }, token);
   } else {
-    // Poll vote / amenity check (hot-row writes).
-    doWrite('/api/v1/polls/vote', { pollId: 'loadtest', optionId: '1' });
+    // Poll vote / amenity check (hot-row writes). Real route: POST /polls/:id/vote.
+    doWrite('/api/v1/polls/loadtest/vote', { option: '1' }, token);
   }
   sleep(Math.random() * 2 + 0.5);
 }
 
-// Realtime SSE scenario: open the stream and hold it open.
-export function realtime() {
+// Realtime SSE scenario: open the stream and hold it open. `data` = setup() return.
+export function realtime(data) {
+  const token = tokenFrom(data);
   const res = http.get(`${BASE_URL}/api/v1/realtime/sse`,
-    Object.assign({ timeout: '60s', tags: { op: 'realtime' } }, authHeaders()));
+    Object.assign({ timeout: '60s', tags: { op: 'realtime' } }, authHeaders(token)));
   check(res, { 'sse opened': (r) => r.status === 200 || r.status === 401 });
   sleep(15);
 }
 
-export default function () {
-  mixed();
+export default function (data) {
+  mixed(data);
 }

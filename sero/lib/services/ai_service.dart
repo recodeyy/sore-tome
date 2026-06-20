@@ -13,9 +13,18 @@ class AiService {
   Stream<MessageChunk> sendMessageStream(
     String userMessage, {
     String? base64Image,
+    List<Map<String, dynamic>>? history,
+    String? conversationId,
+    String? language,
+    String? requestId,
+    List<String> attachmentTokens = const [],
     Map<String, dynamic>? context,
   }) async* {
-    _history.add({'role': 'user', 'content': userMessage});
+    final managedHistory = history ?? List<Map<String, dynamic>>.from(_history);
+    final usesExternalHistory = history != null;
+    if (!usesExternalHistory) {
+      _history.add({'role': 'user', 'content': userMessage});
+    }
 
     String fullReply = "";
     String? finalType;
@@ -24,9 +33,13 @@ class AiService {
     // Send to SSE Manager
     final stream = SseManager.streamRequest('/ai/chat', {
       'message': userMessage,
-      'base64Image': base64Image,
+      if (base64Image != null) 'base64Image': base64Image,
+      if (conversationId != null) 'conversationId': conversationId,
+      if (language != null) 'language': language,
+      if (requestId != null) 'requestId': requestId,
+      if (attachmentTokens.isNotEmpty) 'attachmentTokens': attachmentTokens,
       'context': context,
-      'history': _history.sublist(0, _history.length - 1),
+      'history': managedHistory,
     });
 
     await for (final chunk in stream) {
@@ -44,54 +57,83 @@ class AiService {
       yield chunk;
     }
 
-    // On completion, persist to history
-    _history.add({
-      'role': 'assistant',
-      'content': fullReply,
-      'type': finalType ?? 'text',
-      ...?finalMetadata,
-    });
+    // On completion, persist only for legacy callers. Riverpod callers own state.
+    if (!usesExternalHistory) {
+      _history.add({
+        'role': 'assistant',
+        'content': fullReply,
+        'type': finalType ?? 'text',
+        ...?finalMetadata,
+      });
+    }
   }
 
   /// REST-only fallback (Legacy support)
   Future<Map<String, dynamic>> sendMessage(
     String userMessage, {
     String? base64Image,
+    List<Map<String, dynamic>>? history,
+    String? conversationId,
+    String? language,
+    String? requestId,
+    List<String> attachmentTokens = const [],
     Map<String, dynamic>? context,
   }) async {
-    _history.add({'role': 'user', 'content': userMessage});
+    final managedHistory = history ?? List<Map<String, dynamic>>.from(_history);
+    final usesExternalHistory = history != null;
+    if (!usesExternalHistory) {
+      _history.add({'role': 'user', 'content': userMessage});
+    }
     // ... (logic remains same for non-streaming context like images)
     try {
       final res = await ApiService.post('/ai/chat', {
         'message': userMessage,
-        'base64Image': base64Image,
+        if (base64Image != null) 'base64Image': base64Image,
+        if (conversationId != null) 'conversationId': conversationId,
+        if (language != null) 'language': language,
+        if (requestId != null) 'requestId': requestId,
+        if (attachmentTokens.isNotEmpty) 'attachmentTokens': attachmentTokens,
         'context': context,
-        'history': _history.sublist(0, _history.length - 1),
+        'history': managedHistory,
       });
 
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body) as Map<String, dynamic>;
-        final reply =
-            data['reply'] ??
+        final reply = data['reply'] ??
             (data['type'] == 'draft'
                 ? 'Draft generated'
                 : 'No reply from server');
-        _history.add({
-          'role': 'assistant',
-          'content': reply,
-          'type': data['type'] ?? 'text',
-          ...data,
-        });
+        if (!usesExternalHistory) {
+          _history.add({
+            'role': 'assistant',
+            'content': reply,
+            'type': data['type'] ?? 'text',
+            ...data,
+          });
+        }
         return data;
       } else {
         final error = 'Server Error: ${res.body}';
-        _history.add({'role': 'assistant', 'content': error});
-        return {'type': 'text', 'reply': error};
+        if (!usesExternalHistory) {
+          _history.add({'role': 'assistant', 'content': error});
+        }
+        return {
+          'type': 'system_unavailable',
+          'reply': error,
+          'requestId': requestId,
+          'statusCode': res.statusCode,
+        };
       }
     } catch (e) {
       final error = 'Connection Error: $e';
-      _history.add({'role': 'assistant', 'content': error});
-      return {'type': 'text', 'reply': error};
+      if (!usesExternalHistory) {
+        _history.add({'role': 'assistant', 'content': error});
+      }
+      return {
+        'type': 'system_unavailable',
+        'reply': error,
+        'requestId': requestId,
+      };
     }
   }
 

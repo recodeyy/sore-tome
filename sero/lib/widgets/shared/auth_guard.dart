@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sero/providers/shared/auth_provider.dart';
-import '../../screens/shared/auth/login_screen.dart';
+import '../../screens/shared/auth/role_login_landing_screen.dart';
 import '../../screens/shared/auth/pending_approval_screen.dart';
+import 'package:sero/core/permissions/role_utils.dart';
 
 class AuthGuard extends ConsumerWidget {
   final Widget child;
@@ -24,7 +25,7 @@ class AuthGuard extends ConsumerWidget {
       data: (user) {
         if (user == null) {
           // Force login if no user
-          return const LoginScreen();
+          return const RoleLoginLandingScreen();
         }
 
         // Check if approval is required and user is still pending
@@ -33,7 +34,10 @@ class AuthGuard extends ConsumerWidget {
         }
 
         // Role-based check
-        if (allowedRoles != null && !allowedRoles!.contains(user.role)) {
+        if (allowedRoles != null &&
+            !allowedRoles!
+                .map(RoleUtils.normalize)
+                .contains(RoleUtils.normalize(user.role))) {
           return const _AccessDeniedView();
         }
 
@@ -85,6 +89,5 @@ class _AccessDeniedView extends StatelessWidget {
     );
   }
 }
-
 
 

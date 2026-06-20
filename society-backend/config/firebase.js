@@ -35,6 +35,12 @@ function initFirebase() {
   }
 
   if (!credential) {
+    // LOAD-TEST MODE: boot WITHOUT Firebase (no key shipped). Auth is handled by
+    // the Postgres-backed /auth/loadtest-login endpoint instead of Firestore.
+    if (process.env.LOADTEST_MODE === "true") {
+      console.warn("⚠️  LOADTEST_MODE: Firebase NOT initialized (no key). Firestore-backed features disabled; using Postgres load-test auth.");
+      return;
+    }
     console.error("\n❌ CRITICAL ERROR: Missing Firebase credentials!");
     console.error("Provide FIREBASE_CLIENT_EMAIL/PRIVATE_KEY or FIREBASE_SERVICE_ACCOUNT_PATH\n");
     throw new Error("Targeted Failure: Firebase Configuration Incomplete");

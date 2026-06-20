@@ -1,16 +1,19 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:sero/app/theme.dart';
-import 'package:sero/data/mock_data.dart';
+import 'package:sero/providers/admin/admin_domain_providers.dart';
+import 'package:sero/widgets/common/async_state_views.dart';
 import 'package:sero/widgets/common/mini_chart.dart';
+import 'package:sero/widgets/admin/admin_actions.dart';
 
 /// Income Reports — Screen 6 of 6
 /// Visual report of collections by category, month, and wing.
-class IncomeReportsScreen extends StatelessWidget {
+class IncomeReportsScreen extends ConsumerWidget {
   const IncomeReportsScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final financeAsync = ref.watch(financeDashboardProvider);
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
@@ -20,25 +23,37 @@ class IncomeReportsScreen extends StatelessWidget {
         leading: IconButton(icon: const Icon(Icons.arrow_back, color: Color(0xFF1E293B)), onPressed: () => Navigator.pop(context)),
         title: Text('Income Reports', style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.w700, color: const Color(0xFF1E293B))),
         actions: [
-          IconButton(icon: const Icon(Icons.more_horiz, color: Color(0xFF1E293B)), onPressed: () {}),
+          IconButton(icon: const Icon(Icons.more_horiz, color: Color(0xFF1E293B)), onPressed: () => AdminActions.comingSoon(context, 'Report export')),
         ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-        child: Column(
-          children: [
-            // ── Filters ──
-            Row(
+      body: financeAsync.when(
+        loading: () => const LiveLoadingView(label: 'Loading income reports…'),
+        error: (e, _) => LiveErrorView(
+          error: e,
+          onRetry: () => ref.invalidate(financeDashboardProvider),
+        ),
+        data: (data) {
+          final summary = (data['summary'] as Map?) ?? const {};
+          final totalCollection = '₹ ${summary['collection'] ?? summary['total_collection'] ?? summary['income'] ?? 0}';
+          // No category-breakdown or top-collections endpoint in finance summary.
+          final categories = (summary['categories'] as List?) ?? const [];
+          final topCollections = (summary['top_collections'] as List?) ?? const [];
+          return SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            child: Column(
               children: [
-                _ReportFilter(label: 'May 2024'),
-                const SizedBox(width: 10),
-                _ReportFilter(label: 'All Categories'),
-              ],
-            ),
+                // ── Filters ──
+                Row(
+                  children: [
+                    _ReportFilter(label: 'This Month'),
+                    const SizedBox(width: 10),
+                    _ReportFilter(label: 'All Categories'),
+                  ],
+                ),
 
-            const SizedBox(height: 20),
-            // ── Total Income Stat ──
-            Container(
+                const SizedBox(height: 20),
+                // ── Total Income Stat ──
+                Container(
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
                 color: Colors.white,
@@ -53,17 +68,7 @@ class IncomeReportsScreen extends StatelessWidget {
                       children: [
                         Text('Total Income', style: GoogleFonts.outfit(fontSize: 11, color: const Color(0xFF94A3B8))),
                         const SizedBox(height: 4),
-                        Text(MockFinanceData.totalCollection, style: GoogleFonts.outfit(fontSize: 24, fontWeight: FontWeight.w800, color: const Color(0xFF064E3B))),
-                         const SizedBox(height: 6),
-                        Row(
-                          children: [
-                            const Icon(Icons.trending_up, size: 12, color: Color(0xFF059669)),
-                            const SizedBox(width: 4),
-                            Text(MockFinanceData.totalCollectionTrend, style: GoogleFonts.outfit(fontSize: 10, fontWeight: FontWeight.w700, color: const Color(0xFF059669))),
-                            const SizedBox(width: 4),
-                            Text('vs Apr 2024', style: GoogleFonts.outfit(fontSize: 10, color: const Color(0xFFCBD5E1))),
-                          ],
-                        ),
+                        Text(totalCollection, style: GoogleFonts.outfit(fontSize: 24, fontWeight: FontWeight.w800, color: const Color(0xFF064E3B))),
                       ],
                     ),
                   ),
@@ -86,31 +91,42 @@ class IncomeReportsScreen extends StatelessWidget {
                  children: [
                     Text('Income by Category', style: GoogleFonts.outfit(fontSize: 15, fontWeight: FontWeight.w700, color: const Color(0xFF1E293B))),
                     const SizedBox(height: 20),
-                    Row(
-                      children: [
-                        DonutChart(
-                          segments: MockReportsData.financialCategories.map((c) => DonutSegment(
-                            value: c['percent'] as double,
-                            color: Color(c['color'] as int),
-                            label: c['label'] as String,
-                          )).toList(),
-                          size: 110,
-                          centerValue: '70%',
-                          centerLabel: 'Maintenance',
-                        ),
-                        const SizedBox(width: 24),
-                        Expanded(
-                          child: Column(
-                            children: MockReportsData.financialCategories.map((c) => _ReportLegend(
-                              color: Color(c['color'] as int),
-                              label: c['label'] as String,
-                              value: c['value'] as String,
-                              percent: (c['percent'] as double).toInt(),
-                            )).toList(),
+                    categories.isEmpty
+                        ? const LiveEmptyView(
+                            icon: Icons.pie_chart_outline,
+                            message: 'No category breakdown available.',
+                          )
+                        : Row(
+                            children: [
+                              DonutChart(
+                                segments: categories.map((c) {
+                                  final m = c is Map ? c : const {};
+                                  return DonutSegment(
+                                    value: (m['percent'] is num ? (m['percent'] as num).toDouble() : 0.0),
+                                    color: Color((m['color'] is int ? m['color'] as int : 0xFF94A3B8)),
+                                    label: (m['label'] ?? '').toString(),
+                                  );
+                                }).toList(),
+                                size: 110,
+                                centerValue: '',
+                                centerLabel: 'Income',
+                              ),
+                              const SizedBox(width: 24),
+                              Expanded(
+                                child: Column(
+                                  children: categories.map((c) {
+                                    final m = c is Map ? c : const {};
+                                    return _ReportLegend(
+                                      color: Color((m['color'] is int ? m['color'] as int : 0xFF94A3B8)),
+                                      label: (m['label'] ?? '').toString(),
+                                      value: '₹ ${m['value'] ?? 0}',
+                                      percent: (m['percent'] is num ? (m['percent'] as num).toInt() : 0),
+                                    );
+                                  }).toList(),
+                                ),
+                              ),
+                            ],
                           ),
-                        ),
-                      ],
-                    ),
                  ],
                ),
             ),
@@ -119,23 +135,33 @@ class IncomeReportsScreen extends StatelessWidget {
             // ── Top Collections ──
             Align(alignment: Alignment.centerLeft, child: Text('Top Collections', style: GoogleFonts.outfit(fontSize: 15, fontWeight: FontWeight.w700, color: const Color(0xFF1E293B)))),
             const SizedBox(height: 12),
-            Container(
-               decoration: BoxDecoration(
-                 color: Colors.white,
-                 borderRadius: BorderRadius.circular(16),
-                 border: Border.all(color: const Color(0xFFF1F5F9)),
-               ),
-               child: Column(
-                 children: MockFinanceData.topCollections.map((item) => _CollectionRow(
-                   label: item['label'],
-                   value: item['amount'],
-                 )).toList(),
-               ),
-            ),
+            topCollections.isEmpty
+                ? const LiveEmptyView(
+                    icon: Icons.leaderboard_outlined,
+                    message: 'No top collections available.',
+                  )
+                : Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: const Color(0xFFF1F5F9)),
+                    ),
+                    child: Column(
+                      children: topCollections.map((item) {
+                        final m = item is Map ? item : const {};
+                        return _CollectionRow(
+                          label: (m['label'] ?? m['name'] ?? '').toString(),
+                          value: '₹ ${m['amount'] ?? m['value'] ?? 0}',
+                        );
+                      }).toList(),
+                    ),
+                  ),
 
             const SizedBox(height: 100),
-          ],
-        ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }

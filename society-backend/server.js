@@ -104,6 +104,10 @@ const v1Router = express.Router();
 // and this router is mounted at both /api/v1 and / (legacy), so both are covered.
 v1Router.use("/auth/login", authLimiter);
 v1Router.use("/auth/register", authLimiter);
+// LOAD-TEST ONLY: Postgres-backed auth so the stack runs without a Firebase key.
+if (process.env.LOADTEST_MODE === "true") {
+  v1Router.use("/auth", require("./routes/loadtest_auth"));
+}
 v1Router.use("/auth", require("./routes/auth"));
 v1Router.use("/users", standardLimiter, require("./routes/users"));
 v1Router.use("/notices", standardLimiter, require("./routes/notices"));

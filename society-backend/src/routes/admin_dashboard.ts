@@ -51,6 +51,21 @@ router.get("/dashboard/summary", authMiddleware, adminOnly, tenantMiddleware, as
 });
 
 /**
+ * GET /admin/dashboard/vitals
+ * Tenant-scoped live society vitals (parcels, guards on duty, active
+ * maintenance, system status). Replaces the legacy Firestore vitals doc.
+ */
+router.get("/dashboard/vitals", authMiddleware, adminOnly, tenantMiddleware, async (req: Request, res: Response) => {
+  try {
+    const data = await AnalyticsService.vitals(societyOf(req));
+    return res.json({ success: true, data });
+  } catch (error: any) {
+    logger.error({ error: error.message }, "/admin/dashboard/vitals failed");
+    return res.status(500).json({ success: false, error: { code: "DASHBOARD_VITALS_FAILED", message: error.message } });
+  }
+});
+
+/**
  * GET /admin/dashboard/trends?from=YYYY-MM-DD&to=YYYY-MM-DD
  * Daily collections & expenses over a date range (capability 4).
  */

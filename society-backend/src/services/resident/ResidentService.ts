@@ -191,6 +191,75 @@ export const ResidentService = {
     return rows[0];
   },
 
+  /** The resident's own registered vehicles (owner_id = their user id). */
+  async vehicles(ctx: ResidentContext, limit = 100) {
+    const { rows } = await db.query(
+      `SELECT id, plate, type, unit_id, make_model, created_at
+         FROM vehicles
+        WHERE society_id = $1 AND owner_id = $2
+        ORDER BY created_at DESC LIMIT $3`,
+      [ctx.societyId, ctx.userId, Math.min(limit, 200)]
+    );
+    return rows;
+  },
+
+  /** The resident's own family members (scoped to their member record). */
+  async family(ctx: ResidentContext) {
+    const { rows } = await db.query(
+      `SELECT id, name, relation, phone, is_emergency_contact, created_at
+         FROM family_members
+        WHERE society_id = $1 AND member_id = $2
+        ORDER BY created_at ASC`,
+      [ctx.societyId, ctx.memberId]
+    );
+    return rows;
+  },
+
+  /** The resident's own KYC documents and review status. */
+  async kyc(ctx: ResidentContext) {
+    const { rows } = await db.query(
+      `SELECT id, doc_type, file_url, status, reject_reason, expires_at, created_at, updated_at
+         FROM kyc_documents
+        WHERE society_id = $1 AND member_id = $2
+        ORDER BY created_at DESC`,
+      [ctx.societyId, ctx.memberId]
+    );
+    return rows;
+  },
+
+  /**
+   * Emergency contacts for the resident: society-configured contacts
+   * (society_profiles.contacts jsonb) plus the resident's own family members
+   * flagged as emergency contacts. No fabricated data — returns whatever the
+   * society/resident has actually configured (possibly empty).
+   */
+  async emergencyContacts(ctx: ResidentContext) {
+    const [prof, fam] = await Promise.all([
+      db.query(`SELECT contacts FROM society_profiles WHERE society_id = $1`, [ctx.societyId]),
+      db.query(
+        `SELECT name, relation, phone FROM family_members
+          WHERE society_id = $1 AND member_id = $2 AND is_emergency_contact = true
+          ORDER BY created_at ASC`,
+        [ctx.societyId, ctx.memberId]
+      ),
+    ]);
+    const society = Array.isArray(prof.rows[0]?.contacts)
+      ? prof.rows[0].contacts.map((c: any) => ({
+          name: c.name ?? c.title ?? "",
+          role: c.role ?? c.designation ?? c.type ?? "",
+          phone: c.phone ?? c.number ?? c.contact ?? "",
+          source: "society",
+        })).filter((c: any) => c.phone)
+      : [];
+    const family = fam.rows.map((f: any) => ({
+      name: f.name,
+      role: f.relation || "Family",
+      phone: f.phone || "",
+      source: "family",
+    })).filter((c: any) => c.phone);
+    return [...society, ...family];
+  },
+
   /** Aggregated dashboard summary for the resident. */
   async dashboard(ctx: ResidentContext) {
     const [dues, openComplaints, upcomingBookings, unreadNotices] = await Promise.all([

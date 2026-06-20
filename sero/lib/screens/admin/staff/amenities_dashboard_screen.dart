@@ -2,11 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:sero/app/theme.dart';
-import 'package:sero/data/mock_data.dart';
+import 'package:sero/providers/admin/admin_domain_providers.dart';
+import 'package:sero/widgets/common/async_state_views.dart';
 import 'package:sero/widgets/common/section_header.dart';
-import 'package:sero/widgets/common/status_badge.dart';
 import 'package:sero/providers/shared/notification_provider.dart';
 import 'package:sero/widgets/shared/admin_drawer.dart';
+import 'package:sero/widgets/admin/admin_actions.dart';
 
 /// Amenities Dashboard Screen — Amenities Module
 /// Central hub for booking summary cards, amenity cards with operating status, and upcoming bookings.
@@ -16,6 +17,7 @@ class AmenitiesDashboardScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final unreadCount = ref.watch(notificationProvider.notifier).unreadCount;
+    final amenitiesAsync = ref.watch(amenitiesDashboardProvider);
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       drawer: const AdminDrawer(),
@@ -54,7 +56,32 @@ class AmenitiesDashboardScreen extends ConsumerWidget {
           const SizedBox(width: 8),
         ],
       ),
-      body: CustomScrollView(
+      body: amenitiesAsync.when(
+        loading: () => const LiveLoadingView(label: 'Loading amenities…'),
+        error: (e, _) => LiveErrorView(
+          error: e,
+          onRetry: () => ref.invalidate(amenitiesDashboardProvider),
+        ),
+        data: (data) {
+          final amenities = (data['amenities'] as List?) ??
+              (data['items'] as List?) ??
+              const [];
+          final upcomingBookings = (data['upcoming_bookings'] as List?) ??
+              (data['bookings'] as List?) ??
+              const [];
+          final totalAmenities = amenities.isNotEmpty
+              ? amenities.length
+              : ((data['total_amenities'] ?? data['totalAmenities'] ?? 0) is num
+                  ? ((data['total_amenities'] ?? data['totalAmenities'] ?? 0) as num).toInt()
+                  : 0);
+          final todaysBookings = (data['todays_bookings'] ?? data['today_bookings'] ?? 0) is num
+              ? ((data['todays_bookings'] ?? data['today_bookings'] ?? 0) as num).toInt()
+              : 0;
+          final pendingApproval = (data['pending_approval'] ?? data['pending'] ?? 0) is num
+              ? ((data['pending_approval'] ?? data['pending'] ?? 0) as num).toInt()
+              : 0;
+          final monthRevenue = '₹ ${data['month_revenue'] ?? data['revenue'] ?? 0}';
+          return CustomScrollView(
         physics: const BouncingScrollPhysics(),
         slivers: [
           // ── Metrics Row ──
@@ -63,9 +90,9 @@ class AmenitiesDashboardScreen extends ConsumerWidget {
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
               child: Row(
                 children: [
-                  _MetricMiniCard(label: 'Total Amenities', value: MockAmenitiesData.totalAmenities.toString(), icon: Icons.sports_tennis_outlined, color: const Color(0xFF0D9488)),
+                  _MetricMiniCard(label: 'Total Amenities', value: totalAmenities.toString(), icon: Icons.sports_tennis_outlined, color: const Color(0xFF0D9488)),
                   const SizedBox(width: 10),
-                  _MetricMiniCard(label: "Today's Bookings", value: MockAmenitiesData.todaysBookings.toString(), icon: Icons.calendar_today_outlined, color: const Color(0xFF2563EB)),
+                  _MetricMiniCard(label: "Today's Bookings", value: todaysBookings.toString(), icon: Icons.calendar_today_outlined, color: const Color(0xFF2563EB)),
                 ],
               ),
             ),
@@ -75,9 +102,9 @@ class AmenitiesDashboardScreen extends ConsumerWidget {
               padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
               child: Row(
                 children: [
-                  _MetricMiniCard(label: 'Pending Approval', value: MockAmenitiesData.pendingApproval.toString(), icon: Icons.access_time, color: const Color(0xFFEA580C)),
+                  _MetricMiniCard(label: 'Pending Approval', value: pendingApproval.toString(), icon: Icons.access_time, color: const Color(0xFFEA580C)),
                   const SizedBox(width: 10),
-                  _MetricMiniCard(label: 'This Month Revenue', value: MockAmenitiesData.monthRevenue, icon: Icons.payments_outlined, color: const Color(0xFF7C3AED)),
+                  _MetricMiniCard(label: 'This Month Revenue', value: monthRevenue, icon: Icons.payments_outlined, color: const Color(0xFF7C3AED)),
                 ],
               ),
             ),
@@ -93,16 +120,11 @@ class AmenitiesDashboardScreen extends ConsumerWidget {
           ),
           SliverPadding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
-            sliver: MockAmenitiesData.amenities.isEmpty
-                ? SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.all(20.0),
-                      child: Center(
-                        child: Text(
-                          'No amenities available.',
-                          style: GoogleFonts.outfit(color: const Color(0xFF64748B)),
-                        ),
-                      ),
+            sliver: amenities.isEmpty
+                ? const SliverToBoxAdapter(
+                    child: LiveEmptyView(
+                      icon: Icons.sports_tennis_outlined,
+                      message: 'No amenities available.',
                     ),
                   )
                 : SliverGrid.count(
@@ -110,14 +132,22 @@ class AmenitiesDashboardScreen extends ConsumerWidget {
                     mainAxisSpacing: 12,
                     crossAxisSpacing: 12,
                     childAspectRatio: 0.85,
-                    children: MockAmenitiesData.amenities.map((amenity) {
+                    children: amenities.map((a) {
+                      final amenity = a is Map ? a : const {};
                       return _AmenityCard(
-                        name: amenity['name'],
-                        status: amenity['status'],
-                        time: amenity['time'],
-                        bookings: amenity['bookings'],
-                        icon: IconData(amenity['icon'], fontFamily: 'MaterialIcons'),
-                        color: Color(amenity['color']),
+                        name: (amenity['name'] ?? '').toString(),
+                        status: (amenity['status'] ?? '').toString(),
+                        time: (amenity['time'] ?? amenity['hours'] ?? '').toString(),
+                        bookings: (amenity['bookings'] ?? amenity['bookings_today'] ?? 0) is num
+                            ? ((amenity['bookings'] ?? amenity['bookings_today'] ?? 0) as num).toInt()
+                            : 0,
+                        // Fixed icon (tree-shake safe): backend amenities do not
+                        // carry Flutter icon codepoints, and dynamic IconData
+                        // breaks release icon tree-shaking.
+                        icon: Icons.sports_tennis_outlined,
+                        color: amenity['color'] is int
+                            ? Color(amenity['color'] as int)
+                            : const Color(0xFF0D9488),
                       );
                     }).toList(),
                   ),
@@ -133,40 +163,40 @@ class AmenitiesDashboardScreen extends ConsumerWidget {
           ),
           SliverPadding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
-            sliver: MockAmenitiesData.upcomingBookings.isEmpty
-                ? SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.all(30.0),
-                      child: Center(
-                        child: Text(
-                          'No upcoming bookings found.',
-                          style: GoogleFonts.outfit(color: const Color(0xFF64748B)),
-                        ),
-                      ),
+            sliver: upcomingBookings.isEmpty
+                ? const SliverToBoxAdapter(
+                    child: LiveEmptyView(
+                      icon: Icons.event_busy_outlined,
+                      message: 'No upcoming bookings found.',
                     ),
                   )
                 : SliverList(
                     delegate: SliverChildBuilderDelegate(
                       (context, index) {
-                        final booking = MockAmenitiesData.upcomingBookings[index];
+                        final b = upcomingBookings[index];
+                        final booking = b is Map ? b : const {};
                         return _BookingTile(
-                          date: booking['date'],
-                          title: booking['title'],
-                          desc: booking['desc'],
-                          time: booking['time'],
-                          status: booking['status'],
-                          color: Color(booking['color']),
+                          date: (booking['date'] ?? '').toString(),
+                          title: (booking['title'] ?? '').toString(),
+                          desc: (booking['desc'] ?? booking['description'] ?? '').toString(),
+                          time: (booking['time'] ?? '').toString(),
+                          status: (booking['status'] ?? '').toString(),
+                          color: booking['color'] is int
+                              ? Color(booking['color'] as int)
+                              : const Color(0xFF2563EB),
                         );
                       },
-                      childCount: MockAmenitiesData.upcomingBookings.length,
+                      childCount: upcomingBookings.length,
                     ),
                   ),
           ),
           const SliverToBoxAdapter(child: SizedBox(height: 100)),
         ],
+          );
+        },
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () {},
+        onPressed: () => AdminActions.comingSoon(context, 'Adding amenities'),
         backgroundColor: const Color(0xFF064E3B),
         child: const Icon(Icons.add, color: Colors.white),
       ),
@@ -321,8 +351,8 @@ class _BookingTile extends StatelessWidget {
             decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(10)),
             child: Column(
               children: [
-                Text(date.split(' ')[0], style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.w800, color: const Color(0xFF1E293B))),
-                Text(date.split(' ')[1], style: GoogleFonts.outfit(fontSize: 9, fontWeight: FontWeight.w600, color: const Color(0xFF94A3B8))),
+                Text(date.split(' ').isNotEmpty ? date.split(' ')[0] : date, style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.w800, color: const Color(0xFF1E293B))),
+                Text(date.split(' ').length > 1 ? date.split(' ')[1] : '', style: GoogleFonts.outfit(fontSize: 9, fontWeight: FontWeight.w600, color: const Color(0xFF94A3B8))),
               ],
             ),
           ),

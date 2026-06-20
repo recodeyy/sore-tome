@@ -134,9 +134,11 @@ describe("Super Admin Platform Control Plane (Integration)", () => {
   });
 
   it("handles platform announcements", async () => {
-    const announcement = await SuperAdminService.createAnnouncement("Scheduled Downtime", "Upgrade scheduled for Sunday 2 AM", ACTOR_ID);
+    const announcement = await SuperAdminService.createAnnouncement("Scheduled Downtime", "Upgrade scheduled for Sunday 2 AM", "all", "in_app", ACTOR_ID);
     expect(announcement).toBeDefined();
     expect(announcement.title).toBe("Scheduled Downtime");
+    expect(announcement.audience).toBe("all");
+    expect(announcement.channel).toBe("in_app");
 
     // Announcements are platform-global (not test-scoped), so assert the row we
     // just created is present rather than an exact count across runs.

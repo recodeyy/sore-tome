@@ -35,6 +35,10 @@ router.get("/", authMiddleware, tenantMiddleware, async (req, res) => {
   try { res.json({ assets: await AssetService.listAssets(societyOf(req), { status: req.query.status as string }) }); }
   catch (e: any) { map(res, e, "Failed to list assets"); }
 });
+router.get("/dashboard", authMiddleware, tenantMiddleware, async (req, res) => {
+  try { res.json(await AssetService.getDashboard(societyOf(req))); }
+  catch (e: any) { map(res, e, "Failed to load assets dashboard"); }
+});
 router.get("/:id", authMiddleware, tenantMiddleware, async (req, res) => {
   try {
     const a = await AssetService.getAsset(societyOf(req), (req.params.id as string));
