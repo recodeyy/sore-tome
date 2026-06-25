@@ -1,0 +1,449 @@
+import 'dart:convert';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:sero/models/community.dart';
+import 'package:sero/services/api_service.dart';
+import 'package:sero/models/classified_item.dart';
+import 'package:sero/models/interest_profile.dart';
+import 'package:sero/models/facility_booking.dart';
+import 'package:sero/models/guest_pass.dart';
+import 'package:sero/models/pulse.dart';
+import 'package:sero/models/issue.dart';
+import 'package:sero/models/society_record.dart';
+import 'package:sero/providers/shared/auth_provider.dart';
+
+// --- Visitor & Guest Gate Providers ---
+final activeGuestPassesProvider = StreamProvider.autoDispose<List<GuestPass>>((ref) {
+  final user = ref.watch(authProvider).value;
+  if (user == null) return Stream.value([]);
+  
+  return FirebaseFirestore.instance
+      .collection('guest_passes')
+      .where('society_id', isEqualTo: user.societyId) // Filter by society
+      .where('residentId', isEqualTo: user.id) // Also filter by resident for privacy
+      .orderBy('createdAt', descending: true)
+      .snapshots()
+      .map((snapshot) => snapshot.docs
+          .map((doc) => GuestPass.fromMap(doc.data(), doc.id))
+          .toList());
+});
+
+final allTodayGuestPassesProvider = StreamProvider.autoDispose<List<GuestPass>>((ref) {
+  final user = ref.watch(authProvider).value;
+  if (user == null) return Stream.value([]);
+  
+  final today = DateTime.now();
+  final startOfDay = DateTime(today.year, today.month, today.day);
+  
+  return FirebaseFirestore.instance
+      .collection('guest_passes')
+      .where('society_id', isEqualTo: user.societyId)
+      .where('createdAt', isGreaterThanOrEqualTo: startOfDay)
+      .snapshots()
+      .map((snapshot) => snapshot.docs
+          .map((doc) => GuestPass.fromMap(doc.data(), doc.id))
+          .toList());
+});
+
+// --- Pulse Providers ---
+final directPulseProvider = StreamProvider.autoDispose<Pulse?>((ref) {
+  final user = ref.watch(authProvider).value;
+  if (user == null) return Stream.value(null);
+
+  return FirebaseFirestore.instance
+      .collection('pulses')
+      .where('society_id', isEqualTo: user.societyId)
+      .orderBy('createdAt', descending: true)
+      .limit(1)
+      .snapshots()
+      .map((snapshot) => snapshot.docs.isEmpty 
+          ? null 
+          : Pulse.fromMap(snapshot.docs.first.data(), snapshot.docs.first.id));
+});
+
+// --- Facility & Booking Providers ---
+final facilitiesProvider = StreamProvider.autoDispose<List<Facility>>((ref) {
+  final user = ref.watch(authProvider).value;
+  if (user == null) return Stream.value([]);
+
+  return FirebaseFirestore.instance
+      .collection('facilities')
+      .where('society_id', isEqualTo: user.societyId)
+      .snapshots()
+      .map((snapshot) => snapshot.docs
+          .map((doc) => Facility.fromMap(doc.data(), doc.id))
+          .toList());
+});
+
+final userBookingsProvider = StreamProvider.autoDispose<List<Booking>>((ref) {
+  final user = ref.watch(authProvider).value;
+  if (user == null) return Stream.value([]);
+
+  return FirebaseFirestore.instance
+      .collection('bookings')
+      .where('society_id', isEqualTo: user.societyId)
+      .where('userId', isEqualTo: user.id)
+      .orderBy('startTime', descending: true)
+      .snapshots()
+      .map((snapshot) => snapshot.docs
+          .map((doc) => Booking.fromMap(doc.data(), doc.id))
+          .toList());
+});
+
+// --- Marketplace Provider ---
+final marketplaceProvider = StreamProvider.autoDispose<List<ClassifiedItem>>((ref) {
+  final user = ref.watch(authProvider).value;
+  if (user == null) return Stream.value([]);
+
+  return FirebaseFirestore.instance
+      .collection('marketplace')
+      .where('society_id', isEqualTo: user.societyId)
+      .where('isSold', isEqualTo: false)
+      .snapshots()
+      .map((snapshot) {
+    final items = snapshot.docs
+        .map((doc) => ClassifiedItem.fromMap(doc.data(), doc.id))
+        .toList();
+    // Sort client-side
+    items.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return items;
+  });
+});
+
+// --- Discovery Provider ---
+final discoveryProvider = StreamProvider.autoDispose<List<InterestProfile>>((ref) {
+  final user = ref.watch(authProvider).value;
+  if (user == null) return Stream.value([]);
+
+  return FirebaseFirestore.instance
+      .collection('interests')
+      .where('society_id', isEqualTo: user.societyId)
+      .snapshots()
+      .map((snapshot) => snapshot.docs
+          .map((doc) => InterestProfile.fromMap(doc.data(), doc.id))
+          .toList());
+});
+
+// --- Polls Provider ---
+// CUTOVER: canonical Postgres v2 polls (/polls-v2). The list row carries no
+// options/tallies, so for each open poll we fetch /polls-v2/:id (option labels
+// + hasVoted) and /polls-v2/:id/results (per-option counts) and merge them via
+// Poll.fromV2. Vote is cast against /polls-v2/:id/vote with { optionId }.
+final pollsProvider = FutureProvider.autoDispose<List<Poll>>((ref) async {
+  final user = ref.watch(authProvider).value;
+  if (user == null) return [];
+
+  final listRes = await ApiService.get('/polls-v2?status=open');
+  if (listRes.statusCode != 200) {
+    throw Exception(
+        jsonDecode(listRes.body)['error'] ?? 'Failed to load polls');
+  }
+  final rawPolls =
+      (jsonDecode(listRes.body)['polls'] as List? ?? const []);
+
+  final polls = <Poll>[];
+  for (final raw in rawPolls) {
+    final pollId = (raw as Map<String, dynamic>)['id']?.toString() ?? '';
+    if (pollId.isEmpty) continue;
+
+    // Detail → option labels (+ ids) and whether this requester has voted.
+    final detailRes = await ApiService.get('/polls-v2/$pollId');
+    final labels = <String, String>{}; // optionId -> label
+    var hasVoted = false;
+    if (detailRes.statusCode == 200) {
+      final detail = jsonDecode(detailRes.body) as Map<String, dynamic>;
+      hasVoted = detail['hasVoted'] == true;
+      for (final o in (detail['options'] as List? ?? const [])) {
+        final m = o as Map<String, dynamic>;
+        labels[m['id'].toString()] = (m['label'] ?? '').toString();
+      }
+    }
+
+    // Results → per-option counts (may be hidden by results_visibility; then 0).
+    final counts = <String, int>{}; // optionId -> count
+    final resultsRes = await ApiService.get('/polls-v2/$pollId/results');
+    if (resultsRes.statusCode == 200) {
+      final results = jsonDecode(resultsRes.body) as Map<String, dynamic>;
+      for (final o in (results['options'] as List? ?? const [])) {
+        final m = o as Map<String, dynamic>;
+        counts[m['id'].toString()] = (m['count'] as num?)?.toInt() ?? 0;
+      }
+    }
+
+    final optionList = labels.entries
+        .map((e) => PollOption(
+              id: e.key,
+              label: e.value,
+              count: counts[e.key] ?? 0,
+            ))
+        .toList();
+
+    polls.add(Poll.fromV2(raw, options: optionList, hasVoted: hasVoted));
+  }
+  return polls;
+});
+
+// --- Events Provider (DEPRECATED: Use eventsProvider in events_provider.dart) ---
+
+// --- All Polls Provider (active + closed, for admin governance views) ---
+final allPollsProvider = StreamProvider.autoDispose<List<Poll>>((ref) {
+  final user = ref.watch(authProvider).value;
+  if (user == null) return Stream.value([]);
+
+  return FirebaseFirestore.instance
+      .collection('polls')
+      .where('society_id', isEqualTo: user.societyId)
+      .snapshots()
+      .map((snapshot) {
+    final polls = snapshot.docs
+        .map((doc) => Poll.fromMap(doc.data(), doc.id))
+        .toList();
+    polls.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return polls;
+  });
+});
+
+// --- Meetings / AGM Provider (mirrors pollsProvider pattern) ---
+class Meeting {
+  final String id;
+  final String title;
+  final String type; // e.g. AGM, Committee, Emergency
+  final String agenda;
+  final DateTime date;
+  final String status; // scheduled, completed, cancelled
+
+  Meeting({
+    required this.id,
+    required this.title,
+    required this.type,
+    required this.agenda,
+    required this.date,
+    required this.status,
+  });
+
+  factory Meeting.fromMap(Map<String, dynamic> map, String id) {
+    return Meeting(
+      id: id,
+      title: map['title'] ?? '',
+      type: map['type'] ?? 'Committee',
+      agenda: map['agenda'] ?? '',
+      date: (map['date'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      status: map['status'] ?? 'scheduled',
+    );
+  }
+}
+
+final meetingsProvider = StreamProvider.autoDispose<List<Meeting>>((ref) {
+  final user = ref.watch(authProvider).value;
+  if (user == null) return Stream.value([]);
+
+  return FirebaseFirestore.instance
+      .collection('meetings')
+      .where('society_id', isEqualTo: user.societyId)
+      .snapshots()
+      .map((snapshot) {
+    final meetings = snapshot.docs
+        .map((doc) => Meeting.fromMap(doc.data(), doc.id))
+        .toList();
+    meetings.sort((a, b) => b.date.compareTo(a.date));
+    return meetings;
+  });
+});
+
+// --- Committee Provider ---
+final committeeProvider = StreamProvider.autoDispose<List<CommitteeMember>>((ref) {
+  final user = ref.watch(authProvider).value;
+  if (user == null) return Stream.value([]);
+
+  return FirebaseFirestore.instance
+      .collection('committee')
+      .where('society_id', isEqualTo: user.societyId)
+      .snapshots()
+      .map((snapshot) => snapshot.docs
+          .map((doc) => CommitteeMember.fromMap(doc.data(), doc.id))
+          .toList());
+});
+
+// --- Society Operations Providers (Phase 15) ---
+final allIssuesStreamProvider = StreamProvider.autoDispose<List<Issue>>((ref) {
+  final user = ref.watch(authProvider).value;
+  if (user == null) return Stream.value([]);
+
+  return FirebaseFirestore.instance
+      .collection('issues')
+      .where('society_id', isEqualTo: user.societyId)
+      .snapshots()
+      .map((snapshot) {
+        final list = snapshot.docs.map((doc) => Issue.fromMap(doc.data())).toList();
+        list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        return list;
+      });
+});
+
+final societyRecordsProvider = StreamProvider.autoDispose<List<SocietyRecord>>((ref) {
+  final user = ref.watch(authProvider).value;
+  if (user == null) return Stream.value([]);
+
+  return FirebaseFirestore.instance
+      .collection('records')
+      .where('society_id', isEqualTo: user.societyId)
+      .snapshots()
+      .map((snapshot) {
+    final list = snapshot.docs.map((doc) => SocietyRecord.fromMap(doc.data(), doc.id)).toList();
+    list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return list;
+  });
+});
+
+// --- Actions for Admins ---
+class CommunityActions {
+  static Future<void> createPoll(String question, List<String> options, String societyId) async {
+    final votes = {for (var i = 0; i < options.length; i++) i.toString(): 0};
+    await FirebaseFirestore.instance.collection('polls').add({
+      'society_id': societyId,
+      'question': question,
+      'options': options,
+      'votes': votes,
+      'votedUsers': [],
+      'createdAt': FieldValue.serverTimestamp(),
+      'isActive': true,
+    });
+  }
+
+  static Future<void> voteInPoll(String pollId, int optionIndex, String userId) async {
+    final docRef = FirebaseFirestore.instance.collection('polls').doc(pollId);
+    await FirebaseFirestore.instance.runTransaction((transaction) async {
+      final snapshot = await transaction.get(docRef);
+      if (!snapshot.exists) return;
+      
+      final votedUsers = List<String>.from(snapshot.data()?['votedUsers'] ?? []);
+      if (votedUsers.contains(userId)) return;
+
+      votedUsers.add(userId);
+      final votes = Map<String, int>.from(snapshot.data()?['votes'] ?? {});
+      final key = optionIndex.toString();
+      votes[key] = (votes[key] ?? 0) + 1;
+
+      transaction.update(docRef, {
+        'votes': votes,
+        'votedUsers': votedUsers,
+      });
+    });
+  }
+
+  static Future<void> addEvent(String title, String description, DateTime date, String location, String societyId) async {
+    // DEPRECATED: Use EventsNotifier.addEvent instead for API consistency
+  }
+
+  static Future<void> setPollActive(String pollId, bool isActive) async {
+    await FirebaseFirestore.instance.collection('polls').doc(pollId).update({
+      'isActive': isActive,
+    });
+  }
+
+  // --- Meeting / AGM Actions ---
+  static Future<void> createMeeting({
+    required String title,
+    required String type,
+    required String agenda,
+    required DateTime date,
+    required String societyId,
+  }) async {
+    await FirebaseFirestore.instance.collection('meetings').add({
+      'society_id': societyId,
+      'title': title,
+      'type': type,
+      'agenda': agenda,
+      'date': Timestamp.fromDate(date),
+      'status': 'scheduled',
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  static Future<void> setMeetingStatus(String meetingId, String status) async {
+    await FirebaseFirestore.instance.collection('meetings').doc(meetingId).update({
+      'status': status,
+    });
+  }
+
+  static Future<void> addCommitteeMember(String name, String role, String societyId, {String? avatarUrl, String? phone}) async {
+    await FirebaseFirestore.instance.collection('committee').add({
+      'society_id': societyId,
+      'name': name,
+      'role': role,
+      'avatarUrl': avatarUrl,
+      'phoneNumber': phone,
+    });
+  }
+
+  // --- Visitor Actions ---
+  static Future<void> createGuestPass({
+    required String visitorName,
+    required GuestPassCategory category,
+    required String residentId,
+    required String residentName,
+    required String flatNumber,
+    required String societyId,
+  }) async {
+    await FirebaseFirestore.instance.collection('guest_passes').add({
+      'society_id': societyId,
+      'visitorName': visitorName,
+      'category': category.toString().split('.').last,
+      'status': 'approved',
+      'residentId': residentId,
+      'residentName': residentName,
+      'flatNumber': flatNumber,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  static Future<void> checkInVisitor(String passId) async {
+    await FirebaseFirestore.instance.collection('guest_passes').doc(passId).update({
+      'status': 'arrived',
+      'arrivalTime': FieldValue.serverTimestamp(),
+    });
+  }
+
+  // --- Hub & Moderation Actions ---
+  static Future<void> postPulse(String content, String societyId, {bool isHighPriority = false, String authorName = 'Secretary'}) async {
+    await FirebaseFirestore.instance.collection('pulses').add({
+      'society_id': societyId,
+      'content': content,
+      'authorName': authorName,
+      'authorRole': 'Committee',
+      'createdAt': FieldValue.serverTimestamp(),
+      'isHighPriority': isHighPriority,
+    });
+  }
+
+  static Future<void> removeListing(String itemId) async {
+    await FirebaseFirestore.instance.collection('marketplace').doc(itemId).delete();
+  }
+
+  static Future<void> toggleListingVisibility(String itemId, bool isSold) async {
+    await FirebaseFirestore.instance.collection('marketplace').doc(itemId).update({
+      'isSold': isSold,
+    });
+  }
+
+  // --- Operations Actions (Phase 15) ---
+  static Future<void> updateIssueStatus(String id, String status) async {
+    await FirebaseFirestore.instance.collection('issues').doc(id).update({
+      'status': status,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  static Future<void> addSocietyRecord(SocietyRecord record, String societyId) async {
+    await FirebaseFirestore.instance.collection('records').add({
+      ...record.toMap(),
+      'society_id': societyId,
+      'postedBy': 'Secretary',
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  static Future<void> removeRecord(String id) async {
+    await FirebaseFirestore.instance.collection('records').doc(id).delete();
+  }
+}

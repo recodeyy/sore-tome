@@ -1,0 +1,71 @@
+# Self-contained production-like stack for 10k–20k load testing.
+# Postgres (tuned) + PgBouncer (transaction pooling) + Redis + N API replicas
+# behind an nginx load balancer on :80. Bring up with:
+#   docker compose -f docker-compose.loadtest.yml up -d --scale backend=4
+services:
+  postgres:
+    image: pgvector/pgvector:pg16   # includes the `vector` extension (AI/RAG migrations)
+    environment:
+      POSTGRES_USER: sero
+      POSTGRES_PASSWORD: sero
+      POSTGRES_DB: sero_dev
+    command: >
+      postgres -c max_connections=400 -c shared_buffers=2GB
+               -c effective_cache_size=6GB -c work_mem=16MB
+               -c max_wal_size=4GB
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sero"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  pgbouncer:
+    image: edoburu/pgbouncer:latest
+    environment:
+      DB_HOST: postgres
+      DB_USER: sero
+      DB_PASSWORD: sero
+      DB_NAME: sero_dev
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: "5000"
+      DEFAULT_POOL_SIZE: "100"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--maxmemory", "1gb", "--maxmemory-policy", "allkeys-lru"]
+
+  backend:
+    build: .
+    environment:
+      NODE_ENV: production
+      PORT: "3001"
+      # Boot without a Firebase key; auth via Postgres /auth/loadtest-login.
+      LOADTEST_MODE: "true"
+      # App talks to Postgres THROUGH PgBouncer (transaction pooling).
+      DATABASE_URL: postgres://sero:sero@pgbouncer:6432/sero_dev
+      REDIS_URL: redis://redis:6379
+      DB_SSL: "false"
+      DB_POOL_MAX: "50"
+      JWT_SECRET: ${JWT_SECRET:-loadtest-secret-change-me}
+      LOG_LEVEL: warn
+    depends_on:
+      - pgbouncer
+      - redis
+    # No host port — nginx fans out to replicas. Scale with --scale backend=N.
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./deploy/gcp/nginx.loadtest.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:

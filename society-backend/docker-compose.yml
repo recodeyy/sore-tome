@@ -1,0 +1,47 @@
+version: '3.8'
+
+services:
+  backend:
+    build: .
+    ports:
+      - "3001:3001"
+    env_file:
+      - .env
+    depends_on:
+      - redis
+    restart: always
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    restart: always
+
+  # Transaction-mode connection pooler. Multiplexes many app connections
+  # (DB_POOL_MAX × replicas) onto a small server-side pool, preventing Postgres
+  # connection exhaustion under 10K–20K load (load-test gate, pack §9/§29).
+  # Point the app at this: DATABASE_URL=postgres://USER:PASS@pgbouncer:6432/DB
+  # and the UPSTREAM below at your real Postgres (Neon/RDS/etc.).
+  pgbouncer:
+    image: edoburu/pgbouncer:latest
+    environment:
+      # Upstream Postgres (the real DB — e.g. Neon). Override via .env.
+      DB_HOST: ${PG_UPSTREAM_HOST:-host.docker.internal}
+      DB_PORT: ${PG_UPSTREAM_PORT:-5432}
+      DB_USER: ${PG_USER}
+      DB_PASSWORD: ${PG_PASSWORD}
+      DB_NAME: ${PG_DATABASE}
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: ${PGB_MAX_CLIENT_CONN:-2000}
+      DEFAULT_POOL_SIZE: ${PGB_DEFAULT_POOL_SIZE:-25}
+      MIN_POOL_SIZE: ${PGB_MIN_POOL_SIZE:-5}
+      RESERVE_POOL_SIZE: ${PGB_RESERVE_POOL_SIZE:-5}
+      AUTH_TYPE: scram-sha-256
+    ports:
+      - "6432:6432"
+    restart: always
+
+# Note: PostgreSQL is assumed to be external (Neon). With PgBouncer (transaction
+# mode), set DB_POOL_MAX higher (e.g. 50–100) in .env — PgBouncer caps actual
+# server-side connections via DEFAULT_POOL_SIZE, so the app pool can be generous.
+# Sizing rule (no pooler): replicas × DB_POOL_MAX < Postgres max_connections.
