@@ -155,6 +155,7 @@ v1Router.use("/reports", standardLimiter, require("./src/routes/reports_pg").def
 v1Router.use("/audit", standardLimiter, require("./src/routes/audit_pg").default);
 v1Router.use("/realtime", require("./src/routes/realtime").default);
 v1Router.use("/notifications", standardLimiter, require("./src/routes/notifications_pg").default);
+v1Router.use("/community", standardLimiter, require("./src/routes/community_pg").default);
 
 // 🚀 MOUNT V1
 app.use("/api/v1", v1Router);
@@ -219,6 +220,12 @@ const server = app.listen(PORT, () => {
   console.log(`\n🏘️  Society Backend running on port ${PORT}`);
   console.log(`📋 Routes: /users /notices /issues /funds /rules /events /ai`);
   console.log(`🤖 AI chatbot: POST /ai/chat\n`);
+
+  // Idempotent schema bootstrap for the Community module (prod has no
+  // migration-on-deploy). Safe to run on every start (CREATE TABLE IF NOT EXISTS).
+  require("./src/services/community/CommunityService").CommunityService
+    .ensureSchema()
+    .catch((err) => logger.error({ error: err.message }, "Community ensureSchema failed"));
 });
 
 // ─── Graceful Shutdown ────────────────────────────────────────────────────────

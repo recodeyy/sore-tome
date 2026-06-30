@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sero/widgets/shared/premium_navbar.dart';
+import 'package:sero/widgets/resident/resident_drawer.dart';
 import '../screens/resident/home/resident_home_screen.dart';
 import '../screens/resident/channels/resident_channels_screen.dart';
 import '../screens/resident/amenities/amenities_home_screen.dart';
@@ -18,11 +19,14 @@ class ResidentShell extends ConsumerStatefulWidget {
 
 class _ResidentShellState extends ConsumerState<ResidentShell> {
   int _index = 0;
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+
+  void _openMenu() => _scaffoldKey.currentState?.openDrawer();
 
   @override
   Widget build(BuildContext context) {
     final user = ref.watch(authProvider).value;
-    
+
     // AUTH GATEKEEPER: Lock app until admin approval
     if (user?.status != 'approved') {
       return const RegistrationPendingScreen();
@@ -30,7 +34,7 @@ class _ResidentShellState extends ConsumerState<ResidentShell> {
 
     // Design bottom nav (resident mockups): Home / Community / Amenities / Payments / Profile
     final pages = [
-      const ResidentHomeScreen(),
+      ResidentHomeScreen(onMenuTap: _openMenu),
       const ResidentChannelsScreen(),
       const AmenitiesHomeScreen(),
       const BillsDuesScreen(),
@@ -46,8 +50,10 @@ class _ResidentShellState extends ConsumerState<ResidentShell> {
     ];
 
     return Scaffold(
+      key: _scaffoldKey,
       extendBody: true,
       backgroundColor: Colors.white,
+      drawer: const ResidentDrawer(),
       body: IndexedStack(
         index: _index,
         children: pages,

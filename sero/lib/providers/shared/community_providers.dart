@@ -23,6 +23,7 @@ final activeGuestPassesProvider = StreamProvider.autoDispose<List<GuestPass>>((r
       .where('residentId', isEqualTo: user.id) // Also filter by resident for privacy
       .orderBy('createdAt', descending: true)
       .snapshots()
+      .handleError((_) {}) // never surface Firestore permission/network errors to the UI
       .map((snapshot) => snapshot.docs
           .map((doc) => GuestPass.fromMap(doc.data(), doc.id))
           .toList());
@@ -40,6 +41,7 @@ final allTodayGuestPassesProvider = StreamProvider.autoDispose<List<GuestPass>>(
       .where('society_id', isEqualTo: user.societyId)
       .where('createdAt', isGreaterThanOrEqualTo: startOfDay)
       .snapshots()
+      .handleError((_) {}) // never surface Firestore permission/network errors to the UI
       .map((snapshot) => snapshot.docs
           .map((doc) => GuestPass.fromMap(doc.data(), doc.id))
           .toList());
@@ -56,23 +58,28 @@ final directPulseProvider = StreamProvider.autoDispose<Pulse?>((ref) {
       .orderBy('createdAt', descending: true)
       .limit(1)
       .snapshots()
+      .handleError((_) {}) // never surface Firestore permission/network errors to the UI
       .map((snapshot) => snapshot.docs.isEmpty 
           ? null 
           : Pulse.fromMap(snapshot.docs.first.data(), snapshot.docs.first.id));
 });
 
 // --- Facility & Booking Providers ---
-final facilitiesProvider = StreamProvider.autoDispose<List<Facility>>((ref) {
+// CUTOVER: canonical Postgres `/amenities` ({ amenities: [...] }). The legacy
+// Firestore `facilities` collection is empty under the Postgres backend, so the
+// resident Facilities screen read empty. Now backed by real amenity data
+// (Clubhouse, Community Hall, …) via Facility.fromAmenity.
+final facilitiesProvider = FutureProvider.autoDispose<List<Facility>>((ref) async {
   final user = ref.watch(authProvider).value;
-  if (user == null) return Stream.value([]);
-
-  return FirebaseFirestore.instance
-      .collection('facilities')
-      .where('society_id', isEqualTo: user.societyId)
-      .snapshots()
-      .map((snapshot) => snapshot.docs
-          .map((doc) => Facility.fromMap(doc.data(), doc.id))
-          .toList());
+  if (user == null) return [];
+  final res = await ApiService.get('/amenities');
+  final data = ApiService.unwrap(res);
+  final rows = data is List
+      ? data
+      : (data is Map ? (data['amenities'] as List? ?? const []) : const []);
+  return rows
+      .map((r) => Facility.fromAmenity((r as Map).cast<String, dynamic>()))
+      .toList();
 });
 
 final userBookingsProvider = StreamProvider.autoDispose<List<Booking>>((ref) {
@@ -85,6 +92,7 @@ final userBookingsProvider = StreamProvider.autoDispose<List<Booking>>((ref) {
       .where('userId', isEqualTo: user.id)
       .orderBy('startTime', descending: true)
       .snapshots()
+      .handleError((_) {}) // never surface Firestore permission/network errors to the UI
       .map((snapshot) => snapshot.docs
           .map((doc) => Booking.fromMap(doc.data(), doc.id))
           .toList());
@@ -100,6 +108,7 @@ final marketplaceProvider = StreamProvider.autoDispose<List<ClassifiedItem>>((re
       .where('society_id', isEqualTo: user.societyId)
       .where('isSold', isEqualTo: false)
       .snapshots()
+      .handleError((_) {}) // never surface Firestore permission/network errors to the UI
       .map((snapshot) {
     final items = snapshot.docs
         .map((doc) => ClassifiedItem.fromMap(doc.data(), doc.id))
@@ -119,6 +128,7 @@ final discoveryProvider = StreamProvider.autoDispose<List<InterestProfile>>((ref
       .collection('interests')
       .where('society_id', isEqualTo: user.societyId)
       .snapshots()
+      .handleError((_) {}) // never surface Firestore permission/network errors to the UI
       .map((snapshot) => snapshot.docs
           .map((doc) => InterestProfile.fromMap(doc.data(), doc.id))
           .toList());
@@ -129,45 +139,53 @@ final discoveryProvider = StreamProvider.autoDispose<List<InterestProfile>>((ref
 // options/tallies, so for each open poll we fetch /polls-v2/:id (option labels
 // + hasVoted) and /polls-v2/:id/results (per-option counts) and merge them via
 // Poll.fromV2. Vote is cast against /polls-v2/:id/vote with { optionId }.
-final pollsProvider = FutureProvider.autoDispose<List<Poll>>((ref) async {
-  final user = ref.watch(authProvider).value;
-  if (user == null) return [];
-
-  final listRes = await ApiService.get('/polls-v2?status=open');
+/// Shared loader for the canonical Postgres v2 polls (`/polls-v2`). [query] is
+/// an optional querystring (e.g. '?status=open'). The list row carries no
+/// options/tallies, so for each poll we fetch `/polls-v2/:id` (option labels +
+/// hasVoted) and `/polls-v2/:id/results` (per-option counts) and merge them via
+/// Poll.fromV2.
+Future<List<Poll>> _loadPollsV2(String query) async {
+  final listRes = await ApiService.get('/polls-v2$query');
   if (listRes.statusCode != 200) {
-    throw Exception(
-        jsonDecode(listRes.body)['error'] ?? 'Failed to load polls');
+    throw Exception(jsonDecode(listRes.body)['error'] ?? 'Failed to load polls');
   }
-  final rawPolls =
-      (jsonDecode(listRes.body)['polls'] as List? ?? const []);
+  final rawPolls = (jsonDecode(listRes.body)['polls'] as List? ?? const []);
 
   final polls = <Poll>[];
   for (final raw in rawPolls) {
     final pollId = (raw as Map<String, dynamic>)['id']?.toString() ?? '';
     if (pollId.isEmpty) continue;
 
-    // Detail → option labels (+ ids) and whether this requester has voted.
-    final detailRes = await ApiService.get('/polls-v2/$pollId');
+    // Enrich each poll independently. A single failing/slow detail or results
+    // request must NOT sink the whole list — the resident still gets the poll
+    // (with whatever data we could load) instead of a full-screen error.
     final labels = <String, String>{}; // optionId -> label
-    var hasVoted = false;
-    if (detailRes.statusCode == 200) {
-      final detail = jsonDecode(detailRes.body) as Map<String, dynamic>;
-      hasVoted = detail['hasVoted'] == true;
-      for (final o in (detail['options'] as List? ?? const [])) {
-        final m = o as Map<String, dynamic>;
-        labels[m['id'].toString()] = (m['label'] ?? '').toString();
-      }
-    }
-
-    // Results → per-option counts (may be hidden by results_visibility; then 0).
     final counts = <String, int>{}; // optionId -> count
-    final resultsRes = await ApiService.get('/polls-v2/$pollId/results');
-    if (resultsRes.statusCode == 200) {
-      final results = jsonDecode(resultsRes.body) as Map<String, dynamic>;
-      for (final o in (results['options'] as List? ?? const [])) {
-        final m = o as Map<String, dynamic>;
-        counts[m['id'].toString()] = (m['count'] as num?)?.toInt() ?? 0;
+    var hasVoted = false;
+
+    try {
+      // Detail → option labels (+ ids) and whether this requester has voted.
+      final detailRes = await ApiService.get('/polls-v2/$pollId');
+      if (detailRes.statusCode == 200) {
+        final detail = jsonDecode(detailRes.body) as Map<String, dynamic>;
+        hasVoted = detail['hasVoted'] == true;
+        for (final o in (detail['options'] as List? ?? const [])) {
+          final m = o as Map<String, dynamic>;
+          labels[m['id'].toString()] = (m['label'] ?? '').toString();
+        }
       }
+
+      // Results → per-option counts (may be hidden by results_visibility; then 0).
+      final resultsRes = await ApiService.get('/polls-v2/$pollId/results');
+      if (resultsRes.statusCode == 200) {
+        final results = jsonDecode(resultsRes.body) as Map<String, dynamic>;
+        for (final o in (results['options'] as List? ?? const [])) {
+          final m = o as Map<String, dynamic>;
+          counts[m['id'].toString()] = (m['count'] as num?)?.toInt() ?? 0;
+        }
+      }
+    } catch (_) {
+      // Swallow per-poll enrichment errors; fall through with whatever we have.
     }
 
     final optionList = labels.entries
@@ -181,26 +199,24 @@ final pollsProvider = FutureProvider.autoDispose<List<Poll>>((ref) async {
     polls.add(Poll.fromV2(raw, options: optionList, hasVoted: hasVoted));
   }
   return polls;
+}
+
+final pollsProvider = FutureProvider.autoDispose<List<Poll>>((ref) async {
+  final user = ref.watch(authProvider).value;
+  if (user == null) return [];
+  return _loadPollsV2('?status=open');
 });
 
 // --- Events Provider (DEPRECATED: Use eventsProvider in events_provider.dart) ---
 
 // --- All Polls Provider (active + closed, for admin governance views) ---
-final allPollsProvider = StreamProvider.autoDispose<List<Poll>>((ref) {
+// CUTOVER: canonical Postgres `/polls-v2` (all statuses). The legacy Firestore
+// `polls` collection is empty under the Postgres backend, so the admin polls
+// dashboard read here.
+final allPollsProvider = FutureProvider.autoDispose<List<Poll>>((ref) async {
   final user = ref.watch(authProvider).value;
-  if (user == null) return Stream.value([]);
-
-  return FirebaseFirestore.instance
-      .collection('polls')
-      .where('society_id', isEqualTo: user.societyId)
-      .snapshots()
-      .map((snapshot) {
-    final polls = snapshot.docs
-        .map((doc) => Poll.fromMap(doc.data(), doc.id))
-        .toList();
-    polls.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-    return polls;
-  });
+  if (user == null) return [];
+  return _loadPollsV2('');
 });
 
 // --- Meetings / AGM Provider (mirrors pollsProvider pattern) ---
@@ -233,35 +249,60 @@ class Meeting {
   }
 }
 
-final meetingsProvider = StreamProvider.autoDispose<List<Meeting>>((ref) {
+// CUTOVER: canonical Postgres `/meetings` ({ meetings: [...] }). Each row is a
+// `meetings` table record (snake_case: title, type, scheduled_at, status). The
+// list does not embed agenda items, so `agenda` is left blank here.
+final meetingsProvider = FutureProvider.autoDispose<List<Meeting>>((ref) async {
   final user = ref.watch(authProvider).value;
-  if (user == null) return Stream.value([]);
-
-  return FirebaseFirestore.instance
-      .collection('meetings')
-      .where('society_id', isEqualTo: user.societyId)
-      .snapshots()
-      .map((snapshot) {
-    final meetings = snapshot.docs
-        .map((doc) => Meeting.fromMap(doc.data(), doc.id))
-        .toList();
-    meetings.sort((a, b) => b.date.compareTo(a.date));
-    return meetings;
-  });
+  if (user == null) return [];
+  final res = await ApiService.get('/meetings');
+  final data = ApiService.unwrap(res);
+  final rows = data is List
+      ? data
+      : (data is Map ? (data['meetings'] as List? ?? const []) : const []);
+  final meetings = rows.map((r) {
+    final m = (r as Map).cast<String, dynamic>();
+    return Meeting(
+      id: (m['id'] ?? '').toString(),
+      title: (m['title'] ?? '').toString(),
+      type: (m['type'] ?? 'committee').toString(),
+      agenda: (m['agenda'] ?? '').toString(),
+      date: DateTime.tryParse(
+              (m['scheduled_at'] ?? m['created_at'] ?? '').toString()) ??
+          DateTime.now(),
+      status: (m['status'] ?? 'scheduled').toString(),
+    );
+  }).toList();
+  meetings.sort((a, b) => b.date.compareTo(a.date));
+  return meetings;
 });
 
 // --- Committee Provider ---
-final committeeProvider = StreamProvider.autoDispose<List<CommitteeMember>>((ref) {
+// CUTOVER: canonical Postgres `/members-v2/committee` ({ committee: [...] }).
+// Each row joins committee_members (designation) to the member directory
+// (member_name, member_phone). The legacy Firestore `committee` collection is
+// empty under the Postgres backend.
+final committeeProvider =
+    FutureProvider.autoDispose<List<CommitteeMember>>((ref) async {
   final user = ref.watch(authProvider).value;
-  if (user == null) return Stream.value([]);
-
-  return FirebaseFirestore.instance
-      .collection('committee')
-      .where('society_id', isEqualTo: user.societyId)
-      .snapshots()
-      .map((snapshot) => snapshot.docs
-          .map((doc) => CommitteeMember.fromMap(doc.data(), doc.id))
-          .toList());
+  if (user == null) return [];
+  final res = await ApiService.get('/members-v2/committee');
+  final data = ApiService.unwrap(res);
+  final rows = data is List
+      ? data
+      : (data is Map ? (data['committee'] as List? ?? const []) : const []);
+  return rows
+      .map((r) {
+        final m = (r as Map).cast<String, dynamic>();
+        return CommitteeMember(
+          id: (m['id'] ?? m['member_id'] ?? '').toString(),
+          name: (m['member_name'] ?? m['name'] ?? '').toString(),
+          role: (m['designation'] ?? m['role'] ?? '').toString(),
+          phoneNumber: (m['member_phone'] ?? m['phone'])?.toString(),
+        );
+      })
+      .where((c) => c.name.isNotEmpty)
+      .toList();
 });
 
 // --- Society Operations Providers (Phase 15) ---
@@ -273,6 +314,7 @@ final allIssuesStreamProvider = StreamProvider.autoDispose<List<Issue>>((ref) {
       .collection('issues')
       .where('society_id', isEqualTo: user.societyId)
       .snapshots()
+      .handleError((_) {}) // never surface Firestore permission/network errors to the UI
       .map((snapshot) {
         final list = snapshot.docs.map((doc) => Issue.fromMap(doc.data())).toList();
         list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
@@ -288,6 +330,7 @@ final societyRecordsProvider = StreamProvider.autoDispose<List<SocietyRecord>>((
       .collection('records')
       .where('society_id', isEqualTo: user.societyId)
       .snapshots()
+      .handleError((_) {}) // never surface Firestore permission/network errors to the UI
       .map((snapshot) {
     final list = snapshot.docs.map((doc) => SocietyRecord.fromMap(doc.data(), doc.id)).toList();
     list.sort((a, b) => b.createdAt.compareTo(a.createdAt));

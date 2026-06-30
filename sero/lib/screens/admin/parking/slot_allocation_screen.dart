@@ -6,7 +6,8 @@ import 'package:sero/providers/admin/admin_domain_providers.dart';
 import 'package:sero/widgets/common/async_state_views.dart';
 import 'package:sero/widgets/common/sero_search_bar.dart';
 import 'package:sero/widgets/common/status_badge.dart';
-import 'package:sero/widgets/admin/admin_actions.dart';
+import 'package:sero/services/admin/admin_parking_service.dart';
+import 'package:sero/services/admin/admin_society_service.dart';
 
 class SlotAllocationScreen extends ConsumerStatefulWidget {
   const SlotAllocationScreen({super.key});
@@ -18,6 +19,143 @@ class SlotAllocationScreen extends ConsumerStatefulWidget {
 class _SlotAllocationScreenState extends ConsumerState<SlotAllocationScreen> {
   String selectedTab = 'Basement 1';
   Map<String, dynamic>? selectedSlot;
+  bool _allocating = false;
+
+  /// Allocate the currently-selected slot to a unit via POST /parking/allocations.
+  Future<void> _allocateSlot() async {
+    final slot = selectedSlot;
+    if (slot == null) return;
+    final slotId = (slot['id'] ?? slot['slot_id'] ?? '').toString();
+    final slotCode = (slot['code'] ?? slot['id'] ?? '').toString();
+    if (slotId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('This slot has no id and cannot be allocated.'), backgroundColor: Color(0xFFB91C1C)),
+      );
+      return;
+    }
+
+    final messenger = ScaffoldMessenger.of(context);
+    List<dynamic> units;
+    try {
+      units = await AdminSocietyService.getUnits();
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Could not load units: $e'), backgroundColor: const Color(0xFFB91C1C)),
+      );
+      return;
+    }
+    if (!mounted) return;
+
+    final allocatedToController = TextEditingController();
+    String? selectedUnitId;
+
+    final result = await showModalBottomSheet<Map<String, String>>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(
+          left: 20, right: 20, top: 20,
+          bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
+        ),
+        child: StatefulBuilder(
+          builder: (ctx, setLocal) => Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Allocate Slot $slotCode',
+                  style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.w800, color: const Color(0xFF1E293B))),
+              const SizedBox(height: 16),
+              if (units.isEmpty)
+                Text('No units found. Add flats/units first.',
+                    style: GoogleFonts.outfit(fontSize: 13, color: const Color(0xFF64748B)))
+              else
+                DropdownButtonFormField<String>(
+                  initialValue: selectedUnitId,
+                  isExpanded: true,
+                  decoration: const InputDecoration(labelText: 'Unit / Flat'),
+                  items: units.map((u) {
+                    final map = (u as Map?) ?? const {};
+                    final id = (map['id'] ?? '').toString();
+                    final label = (map['number'] ?? map['name'] ?? map['code'] ?? 'Unit').toString();
+                    return DropdownMenuItem(value: id, child: Text(label, style: GoogleFonts.outfit(fontSize: 14)));
+                  }).toList(),
+                  onChanged: (v) => setLocal(() => selectedUnitId = v),
+                ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: allocatedToController,
+                decoration: const InputDecoration(
+                  labelText: 'Allocated to (name, optional)',
+                  hintText: 'Resident / owner name',
+                ),
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: kPrimaryGreen,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                  onPressed: () => Navigator.pop(ctx, {
+                    'unitId': selectedUnitId ?? '',
+                    'allocatedTo': allocatedToController.text.trim(),
+                  }),
+                  child: Text('Confirm Allocation',
+                      style: GoogleFonts.outfit(fontSize: 15, fontWeight: FontWeight.w700)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (result == null) return;
+    final unitId = result['unitId'] ?? '';
+    final allocatedTo = result['allocatedTo'] ?? '';
+    if (unitId.isEmpty && allocatedTo.isEmpty) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Select a unit or enter who the slot is for.'), backgroundColor: Color(0xFFB91C1C)),
+      );
+      return;
+    }
+
+    setState(() => _allocating = true);
+    try {
+      final ok = await AdminParkingService.allocateSlot({
+        'slotId': slotId,
+        if (unitId.isNotEmpty) 'unitId': unitId,
+        if (allocatedTo.isNotEmpty) 'allocatedTo': allocatedTo,
+      });
+      if (!mounted) return;
+      if (ok) {
+        ref.invalidate(parkingSlotsProvider);
+        ref.invalidate(parkingDashboardProvider);
+        setState(() => selectedSlot = null);
+        messenger.showSnackBar(
+          SnackBar(content: Text('Slot $slotCode allocated'), backgroundColor: const Color(0xFF064E3B)),
+        );
+      } else {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Could not allocate slot'), backgroundColor: Color(0xFFB91C1C)),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(content: Text('Failed: $e'), backgroundColor: const Color(0xFFB91C1C)),
+      );
+    } finally {
+      if (mounted) setState(() => _allocating = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -326,8 +464,13 @@ class _SlotAllocationScreenState extends ConsumerState<SlotAllocationScreen> {
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
-              onPressed: () => AdminActions.comingSoon(context, 'Slot allocation'),
-              child: const Text('Allocate Slot'),
+              onPressed: _allocating ? null : _allocateSlot,
+              child: _allocating
+                  ? const SizedBox(
+                      height: 20, width: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    )
+                  : const Text('Allocate Slot'),
             ),
           ),
         ],

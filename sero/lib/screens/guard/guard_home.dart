@@ -18,7 +18,7 @@ class GuardHome extends ConsumerStatefulWidget {
 class _GuardHomeState extends ConsumerState<GuardHome> {
   @override
   Widget build(BuildContext context) {
-    final visitorsAsync = ref.watch(visitorsProvider);
+    final visitorsAsync = ref.watch(guardVisitorsProvider);
 
     return DefaultTabController(
       length: 2,

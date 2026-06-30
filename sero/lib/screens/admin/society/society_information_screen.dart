@@ -5,7 +5,6 @@ import 'package:sero/app/theme.dart';
 import 'package:sero/providers/admin/admin_domain_providers.dart';
 import 'package:sero/services/admin/admin_society_service.dart';
 import 'package:sero/widgets/common/async_state_views.dart';
-import 'package:sero/widgets/admin/admin_actions.dart';
 
 /// Society Information — Screen 3 of 6
 /// Editable form showing basic info, registration, description.
@@ -55,6 +54,53 @@ class _SocietyInformationScreenState extends ConsumerState<SocietyInformationScr
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  /// Bottom-sheet actions for the information form: save or reset to saved.
+  void _showInfoOptions() {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 12),
+            Container(
+              width: 40, height: 4,
+              decoration: BoxDecoration(
+                color: const Color(0xFFE2E8F0),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 8),
+            ListTile(
+              leading: const Icon(Icons.save_outlined, color: Color(0xFF064E3B)),
+              title: Text('Save Changes',
+                  style: GoogleFonts.outfit(fontSize: 15, fontWeight: FontWeight.w600, color: const Color(0xFF1E293B))),
+              onTap: () {
+                Navigator.pop(ctx);
+                if (!_saving) _saveProfile();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.restart_alt, color: Color(0xFF64748B)),
+              title: Text('Reset to Saved',
+                  style: GoogleFonts.outfit(fontSize: 15, fontWeight: FontWeight.w600, color: const Color(0xFF1E293B))),
+              onTap: () {
+                Navigator.pop(ctx);
+                setState(() => _seeded = false); // re-seed from provider on rebuild
+                ref.invalidate(societyProfileProvider);
+              },
+            ),
+            const SizedBox(height: 12),
+          ],
+        ),
+      ),
+    );
   }
 
   /// Seed controllers from live profile once data arrives.
@@ -108,7 +154,7 @@ class _SocietyInformationScreenState extends ConsumerState<SocietyInformationScr
                 ),
                 IconButton(
                   icon: const Icon(Icons.more_horiz, color: Color(0xFF1E293B)),
-                  onPressed: () => AdminActions.comingSoon(context, 'Editing society information'),
+                  onPressed: _showInfoOptions,
                 ),
               ],
             ),

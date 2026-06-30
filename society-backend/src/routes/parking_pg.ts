@@ -5,7 +5,7 @@ import { validate } from "../middleware/validate";
 import { logger } from "../shared/Logger";
 
 // @ts-ignore — JS middleware
-import { authMiddleware, canManageContent } from "../../middleware/auth";
+import { authMiddleware, canManageFacilities } from "../../middleware/auth";
 import { tenantMiddleware } from "../../middleware/tenantMiddleware";
 
 const router = Router();
@@ -34,7 +34,13 @@ router.get("/slots", authMiddleware, tenantMiddleware, async (req, res) => {
   try { res.json({ slots: await ParkingService.listSlots(societyOf(req), { status: req.query.status as string }) }); }
   catch (e: any) { map(res, e, "Failed to list slots"); }
 });
-router.post("/slots", authMiddleware, tenantMiddleware, canManageContent, validate(SlotSchema), async (req, res) => {
+// Resident-facing: my active parking allocation(s). No canManageFacilities —
+// any authenticated tenant member may read their own allocations.
+router.get("/my", authMiddleware, tenantMiddleware, async (req, res) => {
+  try { res.json({ allocations: await ParkingService.listForResident(societyOf(req), userOf(req).uid) }); }
+  catch (e: any) { map(res, e, "Failed to list my parking"); }
+});
+router.post("/slots", authMiddleware, tenantMiddleware, canManageFacilities, validate(SlotSchema), async (req, res) => {
   try { res.status(201).json({ slot: await ParkingService.createSlot(societyOf(req), req.body) }); }
   catch (e: any) { map(res, e, "Failed to create slot"); }
 });
@@ -46,21 +52,21 @@ router.post("/vehicles", authMiddleware, tenantMiddleware, validate(VehicleSchem
 });
 
 // Allocations
-router.post("/allocations", authMiddleware, tenantMiddleware, canManageContent, validate(AllocateSchema), async (req, res) => {
+router.post("/allocations", authMiddleware, tenantMiddleware, canManageFacilities, validate(AllocateSchema), async (req, res) => {
   try { res.status(201).json({ allocation: await ParkingService.allocate(societyOf(req), { ...req.body, allocatedBy: userOf(req).uid }) }); }
   catch (e: any) { map(res, e, "Failed to allocate slot"); }
 });
-router.post("/allocations/:id/release", authMiddleware, tenantMiddleware, canManageContent, async (req, res) => {
+router.post("/allocations/:id/release", authMiddleware, tenantMiddleware, canManageFacilities, async (req, res) => {
   try { res.json(await ParkingService.release(societyOf(req), (req.params.id as string))); }
   catch (e: any) { map(res, e, "Failed to release allocation"); }
 });
-router.post("/allocations/:id/transfer", authMiddleware, tenantMiddleware, canManageContent, validate(TransferSchema), async (req, res) => {
+router.post("/allocations/:id/transfer", authMiddleware, tenantMiddleware, canManageFacilities, validate(TransferSchema), async (req, res) => {
   try { res.json({ allocation: await ParkingService.transfer(societyOf(req), (req.params.id as string), req.body.toSlotId, userOf(req).uid) }); }
   catch (e: any) { map(res, e, "Failed to transfer allocation"); }
 });
 
 // Requests / waitlist
-router.get("/requests", authMiddleware, tenantMiddleware, canManageContent, async (req, res) => {
+router.get("/requests", authMiddleware, tenantMiddleware, canManageFacilities, async (req, res) => {
   try { res.json({ requests: await ParkingService.listRequests(societyOf(req), { status: req.query.status as string }) }); }
   catch (e: any) { map(res, e, "Failed to list requests"); }
 });
@@ -76,15 +82,15 @@ router.post("/visitor", authMiddleware, tenantMiddleware, validate(VisitorSchema
 });
 
 // Violations
-router.get("/violations", authMiddleware, tenantMiddleware, canManageContent, async (req, res) => {
+router.get("/violations", authMiddleware, tenantMiddleware, canManageFacilities, async (req, res) => {
   try { res.json({ violations: await ParkingService.listViolations(societyOf(req), { status: req.query.status as string }) }); }
   catch (e: any) { map(res, e, "Failed to list violations"); }
 });
-router.post("/violations", authMiddleware, tenantMiddleware, canManageContent, validate(ViolationSchema), async (req, res) => {
+router.post("/violations", authMiddleware, tenantMiddleware, canManageFacilities, validate(ViolationSchema), async (req, res) => {
   try { res.status(201).json({ violation: await ParkingService.recordViolation(societyOf(req), req.body, userOf(req).uid) }); }
   catch (e: any) { map(res, e, "Failed to record violation"); }
 });
-router.post("/violations/:id/resolve", authMiddleware, tenantMiddleware, canManageContent, validate(ResolveViolationSchema), async (req, res) => {
+router.post("/violations/:id/resolve", authMiddleware, tenantMiddleware, canManageFacilities, validate(ResolveViolationSchema), async (req, res) => {
   try { res.json({ violation: await ParkingService.resolveViolation(societyOf(req), (req.params.id as string), req.body.status) }); }
   catch (e: any) { map(res, e, "Failed to resolve violation"); }
 });

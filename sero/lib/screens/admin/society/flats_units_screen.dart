@@ -93,7 +93,10 @@ class _FlatsUnitsScreenState extends ConsumerState<FlatsUnitsScreen> {
   @override
   Widget build(BuildContext context) {
     final unitsAsync = ref.watch(structureUnitsProvider);
-    final List unitsList = unitsAsync.value as List? ?? [];
+    // The provider yields a Map { units, summary } — read the `units` list out
+    // of it (casting the Map directly to a List always produced an empty list,
+    // which blanked this screen even when data was present).
+    final List unitsList = (unitsAsync.value?['units'] as List?) ?? [];
     final filtered = _filteredFlats(unitsList);
 
     final totalFlats = unitsList.length;

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:sero/app/theme.dart';
 import 'package:sero/providers/shared/community_providers.dart';
+import 'package:sero/providers/shared/issues_provider.dart';
 import 'package:sero/models/society_record.dart';
 import 'package:sero/providers/shared/auth_provider.dart';
 
@@ -70,7 +71,7 @@ class _AdminOperationsScreenState extends ConsumerState<AdminOperationsScreen> w
   }
 
   Widget _buildRepairsTab(String societyId) {
-    final issuesAsync = ref.watch(allIssuesStreamProvider);
+    final issuesAsync = ref.watch(issuesProvider);
     return issuesAsync.when(
       data: (issues) {
         if (issues.isEmpty) {
@@ -142,7 +143,7 @@ class _AdminOperationsScreenState extends ConsumerState<AdminOperationsScreen> w
                             child: _actionButton(
                               "IN PROGRESS",
                               Colors.blue,
-                              () => CommunityActions.updateIssueStatus(issue.id, 'in_progress'),
+                              () => ref.read(issuesProvider.notifier).assignIssue(issue.id, ''),
                             ),
                           ),
                         if (isOpen || isInProgress) ...[
@@ -151,7 +152,7 @@ class _AdminOperationsScreenState extends ConsumerState<AdminOperationsScreen> w
                             child: _actionButton(
                               "MARK RESOLVED",
                               kPrimaryGreen,
-                              () => CommunityActions.updateIssueStatus(issue.id, 'resolved'),
+                              () => ref.read(issuesProvider.notifier).resolveIssue(issue.id),
                             ),
                           ),
                         ],

@@ -7,6 +7,22 @@ final visitorsProvider = StateNotifierProvider.autoDispose<VisitorsNotifier, Asy
   return VisitorsNotifier();
 });
 
+/// Gate feed for the GUARD home — the visitors logged at the gate live under
+/// `/guard/visitors` (the plain `/visitors` route is the resident's own
+/// pre-approval list and is empty for a guard). Same `{ visitors: [...] }`
+/// envelope and Visitor.fromMap mapping.
+final guardVisitorsProvider =
+    FutureProvider.autoDispose<List<Visitor>>((ref) async {
+  final res = await ApiService.get('/guard/visitors');
+  if (res.statusCode == 200) {
+    final data = jsonDecode(res.body);
+    return (data['visitors'] as List? ?? const [])
+        .map((x) => Visitor.fromMap(x))
+        .toList();
+  }
+  throw Exception('Failed to fetch gate visitors');
+});
+
 class VisitorsNotifier extends StateNotifier<AsyncValue<List<Visitor>>> {
   VisitorsNotifier() : super(const AsyncValue.loading()) {
     fetchVisitors();

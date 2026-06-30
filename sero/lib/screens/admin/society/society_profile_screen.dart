@@ -4,13 +4,66 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:sero/app/theme.dart';
 import 'package:sero/providers/admin/admin_domain_providers.dart';
 import 'package:sero/widgets/common/async_state_views.dart';
-import 'package:sero/widgets/admin/admin_actions.dart';
 import 'society_information_screen.dart';
+import 'society_logo_screen.dart';
+import 'committee_members_screen.dart';
 
 /// Society Profile — Screen 2 of 6
 /// Shows society cover image, logo, and key info details with Edit button.
 class SocietyProfileScreen extends ConsumerWidget {
   const SocietyProfileScreen({super.key});
+
+  /// Bottom-sheet menu of profile actions: edit info, logo, committee.
+  void _showProfileOptions(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 12),
+            Container(
+              width: 40, height: 4,
+              decoration: BoxDecoration(
+                color: const Color(0xFFE2E8F0),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 8),
+            _OptionTile(
+              icon: Icons.edit_outlined,
+              label: 'Edit Society Information',
+              onTap: () {
+                Navigator.pop(ctx);
+                Navigator.push(context, MaterialPageRoute(builder: (_) => const SocietyInformationScreen()));
+              },
+            ),
+            _OptionTile(
+              icon: Icons.image_outlined,
+              label: 'Change Logo',
+              onTap: () {
+                Navigator.pop(ctx);
+                Navigator.push(context, MaterialPageRoute(builder: (_) => const SocietyLogoScreen()));
+              },
+            ),
+            _OptionTile(
+              icon: Icons.groups_outlined,
+              label: 'Committee Members',
+              onTap: () {
+                Navigator.pop(ctx);
+                Navigator.push(context, MaterialPageRoute(builder: (_) => const CommitteeMembersScreen()));
+              },
+            ),
+            const SizedBox(height: 12),
+          ],
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -39,7 +92,7 @@ class SocietyProfileScreen extends ConsumerWidget {
                 ),
                 IconButton(
                   icon: const Icon(Icons.more_horiz, color: Color(0xFF1E293B)),
-                  onPressed: () => AdminActions.comingSoon(context, 'Profile options'),
+                  onPressed: () => _showProfileOptions(context),
                 ),
               ],
             ),
@@ -239,6 +292,27 @@ class SocietyProfileScreen extends ConsumerWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _OptionTile extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  const _OptionTile({required this.icon, required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: Icon(icon, color: const Color(0xFF064E3B)),
+      title: Text(
+        label,
+        style: GoogleFonts.outfit(fontSize: 15, fontWeight: FontWeight.w600, color: const Color(0xFF1E293B)),
+      ),
+      trailing: const Icon(Icons.chevron_right, color: Color(0xFF94A3B8)),
+      onTap: onTap,
     );
   }
 }

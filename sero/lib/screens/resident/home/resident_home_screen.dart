@@ -7,7 +7,6 @@ import 'package:sero/providers/shared/notices_provider.dart';
 import 'package:sero/providers/shared/issues_provider.dart';
 import 'package:sero/providers/shared/funds_provider.dart';
 import 'package:sero/providers/shared/community_providers.dart';
-import 'package:sero/widgets/resident/resident_drawer.dart';
 import '../../shared/profile/profile_screen.dart';
 import '../notifications/notifications_center_screen.dart';
 import '../payments/bills_dues_screen.dart';
@@ -19,7 +18,9 @@ import 'quick_actions_screen.dart';
 /// Greeting header, flat/due card with Pay Now, Quick Overview tiles,
 /// Upcoming, and Recent Activity — all wired to live providers.
 class ResidentHomeScreen extends ConsumerWidget {
-  const ResidentHomeScreen({super.key});
+  /// Opens the shared resident drawer owned by [ResidentShell].
+  final VoidCallback? onMenuTap;
+  const ResidentHomeScreen({super.key, this.onMenuTap});
 
   String _greeting() {
     final h = DateTime.now().hour;
@@ -32,8 +33,8 @@ class ResidentHomeScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final user = ref.watch(authProvider).value;
     final balanceAsync = ref.watch(residentBalanceProvider);
-    final issuesAsync = ref.watch(issuesStreamProvider);
-    final noticesAsync = ref.watch(noticesStreamProvider);
+    final issuesAsync = ref.watch(issuesProvider);
+    final noticesAsync = ref.watch(noticesProvider);
     final passesAsync = ref.watch(activeGuestPassesProvider);
 
     final openComplaints =
@@ -42,12 +43,12 @@ class ResidentHomeScreen extends ConsumerWidget {
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
-      drawer: const ResidentDrawer(),
       body: RefreshIndicator(
         color: kPrimaryGreen,
         onRefresh: () async {
           ref.invalidate(residentBalanceProvider);
-          ref.invalidate(issuesStreamProvider);
+          ref.invalidate(issuesProvider);
+          ref.invalidate(noticesProvider);
         },
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
@@ -93,11 +94,9 @@ class ResidentHomeScreen extends ConsumerWidget {
       padding: EdgeInsets.fromLTRB(20, MediaQuery.of(context).padding.top + 14, 20, 44),
       child: Row(
         children: [
-          Builder(
-            builder: (ctx) => GestureDetector(
-              onTap: () => Scaffold.of(ctx).openDrawer(),
-              child: const Icon(Icons.menu_rounded, color: Colors.white),
-            ),
+          GestureDetector(
+            onTap: onMenuTap ?? () => Scaffold.maybeOf(context)?.openDrawer(),
+            child: const Icon(Icons.menu_rounded, color: Colors.white),
           ),
           const SizedBox(width: 14),
           Expanded(

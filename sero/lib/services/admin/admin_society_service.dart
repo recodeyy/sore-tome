@@ -101,4 +101,38 @@ class AdminSocietyService {
     final res = await ApiService.delete('/society/logo');
     return res.statusCode >= 200 && res.statusCode < 300;
   }
+
+  /// GET /members-v2/committee — committee directory (designation + member info).
+  static Future<List<dynamic>> getCommittee() async {
+    final res = await ApiService.get('/members-v2/committee');
+    final data = ApiService.unwrap(res);
+    if (data is List) return data;
+    if (data is Map && data['committee'] is List) return data['committee'] as List;
+    return const [];
+  }
+
+  /// GET /members-v2 — member directory (used to pick who to add to the committee).
+  static Future<List<dynamic>> getMembers({String? status}) async {
+    final path = (status != null && status.isNotEmpty) ? '/members-v2?status=$status' : '/members-v2';
+    final res = await ApiService.get(path);
+    final data = ApiService.unwrap(res);
+    if (data is List) return data;
+    if (data is Map && data['members'] is List) return data['members'] as List;
+    return const [];
+  }
+
+  /// POST /members-v2/:id/committee — assign a committee designation to a member.
+  static Future<bool> addCommitteeRole(
+    String memberId,
+    String designation, {
+    String? termStart,
+    String? termEnd,
+  }) async {
+    final res = await ApiService.post('/members-v2/$memberId/committee', {
+      'designation': designation,
+      if (termStart != null && termStart.isNotEmpty) 'termStart': termStart,
+      if (termEnd != null && termEnd.isNotEmpty) 'termEnd': termEnd,
+    });
+    return res.statusCode >= 200 && res.statusCode < 300;
+  }
 }

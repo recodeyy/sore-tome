@@ -6,7 +6,7 @@ import 'package:sero/widgets/common/mini_chart.dart';
 import 'package:sero/widgets/common/async_state_views.dart';
 import 'package:sero/providers/shared/notification_provider.dart';
 import 'package:sero/providers/admin/dashboard_provider.dart';
-import 'package:sero/widgets/admin/admin_actions.dart';
+import 'package:sero/services/admin/admin_dashboard_service.dart';
 
 /// Dashboard Insights — Screen 3 of 4
 /// Shows circular progress indicators for KPIs, complaint summary donut,
@@ -422,13 +422,203 @@ class DashboardInsightsScreen extends ConsumerWidget {
         },
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () => AdminActions.comingSoon(context, 'Creating events'),
+        onPressed: () => _showCreateEventSheet(context, ref),
         backgroundColor: kPrimaryGreen,
         child: const Icon(Icons.add, color: Colors.white),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
     );
   }
+}
+
+/// Bottom-sheet form to create a society event, POSTed to /events-v2.
+Future<void> _showCreateEventSheet(BuildContext context, WidgetRef ref) async {
+  final titleCtrl = TextEditingController();
+  final descCtrl = TextEditingController();
+  final locationCtrl = TextEditingController();
+  DateTime? date;
+  TimeOfDay? time;
+  bool submitting = false;
+
+  await showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.white,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    ),
+    builder: (sheetContext) {
+      return StatefulBuilder(
+        builder: (sheetContext, setSheetState) {
+          InputDecoration dec(String label) => InputDecoration(
+                labelText: label,
+                labelStyle: GoogleFonts.outfit(fontSize: 13, color: const Color(0xFF64748B)),
+                filled: true,
+                fillColor: const Color(0xFFF8FAFC),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: Color(0xFFF1F5F9)),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: Color(0xFFF1F5F9)),
+                ),
+              );
+
+          final dateLabel = date == null
+              ? 'Pick date'
+              : '${date!.day}/${date!.month}/${date!.year}';
+          final timeLabel = time == null ? 'Pick time' : time!.format(sheetContext);
+
+          Widget pickerTile(IconData icon, String label, VoidCallback onTap) => InkWell(
+                onTap: submitting ? null : onTap,
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFF1F5F9)),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(icon, size: 18, color: const Color(0xFF64748B)),
+                      const SizedBox(width: 10),
+                      Text(label, style: GoogleFonts.outfit(fontSize: 14, color: const Color(0xFF1E293B))),
+                    ],
+                  ),
+                ),
+              );
+
+          return Padding(
+            padding: EdgeInsets.only(
+              left: 20, right: 20, top: 20,
+              bottom: MediaQuery.of(sheetContext).viewInsets.bottom + 24,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40, height: 4,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE2E8F0),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text('Create Event',
+                    style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.w700, color: const Color(0xFF1E293B))),
+                const SizedBox(height: 16),
+                TextField(controller: titleCtrl, enabled: !submitting, decoration: dec('Title')),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: descCtrl,
+                  enabled: !submitting,
+                  maxLines: 3,
+                  decoration: dec('Description (optional)'),
+                ),
+                const SizedBox(height: 12),
+                TextField(controller: locationCtrl, enabled: !submitting, decoration: dec('Location (optional)')),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: pickerTile(Icons.calendar_today_outlined, dateLabel, () async {
+                        final now = DateTime.now();
+                        final picked = await showDatePicker(
+                          context: sheetContext,
+                          initialDate: date ?? now,
+                          firstDate: now,
+                          lastDate: DateTime(now.year + 3),
+                        );
+                        if (picked != null) setSheetState(() => date = picked);
+                      }),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: pickerTile(Icons.access_time, timeLabel, () async {
+                        final picked = await showTimePicker(
+                          context: sheetContext,
+                          initialTime: time ?? TimeOfDay.now(),
+                        );
+                        if (picked != null) setSheetState(() => time = picked);
+                      }),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: submitting
+                        ? null
+                        : () async {
+                            final title = titleCtrl.text.trim();
+                            if (title.isEmpty) {
+                              ScaffoldMessenger.of(sheetContext)
+                                ..hideCurrentSnackBar()
+                                ..showSnackBar(const SnackBar(content: Text('Please enter a title')));
+                              return;
+                            }
+                            if (date == null || time == null) {
+                              ScaffoldMessenger.of(sheetContext)
+                                ..hideCurrentSnackBar()
+                                ..showSnackBar(const SnackBar(content: Text('Please pick a date and time')));
+                              return;
+                            }
+                            setSheetState(() => submitting = true);
+                            try {
+                              final starts = DateTime(
+                                date!.year, date!.month, date!.day, time!.hour, time!.minute,
+                              );
+                              await AdminDashboardService.createEvent(
+                                title: title,
+                                description: descCtrl.text.trim(),
+                                location: locationCtrl.text.trim(),
+                                startsAt: starts.toUtc().toIso8601String(),
+                              );
+                              if (!sheetContext.mounted) return;
+                              Navigator.pop(sheetContext);
+                              ref.invalidate(dashboardProvider);
+                              ScaffoldMessenger.of(context)
+                                ..hideCurrentSnackBar()
+                                ..showSnackBar(SnackBar(
+                                  backgroundColor: kPrimaryGreen,
+                                  behavior: SnackBarBehavior.floating,
+                                  content: Text('Event "$title" created',
+                                      style: GoogleFonts.outfit(fontWeight: FontWeight.w600, color: Colors.white)),
+                                ));
+                            } catch (e) {
+                              setSheetState(() => submitting = false);
+                              ScaffoldMessenger.of(sheetContext)
+                                ..hideCurrentSnackBar()
+                                ..showSnackBar(SnackBar(content: Text('Could not create event: $e')));
+                            }
+                          },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: kPrimaryGreen,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: submitting
+                        ? const SizedBox(
+                            width: 20, height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        : Text('Create Event',
+                            style: GoogleFonts.outfit(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.white)),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      );
+    },
+  );
 }
 
 class _ComplaintLegendRow extends StatelessWidget {

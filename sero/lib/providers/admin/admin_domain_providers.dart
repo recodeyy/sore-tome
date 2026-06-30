@@ -83,6 +83,24 @@ final staffListProvider =
   return AdminStaffService.getAllStaff();
 });
 
+/// Leave-approval queue. Defaults to pending requests (the admin's action list).
+final leaveRequestsProvider =
+    FutureProvider.autoDispose<List<dynamic>>((ref) async {
+  return AdminStaffService.getLeaveRequests(status: 'pending');
+});
+
+/// Duty roster (today onward).
+final dutyRosterProvider =
+    FutureProvider.autoDispose<List<dynamic>>((ref) async {
+  return AdminStaffService.getRoster();
+});
+
+/// Payroll runs (newest period first).
+final payrollRunsProvider =
+    FutureProvider.autoDispose<List<dynamic>>((ref) async {
+  return AdminStaffService.getPayrollRuns();
+});
+
 // ── Amenities ────────────────────────────────────────────────────────────────
 final amenitiesDashboardProvider =
     FutureProvider.autoDispose<Map<String, dynamic>>((ref) async {
@@ -137,4 +155,11 @@ final reportsDashboardProvider =
   final jobs = await AdminReportsService.getJobs();
   final templates = await AdminReportsService.getTemplates();
   return {'jobs': jobs, 'templates': templates};
+});
+
+// ── Committee ────────────────────────────────────────────────────────────────
+/// Committee directory (designation + joined member info) for the society.
+final committeeProvider =
+    FutureProvider.autoDispose<List<dynamic>>((ref) async {
+  return AdminSocietyService.getCommittee();
 });

@@ -130,6 +130,20 @@ export const BookingService = {
     });
   },
 
+  /** The caller's own bookings across all amenities (tenant-scoped, newest first). */
+  async listMine(societyId: string, userId: string) {
+    const { rows } = await db.query(
+      `SELECT b.id, b.amenity_id, a.name AS amenity_name,
+              b.start_at, b.end_at, b.status, b.created_at
+         FROM amenity_bookings b
+         JOIN amenities a ON a.id = b.amenity_id AND a.society_id = b.society_id
+        WHERE b.society_id = $1 AND b.member_id = $2
+        ORDER BY b.start_at DESC`,
+      [societyId, userId]
+    );
+    return rows;
+  },
+
   async list(societyId: string, amenityId: string) {
     const { rows } = await db.query(
       `SELECT * FROM amenity_bookings

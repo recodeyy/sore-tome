@@ -220,6 +220,7 @@ final channelsListProvider = StreamProvider.autoDispose<List<Channel>>((ref) {
       .collection('channels')
       .where('society_id', isEqualTo: societyId)
       .snapshots()
+      .handleError((_) {}) // never surface Firestore permission/network errors to the UI
       .map((snap) => snap.docs.map((doc) => Channel.fromMap(doc.data(), doc.id)).toList());
 });
 
@@ -234,6 +235,7 @@ final channelMessagesProvider = StreamProvider.family<List<ChatMessage>, String>
       .orderBy('createdAt', descending: true)
       .limit(50) // Default initial load
       .snapshots()
+      .handleError((_) {}) // never surface Firestore permission/network errors to the UI
       .map((snap) => snap.docs.map((doc) => ChatMessage.fromMap(doc.data(), doc.id)).toList());
 });
 
@@ -258,6 +260,7 @@ final paginatedMessagesProvider = StreamProvider.family<List<ChatMessage>, Strin
       .orderBy('createdAt', descending: true)
       .limit(limit)
       .snapshots()
+      .handleError((_) {}) // never surface Firestore permission/network errors to the UI
       .map((snap) => snap.docs.map((doc) => ChatMessage.fromMap(doc.data(), doc.id)).toList());
 });
 

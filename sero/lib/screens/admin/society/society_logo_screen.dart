@@ -5,7 +5,6 @@ import 'package:sero/app/theme.dart';
 import 'package:sero/providers/admin/admin_domain_providers.dart';
 import 'package:sero/services/admin/admin_society_service.dart';
 import 'package:sero/widgets/common/async_state_views.dart';
-import 'package:sero/widgets/admin/admin_actions.dart';
 
 /// Society Logo Upload — Screen 4 of 6
 /// Shows upload placeholder, current logo, and upload button.
@@ -79,6 +78,52 @@ class SocietyLogoScreen extends ConsumerWidget {
     }
   }
 
+  /// Bottom-sheet menu of logo actions: set/replace URL or remove.
+  void _showLogoOptions(BuildContext context, WidgetRef ref) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 12),
+            Container(
+              width: 40, height: 4,
+              decoration: BoxDecoration(
+                color: const Color(0xFFE2E8F0),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 8),
+            ListTile(
+              leading: const Icon(Icons.upload_outlined, color: Color(0xFF064E3B)),
+              title: Text('Set / Replace Logo',
+                  style: GoogleFonts.outfit(fontSize: 15, fontWeight: FontWeight.w600, color: const Color(0xFF1E293B))),
+              onTap: () {
+                Navigator.pop(ctx);
+                _uploadLogo(context, ref);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline, color: Color(0xFFDC2626)),
+              title: Text('Remove Logo',
+                  style: GoogleFonts.outfit(fontSize: 15, fontWeight: FontWeight.w600, color: const Color(0xFFDC2626))),
+              onTap: () {
+                Navigator.pop(ctx);
+                _deleteLogo(context, ref);
+              },
+            ),
+            const SizedBox(height: 12),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final profileAsync = ref.watch(societyProfileProvider);
@@ -104,7 +149,7 @@ class SocietyLogoScreen extends ConsumerWidget {
                 ),
                 IconButton(
                   icon: const Icon(Icons.more_horiz, color: Color(0xFF1E293B)),
-                  onPressed: () => AdminActions.comingSoon(context, 'Logo options'),
+                  onPressed: () => _showLogoOptions(context, ref),
                 ),
               ],
             ),

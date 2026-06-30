@@ -1,17 +1,16 @@
 const express = require("express");
 const router = express.Router();
 const { getDb, getAdmin } = require("../config/firebase");
-const { authMiddleware } = require("../middleware/auth");
+const { authMiddleware, canManageSecurity } = require("../middleware/auth");
 const { tenantMiddleware } = require("../middleware/tenantMiddleware");
 const { logger } = require("../src/shared/Logger");
 
-// Middleware to restrict access to guards
-function guardOnly(req, res, next) {
-  if (req.user.role !== "guard" && req.user.role !== "main_admin") {
-    return res.status(403).json({ error: "Access denied. Guard or Admin role required." });
-  }
-  next();
-}
+// Gate operations (check-in/checkout) are performable by on-duty security
+// staff (guards, security managers, supervisors, reception) AND society admins
+// (super_admin, main_admin, admin, secretary). Using the shared canManageSecurity
+// guard keeps this consistent with the rest of the app — the old local guardOnly
+// only allowed `guard`/`main_admin`, which silently locked security managers and
+// superadmins out of the core cross-role gate workflow.
 
 // GET /visitors -> Get visitors for the society
 // Guards/Admins see all for today. Residents see only their own.
@@ -49,7 +48,7 @@ router.get("/", authMiddleware, tenantMiddleware, async (req, res) => {
 });
 
 // POST /visitors/checkin -> Guard logs a new visitor
-router.post("/checkin", authMiddleware, tenantMiddleware, guardOnly, async (req, res) => {
+router.post("/checkin", authMiddleware, tenantMiddleware, canManageSecurity, async (req, res) => {
   try {
     const { name, type, targetFlat, vehicleNumber, phone } = req.body;
     if (!name || !type || !targetFlat) {
@@ -132,7 +131,7 @@ router.patch("/:id/action", authMiddleware, tenantMiddleware, async (req, res) =
 });
 
 // PATCH /visitors/:id/checkout -> Guard marks visitor as left
-router.patch("/:id/checkout", authMiddleware, tenantMiddleware, guardOnly, async (req, res) => {
+router.patch("/:id/checkout", authMiddleware, tenantMiddleware, canManageSecurity, async (req, res) => {
   try {
     const db = getDb();
     const docRef = db.collection("visitors").doc(req.params.id);

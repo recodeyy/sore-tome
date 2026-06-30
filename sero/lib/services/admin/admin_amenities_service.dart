@@ -12,4 +12,19 @@ class AdminAmenitiesService {
     if (data is List) return {'amenities': data};
     return <String, dynamic>{};
   }
+
+  /// POST /amenities — create a bookable amenity (admin only). [capacity]
+  /// defaults to 1 on the backend. Throws on non-2xx so the caller can surface
+  /// the error to the user.
+  static Future<Map<String, dynamic>> createAmenity(
+    String name, {
+    int? capacity,
+  }) async {
+    final res = await ApiService.post('/amenities', {
+      'name': name,
+      if (capacity != null) 'capacity': capacity,
+    });
+    final data = ApiService.unwrap(res);
+    return (data as Map?)?.cast<String, dynamic>() ?? <String, dynamic>{};
+  }
 }

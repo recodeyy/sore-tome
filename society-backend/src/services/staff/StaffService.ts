@@ -18,6 +18,18 @@ function err(message: string, code: string) {
   return Object.assign(new Error(message), { code });
 }
 
+/**
+ * Idempotent runtime schema patch. There is no migration-on-deploy for this
+ * column, so we add it the first time create/list runs. The once-guard keeps it
+ * to a single ALTER per process; `IF NOT EXISTS` makes repeat runs safe.
+ */
+let ensured = false;
+async function ensureSchema() {
+  if (ensured) return;
+  await db.query(`ALTER TABLE staff ADD COLUMN IF NOT EXISTS image_url text`);
+  ensured = true;
+}
+
 export const StaffService = {
   // ---- Staff profiles ---------------------------------------------------
   async createStaff(
@@ -25,26 +37,30 @@ export const StaffService = {
     input: {
       name: string; role?: string; department?: string; isContractor?: boolean;
       phone?: string; userId?: string; joiningDate?: string; assignedAreas?: string[];
-      monthlyWageMinor?: number; kycExpiresAt?: string;
+      monthlyWageMinor?: number; kycExpiresAt?: string; imageUrl?: string;
       permissions?: string[]; overtimeRateMinor?: number; standardShiftMinutes?: number; lateGraceMinutes?: number;
     }
   ) {
+    await ensureSchema();
     const { rows } = await db.query(
       `INSERT INTO staff (society_id, name, role, department, is_contractor, phone, user_id,
                           joining_date, assigned_areas, monthly_wage_minor, kyc_expires_at,
-                          permissions, overtime_rate_minor, standard_shift_minutes, late_grace_minutes)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,
+                          permissions, overtime_rate_minor, standard_shift_minutes, late_grace_minutes,
+                          image_url)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *`,
       [societyId, input.name, input.role || null, input.department || null, input.isContractor || false,
        input.phone || null, input.userId || null, input.joiningDate || null,
        input.assignedAreas || [], input.monthlyWageMinor || 0, input.kycExpiresAt || null,
        input.permissions || [], input.overtimeRateMinor || 0,
-       input.standardShiftMinutes ?? 480, input.lateGraceMinutes ?? 0]
+       input.standardShiftMinutes ?? 480, input.lateGraceMinutes ?? 0,
+       input.imageUrl || null]
     );
     logger.info({ societyId, staffId: rows[0].id }, "Staff created");
     return rows[0];
   },
 
   async listStaff(societyId: string, opts: { status?: string; limit?: number } = {}) {
+    await ensureSchema();
     const params: any[] = [societyId];
     let where = `society_id = $1`;
     if (opts.status) { params.push(opts.status); where += ` AND status = $${params.length}`; }
@@ -313,6 +329,70 @@ export const StaffService = {
     if (!rows[0]) return null;
     const items = await db.query(`SELECT * FROM payroll_items WHERE payroll_run_id = $1 ORDER BY created_at ASC`, [runId]);
     return { run: rows[0], items: items.rows };
+  },
+
+  // ---- List/read helpers (admin governance screens) --------------------
+  /** Leave requests for the society, newest first. Optional [status] filter
+   *  ("pending" | "approved" | "rejected"). Joins staff + leave_type names so
+   *  the admin list is human-readable without N+1 lookups. */
+  async listLeaveRequests(societyId: string, status?: string) {
+    const params: any[] = [societyId];
+    let where = `lr.society_id = $1`;
+    if (status) { params.push(status); where += ` AND lr.status = $${params.length}`; }
+    const { rows } = await db.query(
+      `SELECT lr.*, s.name AS staff_name, s.role AS staff_role, lt.name AS leave_type_name
+         FROM leave_requests lr
+         JOIN staff s ON s.id = lr.staff_id
+         LEFT JOIN leave_types lt ON lt.id = lr.leave_type_id
+        WHERE ${where}
+        ORDER BY lr.created_at DESC
+        LIMIT 200`,
+      params
+    );
+    return rows;
+  },
+
+  /** Duty roster entries, optionally for a single [dutyDate] (YYYY-MM-DD).
+   *  Defaults to today onward so the admin sees upcoming duties. */
+  async listRoster(societyId: string, dutyDate?: string) {
+    const params: any[] = [societyId];
+    let where = `dr.society_id = $1`;
+    if (dutyDate) {
+      params.push(dutyDate);
+      where += ` AND dr.duty_date = $${params.length}`;
+    } else {
+      where += ` AND dr.duty_date >= CURRENT_DATE`;
+    }
+    const { rows } = await db.query(
+      `SELECT dr.*, s.name AS staff_name, s.role AS staff_role,
+              st.name AS shift_name, st.start_minutes, st.end_minutes
+         FROM duty_rosters dr
+         JOIN staff s ON s.id = dr.staff_id
+         LEFT JOIN shift_templates st ON st.id = dr.shift_template_id
+        WHERE ${where}
+        ORDER BY dr.duty_date ASC, s.name ASC
+        LIMIT 300`,
+      params
+    );
+    return rows;
+  },
+
+  /** Payroll runs for the society, newest period first. */
+  async listPayrollRuns(societyId: string) {
+    const { rows } = await db.query(
+      `SELECT * FROM payroll_runs WHERE society_id = $1 ORDER BY period DESC LIMIT 60`,
+      [societyId]
+    );
+    return rows;
+  },
+
+  /** Active leave types (for the leave-request form dropdown). */
+  async listLeaveTypes(societyId: string) {
+    const { rows } = await db.query(
+      `SELECT * FROM leave_types WHERE society_id = $1 ORDER BY name ASC`,
+      [societyId]
+    );
+    return rows;
   },
 
   // ---- Incidents / leave types -----------------------------------------

@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:intl/intl.dart' hide TextDirection;
+import 'package:sero/app/theme.dart';
 import 'package:sero/providers/admin/admin_domain_providers.dart';
 import 'package:sero/widgets/common/async_state_views.dart';
-import 'package:sero/widgets/admin/admin_actions.dart';
 
 /// Financial Ledger — Screen 5 of 6
 /// Date-filtered ledger view with summary tabs and income vs expense bar charts.
@@ -16,11 +17,123 @@ class FinancialLedgerScreen extends ConsumerStatefulWidget {
 
 class _FinancialLedgerScreenState extends ConsumerState<FinancialLedgerScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  DateTimeRange _range = DateTimeRange(
+    start: DateTime(DateTime.now().year, DateTime.now().month, 1),
+    end: DateTime.now(),
+  );
+  String? _accountFilter; // null = all accounts
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+  }
+
+  Future<void> _pickRange() async {
+    final picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+      initialDateRange: _range,
+    );
+    if (picked != null) {
+      setState(() => _range = picked);
+      ref.invalidate(financeLedgerProvider);
+    }
+  }
+
+  void _openLedgerFilters(List<String> accounts) {
+    String? tmpAccount = _accountFilter;
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (sheetCtx) => StatefulBuilder(
+        builder: (sheetCtx, setSheet) => Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: const Color(0xFFE2E8F0), borderRadius: BorderRadius.circular(2)))),
+              const SizedBox(height: 16),
+              Text('Ledger Filters', style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.w700, color: const Color(0xFF1E293B))),
+              const SizedBox(height: 16),
+              Text('Date Range', style: GoogleFonts.outfit(fontSize: 13, fontWeight: FontWeight.w600, color: const Color(0xFF64748B))),
+              const SizedBox(height: 10),
+              InkWell(
+                onTap: () { Navigator.pop(sheetCtx); _pickRange(); },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0xFFE2E8F0))),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.calendar_today_outlined, size: 18, color: Color(0xFF64748B)),
+                      const SizedBox(width: 12),
+                      Text('${DateFormat('dd MMM yyyy').format(_range.start)} - ${DateFormat('dd MMM yyyy').format(_range.end)}',
+                          style: GoogleFonts.outfit(fontSize: 13, fontWeight: FontWeight.w600, color: const Color(0xFF1E293B))),
+                    ],
+                  ),
+                ),
+              ),
+              if (accounts.isNotEmpty) ...[
+                const SizedBox(height: 20),
+                Text('Account', style: GoogleFonts.outfit(fontSize: 13, fontWeight: FontWeight.w600, color: const Color(0xFF64748B))),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _accountChip('All', tmpAccount == null, () => setSheet(() => tmpAccount = null)),
+                    ...accounts.map((a) => _accountChip(a, tmpAccount == a, () => setSheet(() => tmpAccount = a))),
+                  ],
+                ),
+              ],
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () {
+                    setState(() => _accountFilter = tmpAccount);
+                    ref.invalidate(financeLedgerProvider);
+                    Navigator.pop(sheetCtx);
+                  },
+                  style: ElevatedButton.styleFrom(backgroundColor: kPrimaryGreen, foregroundColor: Colors.white, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), padding: const EdgeInsets.symmetric(vertical: 14)),
+                  child: Text('Apply Filters', style: GoogleFonts.outfit(fontSize: 14, fontWeight: FontWeight.w700)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _accountChip(String label, bool active, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: active ? kPrimaryGreen : Colors.white,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: active ? kPrimaryGreen : const Color(0xFFE2E8F0)),
+        ),
+        child: Text(label, style: GoogleFonts.outfit(fontSize: 12, fontWeight: FontWeight.w600, color: active ? Colors.white : const Color(0xFF64748B))),
+      ),
+    );
+  }
+
+  List<String> _accountsFromLedger() {
+    final ledger = ref.read(financeLedgerProvider).valueOrNull;
+    final rows = (ledger?['accounts'] ?? ledger?['rows'] ?? ledger?['trial_balance']) as List?;
+    if (rows == null) return const [];
+    return rows
+        .map((e) => (e is Map ? (e['account'] ?? e['name'] ?? e['account_name'] ?? '') : '').toString())
+        .where((s) => s.isNotEmpty)
+        .toSet()
+        .toList();
   }
 
   @override
@@ -40,7 +153,7 @@ class _FinancialLedgerScreenState extends ConsumerState<FinancialLedgerScreen> w
         leading: IconButton(icon: const Icon(Icons.arrow_back, color: Color(0xFF1E293B)), onPressed: () => Navigator.pop(context)),
         title: Text('Financial Ledger', style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.w700, color: const Color(0xFF1E293B))),
         actions: [
-          IconButton(icon: const Icon(Icons.tune, color: Color(0xFF1E293B)), onPressed: () => AdminActions.comingSoon(context, 'Ledger filters')),
+          IconButton(icon: const Icon(Icons.tune, color: Color(0xFF1E293B)), onPressed: () => _openLedgerFilters(_accountsFromLedger())),
         ],
       ),
       body: Column(
@@ -48,17 +161,21 @@ class _FinancialLedgerScreenState extends ConsumerState<FinancialLedgerScreen> w
           // ── Date Range ──
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0xFFF1F5F9))),
-              child: Row(
-                children: [
-                   const Icon(Icons.calendar_today_outlined, size: 18, color: Color(0xFF64748B)),
-                   const SizedBox(width: 12),
-                   Text('01 May 2024 - 31 May 2024', style: GoogleFonts.outfit(fontSize: 13, fontWeight: FontWeight.w600, color: const Color(0xFF1E293B))),
-                   const Spacer(),
-                   const Icon(Icons.keyboard_arrow_down, size: 20, color: Color(0xFF64748B)),
-                ],
+            child: InkWell(
+              onTap: _pickRange,
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0xFFF1F5F9))),
+                child: Row(
+                  children: [
+                     const Icon(Icons.calendar_today_outlined, size: 18, color: Color(0xFF64748B)),
+                     const SizedBox(width: 12),
+                     Text('${DateFormat('dd MMM yyyy').format(_range.start)} - ${DateFormat('dd MMM yyyy').format(_range.end)}', style: GoogleFonts.outfit(fontSize: 13, fontWeight: FontWeight.w600, color: const Color(0xFF1E293B))),
+                     const Spacer(),
+                     const Icon(Icons.keyboard_arrow_down, size: 20, color: Color(0xFF64748B)),
+                  ],
+                ),
               ),
             ),
           ),

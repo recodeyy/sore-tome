@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:intl/intl.dart';
+import 'package:sero/app/theme.dart';
 import 'package:sero/providers/admin/admin_domain_providers.dart';
+import 'package:sero/services/admin/admin_finance_service.dart';
 import 'package:sero/widgets/common/async_state_views.dart';
-import 'package:sero/widgets/admin/admin_actions.dart';
 
 /// Generate Bills — Screen 2 of 6
 /// Multi-step form for creating new maintenance or utility bills.
@@ -21,6 +24,16 @@ class _GenerateBillsScreenState extends ConsumerState<GenerateBillsScreen> {
   String? _selectedWing;
   String? _selectedBlock;
   String _selectedBillType = _billTypes[0];
+  DateTime _billMonth = DateTime(DateTime.now().year, DateTime.now().month, 1);
+  DateTime _dueDate = DateTime.now().add(const Duration(days: 10));
+  final TextEditingController _amountController = TextEditingController();
+  bool _submitting = false;
+
+  @override
+  void dispose() {
+    _amountController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -86,12 +99,20 @@ class _GenerateBillsScreenState extends ConsumerState<GenerateBillsScreen> {
 
             // ── Bill Month ──
             _buildLabel('Bill Month'),
-            _buildPickerField(icon: Icons.calendar_today_outlined, value: 'May 2024'),
+            _buildPickerField(
+              icon: Icons.calendar_today_outlined,
+              value: DateFormat('MMMM yyyy').format(_billMonth),
+              onTap: _pickBillMonth,
+            ),
             const SizedBox(height: 16),
 
             // ── Due Date ──
             _buildLabel('Due Date'),
-            _buildPickerField(icon: Icons.calendar_today_outlined, value: '31 May 2024'),
+            _buildPickerField(
+              icon: Icons.calendar_today_outlined,
+              value: DateFormat('dd MMM yyyy').format(_dueDate),
+              onTap: _pickDueDate,
+            ),
             const SizedBox(height: 16),
 
             // ── Bill Type ──
@@ -104,10 +125,10 @@ class _GenerateBillsScreenState extends ConsumerState<GenerateBillsScreen> {
             ),
             const SizedBox(height: 16),
 
-            // ── Add Other Charges ──
-            _buildLabel('Add Other Charges'),
+            // ── Bill Amount ──
+            _buildLabel('Bill Amount (per unit)'),
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              padding: const EdgeInsets.symmetric(horizontal: 16),
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(12),
@@ -115,9 +136,21 @@ class _GenerateBillsScreenState extends ConsumerState<GenerateBillsScreen> {
               ),
               child: Row(
                 children: [
-                   Text('₹ 0', style: GoogleFonts.outfit(fontSize: 14, fontWeight: FontWeight.w600, color: const Color(0xFF1E293B))),
-                   const Spacer(),
-                   const Icon(Icons.chevron_right, size: 18, color: Color(0xFF94A3B8)),
+                   Text('₹', style: GoogleFonts.outfit(fontSize: 14, fontWeight: FontWeight.w700, color: const Color(0xFF1E293B))),
+                   const SizedBox(width: 8),
+                   Expanded(
+                     child: TextField(
+                       controller: _amountController,
+                       keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                       inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}'))],
+                       style: GoogleFonts.outfit(fontSize: 14, fontWeight: FontWeight.w600, color: const Color(0xFF1E293B)),
+                       decoration: InputDecoration(
+                         border: InputBorder.none,
+                         hintText: '0.00',
+                         hintStyle: GoogleFonts.outfit(fontSize: 14, color: const Color(0xFF94A3B8)),
+                       ),
+                     ),
+                   ),
                 ],
               ),
             ),
@@ -129,14 +162,16 @@ class _GenerateBillsScreenState extends ConsumerState<GenerateBillsScreen> {
               width: double.infinity,
               height: 52,
               child: ElevatedButton(
-                onPressed: () => AdminActions.comingSoon(context, 'Bill generation'),
+                onPressed: _submitting ? null : () => _submit(publish: true),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF064E3B),
                   foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                   elevation: 0,
                 ),
-                child: Text('Continue', style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.w700)),
+                child: _submitting
+                    ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.4, color: Colors.white))
+                    : Text('Generate Bill', style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.w700)),
               ),
             ),
             const SizedBox(height: 12),
@@ -144,7 +179,7 @@ class _GenerateBillsScreenState extends ConsumerState<GenerateBillsScreen> {
               width: double.infinity,
               height: 52,
               child: OutlinedButton(
-                onPressed: () => AdminActions.comingSoon(context, 'Saving drafts'),
+                onPressed: _submitting ? null : () => _submit(publish: false),
                 style: OutlinedButton.styleFrom(
                   side: const BorderSide(color: Color(0xFF064E3B)),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
@@ -189,22 +224,109 @@ class _GenerateBillsScreenState extends ConsumerState<GenerateBillsScreen> {
     );
   }
 
-  Widget _buildPickerField({required IconData icon, required String value}) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, size: 18, color: const Color(0xFF1E293B)),
-          const SizedBox(width: 12),
-          Text(value, style: GoogleFonts.outfit(fontSize: 14, fontWeight: FontWeight.w600, color: const Color(0xFF1E293B))),
-        ],
+  Widget _buildPickerField({required IconData icon, required String value, VoidCallback? onTap}) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 18, color: const Color(0xFF1E293B)),
+            const SizedBox(width: 12),
+            Text(value, style: GoogleFonts.outfit(fontSize: 14, fontWeight: FontWeight.w600, color: const Color(0xFF1E293B))),
+            const Spacer(),
+            const Icon(Icons.keyboard_arrow_down, size: 18, color: Color(0xFF94A3B8)),
+          ],
+        ),
       ),
     );
+  }
+
+  Future<void> _pickBillMonth() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _billMonth,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+      helpText: 'Select bill month',
+    );
+    if (picked != null) {
+      setState(() => _billMonth = DateTime(picked.year, picked.month, 1));
+    }
+  }
+
+  Future<void> _pickDueDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _dueDate,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now().add(const Duration(days: 730)),
+      helpText: 'Select due date',
+    );
+    if (picked != null) setState(() => _dueDate = picked);
+  }
+
+  void _toast(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: kPrimaryGreen,
+        content: Text(message, style: GoogleFonts.outfit(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white)),
+      ));
+  }
+
+  Future<void> _submit({required bool publish}) async {
+    final amount = double.tryParse(_amountController.text.trim()) ?? 0;
+    if (amount <= 0) {
+      _toast('Enter a bill amount greater than zero.');
+      return;
+    }
+    final scope = [
+      if (_selectedWing != null) _selectedWing,
+      if (_selectedBlock != null) _selectedBlock,
+    ].join(' / ');
+    final description = scope.isEmpty ? _selectedBillType : '$_selectedBillType - $scope';
+
+    final body = <String, dynamic>{
+      'number': 'INV-${DateFormat('yyyyMMddHHmmss').format(DateTime.now())}',
+      'period': DateFormat('MMM yyyy').format(_billMonth),
+      'dueDate': DateFormat('yyyy-MM-dd').format(_dueDate),
+      'lines': [
+        {
+          'description': description,
+          'component': _selectedBillType.toLowerCase(),
+          'unitPriceMinor': (amount * 100).round(),
+        },
+      ],
+    };
+
+    setState(() => _submitting = true);
+    try {
+      final invoice = await AdminFinanceService.createInvoice(body);
+      final id = (invoice['id'] ?? '').toString();
+      if (publish && id.isNotEmpty) {
+        await AdminFinanceService.publishInvoice(id);
+        _toast('Bill generated and published.');
+      } else {
+        _toast(publish ? 'Bill created.' : 'Draft saved.');
+      }
+      // Refresh downstream finance lists.
+      ref.invalidate(paymentHistoryProvider);
+      ref.invalidate(financeDashboardProvider);
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      _toast('Failed: $e');
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
   }
 }
 

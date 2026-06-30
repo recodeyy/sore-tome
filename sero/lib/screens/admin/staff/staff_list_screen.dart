@@ -2,9 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:sero/providers/admin/admin_domain_providers.dart';
+import 'package:sero/services/admin/admin_staff_service.dart';
 import 'package:sero/widgets/common/async_state_views.dart';
 import 'package:sero/widgets/common/sero_search_bar.dart';
-import 'package:sero/widgets/admin/admin_actions.dart';
+import 'package:sero/screens/admin/staff/add_staff_screen.dart';
 
 /// Staff List Screen — Staff Module (2/2)
 /// Filterable list of all society staff members with status badges and quick-call actions.
@@ -18,6 +19,16 @@ class StaffListScreen extends ConsumerStatefulWidget {
 class _StaffListScreenState extends ConsumerState<StaffListScreen> {
   String _selectedFilter = 'All Staff';
   String _query = '';
+  String? _roleFilter; // null = any role
+  String? _shiftFilter; // null = any shift
+
+  String _roleOf(dynamic s) =>
+      (s is Map ? (s['role'] ?? s['designation'] ?? '').toString() : '');
+  String _shiftOf(dynamic s) =>
+      (s is Map ? (s['shift'] ?? s['shift_name'] ?? '').toString() : '');
+
+  int get _activeAdvancedFilters =>
+      (_roleFilter != null ? 1 : 0) + (_shiftFilter != null ? 1 : 0);
 
   @override
   Widget build(BuildContext context) {
@@ -50,7 +61,7 @@ class _StaffListScreenState extends ConsumerState<StaffListScreen> {
             child: SeroSearchBar(
               hintText: 'Search staff by name, role...',
               onChanged: (v) => setState(() => _query = v.trim().toLowerCase()),
-              onFilterTap: () => AdminActions.comingSoon(context, 'Advanced filters'),
+              onFilterTap: () => _showAdvancedFilters(allStaff),
             ),
           ),
 
@@ -73,6 +84,35 @@ class _StaffListScreenState extends ConsumerState<StaffListScreen> {
             ),
           ),
 
+          // ── Active advanced filters ──
+          if (_activeAdvancedFilters > 0)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        if (_roleFilter != null)
+                          _ActiveFilterPill(label: 'Role: $_roleFilter', onClear: () => setState(() => _roleFilter = null)),
+                        if (_shiftFilter != null)
+                          _ActiveFilterPill(label: 'Shift: $_shiftFilter', onClear: () => setState(() => _shiftFilter = null)),
+                      ],
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () => setState(() {
+                      _roleFilter = null;
+                      _shiftFilter = null;
+                    }),
+                    child: Text('Clear', style: GoogleFonts.outfit(fontSize: 12, fontWeight: FontWeight.w600, color: const Color(0xFF064E3B))),
+                  ),
+                ],
+              ),
+            ),
+
           // ── Staff List ──
           Expanded(
             child: staffAsync.when(
@@ -89,6 +129,10 @@ class _StaffListScreenState extends ConsumerState<StaffListScreen> {
                     return statusOf(s) == 'on leave' || statusOf(s) == 'leave';
                   }
                   if (_selectedFilter == 'Resigned') return statusOf(s) == 'resigned';
+                  return true;
+                }).where((s) {
+                  if (_roleFilter != null && _roleOf(s) != _roleFilter) return false;
+                  if (_shiftFilter != null && _shiftOf(s) != _shiftFilter) return false;
                   return true;
                 }).where((s) {
                   if (_query.isEmpty) return true;
@@ -117,13 +161,20 @@ class _StaffListScreenState extends ConsumerState<StaffListScreen> {
                             staff['created_at'] ??
                             '')
                         .toString();
+                    final staffId =
+                        (staff['id'] ?? staff['staff_id'] ?? '').toString();
                     return _StaffCard(
                       name: (staff['name'] ?? staff['full_name'] ?? '').toString(),
                       role: (staff['role'] ?? staff['designation'] ?? '').toString(),
-                      id: (staff['id'] ?? staff['staff_id'] ?? '').toString(),
+                      id: staffId,
                       joined: joined,
                       status: (staff['status'] ?? '').toString(),
                       imageUrl: (staff['image'] ?? staff['photo'] ?? '').toString(),
+                      onManage: () => _manageStatus(
+                        staffId,
+                        (staff['name'] ?? staff['full_name'] ?? '').toString(),
+                        (staff['status'] ?? '').toString(),
+                      ),
                     );
                   },
                 );
@@ -133,9 +184,258 @@ class _StaffListScreenState extends ConsumerState<StaffListScreen> {
         ],
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () => AdminActions.comingSoon(context, 'Adding staff'),
+        onPressed: () async {
+          final added = await Navigator.push<bool>(
+            context,
+            MaterialPageRoute(builder: (_) => const AddStaffScreen()),
+          );
+          if (added == true) ref.invalidate(staffListProvider);
+        },
         backgroundColor: const Color(0xFF064E3B),
         child: const Icon(Icons.add, color: Colors.white),
+      ),
+    );
+  }
+
+  /// Staff approval / status management. Lets the admin Activate (approve),
+  /// Suspend (hold), or Terminate (off-board) a staff member via
+  /// PATCH /staff-v2/:id/status. Refreshes the list on success.
+  Future<void> _manageStatus(String staffId, String name, String current) async {
+    if (staffId.isEmpty) return;
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 12),
+            Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                    color: const Color(0xFFE2E8F0),
+                    borderRadius: BorderRadius.circular(2))),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text('Manage $name',
+                    style: GoogleFonts.outfit(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: const Color(0xFF1E293B))),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.check_circle_outline,
+                  color: Color(0xFF059669)),
+              title: Text('Approve / Activate',
+                  style: GoogleFonts.outfit(fontWeight: FontWeight.w600)),
+              enabled: current.toLowerCase() != 'active',
+              onTap: () => Navigator.pop(ctx, 'active'),
+            ),
+            ListTile(
+              leading:
+                  const Icon(Icons.pause_circle_outline, color: Color(0xFFEA580C)),
+              title: Text('Suspend',
+                  style: GoogleFonts.outfit(fontWeight: FontWeight.w600)),
+              enabled: current.toLowerCase() != 'suspended',
+              onTap: () => Navigator.pop(ctx, 'suspended'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.cancel_outlined, color: Color(0xFFDC2626)),
+              title: Text('Terminate',
+                  style: GoogleFonts.outfit(fontWeight: FontWeight.w600)),
+              enabled: current.toLowerCase() != 'terminated',
+              onTap: () => Navigator.pop(ctx, 'terminated'),
+            ),
+            const SizedBox(height: 12),
+          ],
+        ),
+      ),
+    );
+    if (action == null) return;
+    try {
+      await AdminStaffService.setStatus(staffId, action);
+      if (!mounted) return;
+      ref.invalidate(staffListProvider);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$name updated to $action')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not update: ${'$e'.replaceFirst('Exception: ', '')}')),
+      );
+    }
+  }
+
+  /// Advanced-filter bottom-sheet: refine the staff list by role and shift.
+  /// Options are derived from the live staff data so they always match reality.
+  Future<void> _showAdvancedFilters(List<dynamic> allStaff) async {
+    final roles = <String>{
+      for (final s in allStaff)
+        if (_roleOf(s).trim().isNotEmpty) _roleOf(s).trim(),
+    }.toList()
+      ..sort();
+    final shifts = <String>{
+      for (final s in allStaff)
+        if (_shiftOf(s).trim().isNotEmpty) _shiftOf(s).trim(),
+    }.toList()
+      ..sort();
+
+    var role = _roleFilter;
+    var shift = _shiftFilter;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (sheetContext, setSheetState) {
+            Widget chips(String title, List<String> opts, String? selected, ValueChanged<String?> onPick) {
+              if (opts.isEmpty) {
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text('No $title data available',
+                      style: GoogleFonts.outfit(fontSize: 12, color: const Color(0xFF94A3B8))),
+                );
+              }
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: GoogleFonts.outfit(fontSize: 13, fontWeight: FontWeight.w600, color: const Color(0xFF64748B))),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: opts.map((o) {
+                      final isSel = o == selected;
+                      return GestureDetector(
+                        onTap: () => setSheetState(() => onPick(isSel ? null : o)),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: isSel ? const Color(0xFF064E3B) : Colors.white,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: isSel ? Colors.transparent : const Color(0xFFE2E8F0)),
+                          ),
+                          child: Text(o,
+                              style: GoogleFonts.outfit(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: isSel ? Colors.white : const Color(0xFF64748B),
+                              )),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 20),
+                ],
+              );
+            }
+
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40, height: 4,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE2E8F0),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text('Advanced Filters',
+                      style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.w700, color: const Color(0xFF1E293B))),
+                  const SizedBox(height: 16),
+                  chips('Role', roles, role, (v) => role = v),
+                  chips('Shift', shifts, shift, (v) => shift = v),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () => setSheetState(() {
+                            role = null;
+                            shift = null;
+                          }),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            side: const BorderSide(color: Color(0xFFE2E8F0)),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          child: Text('Reset',
+                              style: GoogleFonts.outfit(fontSize: 14, fontWeight: FontWeight.w600, color: const Color(0xFF64748B))),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () {
+                            setState(() {
+                              _roleFilter = role;
+                              _shiftFilter = shift;
+                            });
+                            Navigator.pop(sheetContext);
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF064E3B),
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          child: Text('Apply',
+                              style: GoogleFonts.outfit(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.white)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+class _ActiveFilterPill extends StatelessWidget {
+  final String label;
+  final VoidCallback onClear;
+
+  const _ActiveFilterPill({required this.label, required this.onClear});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.only(left: 12, right: 6, top: 6, bottom: 6),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF0FDF4),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFDCFCE7)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(label, style: GoogleFonts.outfit(fontSize: 12, fontWeight: FontWeight.w600, color: const Color(0xFF059669))),
+          const SizedBox(width: 4),
+          GestureDetector(
+            onTap: onClear,
+            child: const Icon(Icons.close, size: 14, color: Color(0xFF059669)),
+          ),
+        ],
       ),
     );
   }
@@ -178,6 +478,7 @@ class _StaffCard extends StatelessWidget {
   final String joined;
   final String status;
   final String imageUrl;
+  final VoidCallback? onManage;
 
   const _StaffCard({
     required this.name,
@@ -186,13 +487,16 @@ class _StaffCard extends StatelessWidget {
     required this.joined,
     required this.status,
     required this.imageUrl,
+    this.onManage,
   });
 
   @override
   Widget build(BuildContext context) {
     final statusColor = status.toLowerCase() == 'active' ? const Color(0xFF059669) : const Color(0xFFEA580C);
 
-    return Container(
+    return GestureDetector(
+      onTap: onManage,
+      child: Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -251,6 +555,7 @@ class _StaffCard extends StatelessWidget {
             ],
           ),
         ],
+      ),
       ),
     );
   }

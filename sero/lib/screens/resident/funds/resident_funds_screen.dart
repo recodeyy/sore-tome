@@ -3,15 +3,12 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:sero/app/theme.dart';
-import 'package:sero/models/fund.dart';
-import 'package:sero/services/firestore_service.dart';
 import 'package:sero/providers/shared/funds_provider.dart';
 import 'package:sero/widgets/shared/funds/financial_card.dart';
 import 'package:sero/widgets/shared/funds/funds_sections.dart';
 import 'package:sero/widgets/shared/funds/funds_metrics.dart';
 import 'package:sero/widgets/shared/branding_header.dart';
 import 'package:sero/widgets/shared/hero_header.dart';
-import 'package:sero/providers/shared/auth_provider.dart';
 import 'package:sero/widgets/common/async_state_views.dart';
 
 class ResidentFundsScreen extends ConsumerStatefulWidget {
@@ -22,8 +19,6 @@ class ResidentFundsScreen extends ConsumerStatefulWidget {
 }
 
 class _ResidentFundsScreenState extends ConsumerState<ResidentFundsScreen> {
-  final _service = FirestoreService();
-
   @override
   Widget build(BuildContext context) {
     final balanceAsync = ref.watch(residentBalanceProvider);
@@ -144,11 +139,13 @@ class _ResidentFundsScreenState extends ConsumerState<ResidentFundsScreen> {
                         child: _sectionLabel('Transparency Ledger'),
                       ),
                       const SizedBox(height: 8),
-                      StreamBuilder<List<FundTransaction>>(
-                        stream: _service.getTransactionsStream(ref.watch(authProvider).value?.societyId ?? ''),
-                        builder: (context, snapshot) {
+                      Builder(
+                        builder: (context) {
+                          // CUTOVER: Postgres /funds/transactions (was an empty
+                          // Firestore stream).
+                          final txAsync = ref.watch(fundsProvider);
                           return DisbursementsSection(
-                            transactions: snapshot.data ?? [],
+                            transactions: txAsync.value ?? const [],
                             isResidentView: true,
                           );
                         },

@@ -1,10 +1,16 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:intl/intl.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
+import 'package:sero/app/theme.dart';
 import 'package:sero/providers/admin/admin_domain_providers.dart';
 import 'package:sero/widgets/common/async_state_views.dart';
 import 'package:sero/widgets/common/mini_chart.dart';
-import 'package:sero/widgets/admin/admin_actions.dart';
 
 /// Income Reports — Screen 6 of 6
 /// Visual report of collections by category, month, and wing.
@@ -23,7 +29,7 @@ class IncomeReportsScreen extends ConsumerWidget {
         leading: IconButton(icon: const Icon(Icons.arrow_back, color: Color(0xFF1E293B)), onPressed: () => Navigator.pop(context)),
         title: Text('Income Reports', style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.w700, color: const Color(0xFF1E293B))),
         actions: [
-          IconButton(icon: const Icon(Icons.more_horiz, color: Color(0xFF1E293B)), onPressed: () => AdminActions.comingSoon(context, 'Report export')),
+          IconButton(icon: const Icon(Icons.ios_share, color: Color(0xFF1E293B)), onPressed: () => _exportReport(context, ref)),
         ],
       ),
       body: financeAsync.when(
@@ -163,6 +169,104 @@ class IncomeReportsScreen extends ConsumerWidget {
           );
         },
       ),
+    );
+  }
+
+  Future<void> _exportReport(BuildContext context, WidgetRef ref) async {
+    final data = ref.read(financeDashboardProvider).valueOrNull;
+    if (data == null) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: kPrimaryGreen,
+          content: Text('Report is still loading. Try again in a moment.', style: GoogleFonts.outfit(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white)),
+        ));
+      return;
+    }
+    try {
+      final bytes = await _buildReportPdf((data['summary'] as Map?)?.cast<String, dynamic>() ?? const {});
+      await Printing.sharePdf(bytes: bytes, filename: 'income_report_${DateFormat('yyyy-MM-dd').format(DateTime.now())}.pdf');
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Export failed: $e')));
+      }
+    }
+  }
+
+  Future<Uint8List> _buildReportPdf(Map<String, dynamic> summary) async {
+    final totalCollection = (summary['collection'] ?? summary['total_collection'] ?? summary['income'] ?? 0).toString();
+    final categories = (summary['categories'] as List?) ?? const [];
+    final topCollections = (summary['top_collections'] as List?) ?? const [];
+    final now = DateFormat('MMMM dd, yyyy').format(DateTime.now());
+
+    final pdf = pw.Document();
+    pdf.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(40),
+        build: (ctx) => [
+          pw.Text('INCOME REPORT', style: pw.TextStyle(fontSize: 10, letterSpacing: 1.5, color: PdfColors.green800, fontWeight: pw.FontWeight.bold)),
+          pw.SizedBox(height: 6),
+          pw.Text('Collection Summary', style: pw.TextStyle(fontSize: 22, fontWeight: pw.FontWeight.bold, color: PdfColors.green900)),
+          pw.Container(height: 2, width: 60, color: PdfColors.green900),
+          pw.SizedBox(height: 4),
+          pw.Text('Generated: $now', style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey600)),
+          pw.SizedBox(height: 20),
+          pw.Container(
+            padding: const pw.EdgeInsets.all(14),
+            decoration: const pw.BoxDecoration(color: PdfColors.green50),
+            child: pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [
+              pw.Text('Total Income', style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold)),
+              pw.Text('Rs. $totalCollection', style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold, color: PdfColors.green900)),
+            ]),
+          ),
+          pw.SizedBox(height: 24),
+          pw.Text('Income by Category', style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold, color: PdfColors.grey900)),
+          pw.SizedBox(height: 8),
+          if (categories.isEmpty)
+            pw.Text('No category breakdown available.', style: const pw.TextStyle(fontSize: 11, color: PdfColors.grey600))
+          else
+            pw.Table(
+              border: pw.TableBorder.all(color: PdfColors.grey300, width: 0.5),
+              children: [
+                _pdfRow('Category', 'Amount', header: true),
+                ...categories.map((c) {
+                  final m = c is Map ? c : const {};
+                  return _pdfRow((m['label'] ?? '').toString(), 'Rs. ${m['value'] ?? 0}');
+                }),
+              ],
+            ),
+          pw.SizedBox(height: 24),
+          pw.Text('Top Collections', style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold, color: PdfColors.grey900)),
+          pw.SizedBox(height: 8),
+          if (topCollections.isEmpty)
+            pw.Text('No top collections available.', style: const pw.TextStyle(fontSize: 11, color: PdfColors.grey600))
+          else
+            pw.Table(
+              border: pw.TableBorder.all(color: PdfColors.grey300, width: 0.5),
+              children: [
+                _pdfRow('Name', 'Amount', header: true),
+                ...topCollections.map((c) {
+                  final m = c is Map ? c : const {};
+                  return _pdfRow((m['label'] ?? m['name'] ?? '').toString(), 'Rs. ${m['amount'] ?? m['value'] ?? 0}');
+                }),
+              ],
+            ),
+        ],
+      ),
+    );
+    return pdf.save();
+  }
+
+  pw.TableRow _pdfRow(String a, String b, {bool header = false}) {
+    final style = pw.TextStyle(fontSize: 10, fontWeight: header ? pw.FontWeight.bold : pw.FontWeight.normal);
+    return pw.TableRow(
+      decoration: header ? const pw.BoxDecoration(color: PdfColors.grey100) : null,
+      children: [
+        pw.Padding(padding: const pw.EdgeInsets.all(8), child: pw.Text(a, style: style)),
+        pw.Padding(padding: const pw.EdgeInsets.all(8), child: pw.Text(b, style: style, textAlign: pw.TextAlign.right)),
+      ],
     );
   }
 }

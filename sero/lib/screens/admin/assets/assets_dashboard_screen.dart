@@ -8,7 +8,7 @@ import 'package:sero/widgets/common/status_badge.dart';
 import 'package:sero/widgets/common/async_state_views.dart';
 import 'package:sero/providers/shared/notification_provider.dart';
 import 'package:sero/providers/admin/admin_domain_providers.dart';
-import 'package:sero/widgets/admin/admin_actions.dart';
+import 'package:sero/services/admin/admin_asset_service.dart';
 import 'package:sero/widgets/shared/admin_drawer.dart';
 
 const _kCategoryColors = <String, int>{
@@ -313,10 +313,13 @@ class AssetsDashboardScreen extends ConsumerWidget {
           );
         },
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => AdminActions.comingSoon(context, 'Adding assets'),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => _showAddAssetDialog(context, ref),
         backgroundColor: kPrimaryGreen,
-        child: const Icon(Icons.add, color: Colors.white),
+        icon: const Icon(Icons.add, color: Colors.white),
+        label: Text('Add Asset',
+            style: GoogleFonts.outfit(
+                color: Colors.white, fontWeight: FontWeight.w700)),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
       bottomNavigationBar: Container(
@@ -339,6 +342,117 @@ class AssetsDashboardScreen extends ConsumerWidget {
             _buildNavItem(context, Icons.build_outlined, 'Maintenance', false, () {}),
             _buildNavItem(context, Icons.description_outlined, 'Logs', false, () {}),
             _buildNavItem(context, Icons.more_horiz_rounded, 'More', false, () {}),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Shows a dialog to register a new tracked asset (POST /assets) and refreshes
+  /// the assets dashboard on success.
+  void _showAddAssetDialog(BuildContext context, WidgetRef ref) {
+    final tagCtrl = TextEditingController();
+    final nameCtrl = TextEditingController();
+    final locationCtrl = TextEditingController();
+    String type = AdminAssetService.assetTypes.first;
+    bool saving = false;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setState) => AlertDialog(
+          title: Text('Add Asset',
+              style: GoogleFonts.outfit(fontWeight: FontWeight.w700)),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: tagCtrl,
+                  enabled: !saving,
+                  decoration:
+                      const InputDecoration(labelText: 'Asset tag (e.g. LIFT-A1)'),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: nameCtrl,
+                  enabled: !saving,
+                  textCapitalization: TextCapitalization.words,
+                  decoration: const InputDecoration(labelText: 'Name'),
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  initialValue: type,
+                  decoration: const InputDecoration(labelText: 'Type'),
+                  items: AdminAssetService.assetTypes
+                      .map((t) => DropdownMenuItem(
+                          value: t,
+                          child: Text(
+                              '${t[0].toUpperCase()}${t.substring(1)}')))
+                      .toList(),
+                  onChanged: saving ? null : (v) => setState(() => type = v!),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: locationCtrl,
+                  enabled: !saving,
+                  decoration: const InputDecoration(
+                      labelText: 'Location (optional)'),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: saving ? null : () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: kPrimaryGreen, foregroundColor: Colors.white),
+              onPressed: saving
+                  ? null
+                  : () async {
+                      final tag = tagCtrl.text.trim();
+                      final name = nameCtrl.text.trim();
+                      if (tag.isEmpty || name.isEmpty) return;
+                      setState(() => saving = true);
+                      try {
+                        await AdminAssetService.createAsset(
+                          tag: tag,
+                          name: name,
+                          type: type,
+                          location: locationCtrl.text.trim(),
+                        );
+                        ref.invalidate(assetsDashboardProvider);
+                        if (ctx.mounted) Navigator.pop(ctx);
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                                content: Text('Asset added'),
+                                backgroundColor: Color(0xFF059669)),
+                          );
+                        }
+                      } catch (e) {
+                        setState(() => saving = false);
+                        if (ctx.mounted) {
+                          ScaffoldMessenger.of(ctx).showSnackBar(
+                            SnackBar(
+                                content: Text('Failed: $e'),
+                                backgroundColor: Colors.red),
+                          );
+                        }
+                      }
+                    },
+              child: saving
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                          color: Colors.white, strokeWidth: 2))
+                  : const Text('Add'),
+            ),
           ],
         ),
       ),

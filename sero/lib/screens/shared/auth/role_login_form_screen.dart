@@ -117,15 +117,9 @@ class _RoleLoginFormScreenState extends ConsumerState<RoleLoginFormScreen> {
     final label = _getPortalLabel();
 
     return Scaffold(
-      backgroundColor: kPrimaryGreen,
+      backgroundColor: kMintBg,
       body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [kPrimaryGreen, kDeepNavy],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-          ),
-        ),
+        decoration: const BoxDecoration(gradient: kAuthGreenGradient),
         child: SafeArea(
           child: Column(
             children: [
@@ -135,11 +129,18 @@ class _RoleLoginFormScreenState extends ConsumerState<RoleLoginFormScreen> {
                 child: Row(
                   children: [
                     IconButton(
-                      icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white),
+                      icon: const Icon(Icons.arrow_back_ios_new_rounded, color: kInkGreen),
                       onPressed: () => Navigator.pop(context),
                     ),
                     const Spacer(),
-                    const SocietyLogo(size: 36),
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: kMintTint,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const SocietyLogo(size: 28, color: kFreshGreen),
+                    ),
                     const Spacer(),
                     const SizedBox(width: 48),
                   ],
@@ -154,7 +155,7 @@ class _RoleLoginFormScreenState extends ConsumerState<RoleLoginFormScreen> {
                         title,
                         textAlign: TextAlign.center,
                         style: GoogleFonts.outfit(
-                          color: Colors.white,
+                          color: kInkGreen,
                           fontSize: 24,
                           fontWeight: FontWeight.w700,
                         ),
@@ -163,7 +164,7 @@ class _RoleLoginFormScreenState extends ConsumerState<RoleLoginFormScreen> {
                       Text(
                         'Secure portal session',
                         style: GoogleFonts.outfit(
-                          color: Colors.white60,
+                          color: const Color(0xFF5B7468),
                           fontSize: 13,
                         ),
                       ),
@@ -174,9 +175,16 @@ class _RoleLoginFormScreenState extends ConsumerState<RoleLoginFormScreen> {
               // Bottom Input Sheet
               Container(
                 width: double.infinity,
-                decoration: const BoxDecoration(
+                decoration: BoxDecoration(
                   color: Colors.white,
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(36)),
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(36)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: kFreshGreen.withValues(alpha: 0.10),
+                      blurRadius: 24,
+                      offset: const Offset(0, -6),
+                    ),
+                  ],
                 ),
                 padding: const EdgeInsets.fromLTRB(24, 32, 24, 40),
                 child: Column(
@@ -240,6 +248,14 @@ class _RoleLoginFormScreenState extends ConsumerState<RoleLoginFormScreen> {
                       height: 52,
                       child: ElevatedButton(
                         onPressed: _loading ? null : _submitLogin,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: kFreshGreen,
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                        ),
                         child: _loading
                             ? const SizedBox(
                                 width: 24,
@@ -267,7 +283,7 @@ class _RoleLoginFormScreenState extends ConsumerState<RoleLoginFormScreen> {
                               TextSpan(
                                 text: 'Register →',
                                 style: GoogleFonts.outfit(
-                                  color: kAccentGreen,
+                                  color: kFreshGreenDark,
                                   fontWeight: FontWeight.w600,
                                 ),
                               )

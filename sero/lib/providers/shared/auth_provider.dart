@@ -42,6 +42,11 @@ class AuthNotifier extends StateNotifier<AsyncValue<UserModel?>> {
             state = const AsyncValue.data(null);
             return;
           }
+          // Restored backend session: re-establish the Firebase Auth session so
+          // Firestore-backed screens keep working after an app restart. The JWT
+          // is valid but the Firebase SDK session may have lapsed; re-issue a
+          // fresh custom token from /auth/firebase-token and sign in with it.
+          await _reauthFirebase();
           state = AsyncValue.data(user);
         } else {
           await ApiService.clearToken();
@@ -53,6 +58,19 @@ class AuthNotifier extends StateNotifier<AsyncValue<UserModel?>> {
     } else {
       state = const AsyncValue.data(null);
     }
+  }
+
+  /// Re-issues a Firebase custom token for the active backend session and signs
+  /// the Firestore SDK back in. Best-effort: failures are swallowed so a
+  /// Firebase hiccup never blocks app startup.
+  Future<void> _reauthFirebase() async {
+    try {
+      final res = await ApiService.get('/auth/firebase-token');
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        await AuthService.signInToFirebase(data['firebaseToken'] ?? data['data']?['firebaseToken']);
+      }
+    } catch (_) {/* non-fatal */}
   }
 
   /// Roles whose screens require a society-scoped token. Platform/super-admin
@@ -83,6 +101,8 @@ class AuthNotifier extends StateNotifier<AsyncValue<UserModel?>> {
           token: data['token'],
           refreshToken: data['refreshToken'] ?? '',
         );
+        // Establish the Firebase Auth session so Firestore-backed screens work.
+        await AuthService.signInToFirebase(data['firebaseToken']);
 
         final requiresSelect = data['requiresWorkspaceSelection'] ?? false;
         if (requiresSelect) {
@@ -143,6 +163,7 @@ class AuthNotifier extends StateNotifier<AsyncValue<UserModel?>> {
           token: data['token'],
           refreshToken: data['refreshToken'] ?? '',
         );
+        await AuthService.signInToFirebase(data['firebaseToken']);
 
         final requiresSelect = data['requiresWorkspaceSelection'] ?? false;
         if (requiresSelect) {
@@ -188,6 +209,9 @@ class AuthNotifier extends StateNotifier<AsyncValue<UserModel?>> {
           token: data['token'],
           refreshToken: data['refreshToken'] ?? '',
         );
+        // Re-establish Firebase with the now society-scoped custom token so
+        // Firestore reads carry the correct society_id claim.
+        await AuthService.signInToFirebase(data['firebaseToken']);
 
         // Selection succeeded: the token is now society-scoped.
         requiresWorkspaceSelection = false;
@@ -209,6 +233,37 @@ class AuthNotifier extends StateNotifier<AsyncValue<UserModel?>> {
       state = AsyncValue.error(e, st);
       rethrow;
     }
+  }
+
+  /// Re-fetch the authenticated user from /users/me and update state so the
+  /// dashboard greeting, drawer header, etc. reflect profile edits immediately.
+  Future<void> refreshUser() async {
+    try {
+      final res = await ApiService.get('/users/me');
+      if (res.statusCode == 200) {
+        state = AsyncValue.data(UserModel.fromMap(jsonDecode(res.body)));
+      }
+    } catch (_) {/* keep current state on failure */}
+  }
+
+  /// Optimistically patch the in-memory user (e.g. after a profile name save)
+  /// so the UI updates instantly, without waiting for a network round-trip.
+  void applyLocalUser({String? name, String? photoUrl}) {
+    final cur = state.value;
+    if (cur == null) return;
+    state = AsyncValue.data(UserModel(
+      id: cur.id,
+      name: name ?? cur.name,
+      phone: cur.phone,
+      flatNumber: cur.flatNumber,
+      block: cur.block,
+      role: cur.role,
+      status: cur.status,
+      societyId: cur.societyId,
+      residentType: cur.residentType,
+      maintenanceExempt: cur.maintenanceExempt,
+      photoUrl: photoUrl ?? cur.photoUrl,
+    ));
   }
 
   Future<void> logout() async {

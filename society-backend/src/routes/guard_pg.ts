@@ -5,7 +5,7 @@ import { validate } from "../middleware/validate";
 import { logger } from "../shared/Logger";
 
 // @ts-ignore — JS middleware
-import { authMiddleware, canManageContent } from "../../middleware/auth";
+import { authMiddleware, canManageContent, canManageSecurity } from "../../middleware/auth";
 import { tenantMiddleware } from "../../middleware/tenantMiddleware";
 
 const router = Router();
@@ -42,15 +42,15 @@ router.get("/visitors", authMiddleware, tenantMiddleware, async (req, res) => {
   try { res.json({ visitors: await GuardService.listVisitors(societyOf(req), { status: req.query.status as string }) }); }
   catch (e: any) { map(res, e, "Failed to list visitors"); }
 });
-router.post("/visitors/check-in", authMiddleware, tenantMiddleware, canManageContent, validate(CheckInSchema), async (req, res) => {
+router.post("/visitors/check-in", authMiddleware, tenantMiddleware, canManageSecurity, validate(CheckInSchema), async (req, res) => {
   try { res.status(201).json({ visitor: await GuardService.checkInVisitor(societyOf(req), { ...req.body, guardId: guardOf(req) }) }); }
   catch (e: any) { map(res, e, "Check-in failed"); }
 });
-router.post("/visitors/:id/check-out", authMiddleware, tenantMiddleware, canManageContent, async (req, res) => {
+router.post("/visitors/:id/check-out", authMiddleware, tenantMiddleware, canManageSecurity, async (req, res) => {
   try { res.json({ visitor: await GuardService.checkOutVisitor(societyOf(req), req.params.id as string, guardOf(req)) }); }
   catch (e: any) { map(res, e, "Check-out failed"); }
 });
-router.post("/visitors/:id/entry", authMiddleware, tenantMiddleware, canManageContent, async (req, res) => {
+router.post("/visitors/:id/entry", authMiddleware, tenantMiddleware, canManageSecurity, async (req, res) => {
   try { res.json({ visitor: await GuardService.recordEntry(societyOf(req), req.params.id as string, guardOf(req)) }); }
   catch (e: any) { map(res, e, "Record entry failed"); }
 });
@@ -61,7 +61,7 @@ router.post("/visitors/:id/decision", authMiddleware, tenantMiddleware, async (r
     res.json({ visitor: await GuardService.decideVisitor(societyOf(req), req.params.id as string, decision, guardOf(req)) });
   } catch (e: any) { map(res, e, "Visitor decision failed"); }
 });
-router.post("/visitors/:id/deny", authMiddleware, tenantMiddleware, canManageContent, async (req, res) => {
+router.post("/visitors/:id/deny", authMiddleware, tenantMiddleware, canManageSecurity, async (req, res) => {
   try { res.json({ visitor: await GuardService.denyVisitor(societyOf(req), req.params.id as string, guardOf(req)) }); }
   catch (e: any) { map(res, e, "Deny failed"); }
 });
@@ -71,11 +71,11 @@ router.get("/gate-passes", authMiddleware, tenantMiddleware, async (req, res) =>
   try { res.json({ passes: await GuardService.listGatePasses(societyOf(req), { status: req.query.status as string }) }); }
   catch (e: any) { map(res, e, "Failed to list gate passes"); }
 });
-router.post("/gate-passes", authMiddleware, tenantMiddleware, canManageContent, validate(GatePassSchema), async (req, res) => {
+router.post("/gate-passes", authMiddleware, tenantMiddleware, canManageSecurity, validate(GatePassSchema), async (req, res) => {
   try { res.status(201).json({ pass: await GuardService.createGatePass(societyOf(req), { ...req.body, guardId: guardOf(req) }) }); }
   catch (e: any) { map(res, e, "Failed to create gate pass"); }
 });
-router.post("/gate-passes/validate", authMiddleware, tenantMiddleware, canManageContent, validate(ValidatePassSchema), async (req, res) => {
+router.post("/gate-passes/validate", authMiddleware, tenantMiddleware, canManageSecurity, validate(ValidatePassSchema), async (req, res) => {
   try { res.json({ pass: await GuardService.validateGatePass(societyOf(req), req.body.code) }); }
   catch (e: any) { map(res, e, "Failed to validate gate pass"); }
 });
@@ -85,7 +85,7 @@ router.get("/patrols", authMiddleware, tenantMiddleware, async (req, res) => {
   try { res.json({ patrols: await GuardService.listPatrols(societyOf(req)) }); }
   catch (e: any) { map(res, e, "Failed to list patrols"); }
 });
-router.post("/patrols", authMiddleware, tenantMiddleware, canManageContent, validate(PatrolSchema), async (req, res) => {
+router.post("/patrols", authMiddleware, tenantMiddleware, canManageSecurity, validate(PatrolSchema), async (req, res) => {
   try { res.status(201).json({ patrol: await GuardService.logPatrol(societyOf(req), { ...req.body, guardId: guardOf(req) }) }); }
   catch (e: any) { map(res, e, "Failed to log patrol"); }
 });
@@ -95,11 +95,11 @@ router.get("/incidents", authMiddleware, tenantMiddleware, async (req, res) => {
   try { res.json({ incidents: await GuardService.listIncidents(societyOf(req), { status: req.query.status as string }) }); }
   catch (e: any) { map(res, e, "Failed to list incidents"); }
 });
-router.post("/incidents", authMiddleware, tenantMiddleware, canManageContent, validate(IncidentSchema), async (req, res) => {
+router.post("/incidents", authMiddleware, tenantMiddleware, canManageSecurity, validate(IncidentSchema), async (req, res) => {
   try { res.status(201).json({ incident: await GuardService.reportIncident(societyOf(req), { ...req.body, guardId: guardOf(req) }) }); }
   catch (e: any) { map(res, e, "Failed to report incident"); }
 });
-router.patch("/incidents/:id/status", authMiddleware, tenantMiddleware, canManageContent, validate(IncidentStatusSchema), async (req, res) => {
+router.patch("/incidents/:id/status", authMiddleware, tenantMiddleware, canManageSecurity, validate(IncidentStatusSchema), async (req, res) => {
   try { res.json({ incident: await GuardService.updateIncidentStatus(societyOf(req), req.params.id as string, req.body.status) }); }
   catch (e: any) { map(res, e, "Failed to update incident"); }
 });

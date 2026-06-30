@@ -1,5 +1,21 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+/// Global error handling.
+///
+/// IMPORTANT — why this no longer takes over the whole screen:
+/// The previous version set `FlutterError.onError` to `setState` a full-screen
+/// "Something Went Wrong" page. But `FlutterError.onError` fires for EVERY
+/// framework error — including non-fatal ones (a layout overflow, a failed
+/// network image, a single provider/StreamBuilder throwing, e.g. the old
+/// Firestore "permission denied"). The result: one minor error anywhere blew
+/// the entire app away with a scary error page "on every screen".
+///
+/// New behaviour:
+///  - `FlutterError.onError` only LOGS/REPORTS the error; the app keeps running.
+///  - `ErrorWidget.builder` replaces ONLY the offending widget subtree with a
+///    small, quiet placeholder (nothing in release) so a single bad widget
+///    degrades gracefully instead of crashing the whole UI.
 class GlobalErrorBoundary extends StatefulWidget {
   final Widget child;
   const GlobalErrorBoundary({super.key, required this.child});
@@ -9,63 +25,34 @@ class GlobalErrorBoundary extends StatefulWidget {
 }
 
 class _GlobalErrorBoundaryState extends State<GlobalErrorBoundary> {
-  Object? _error;
-
   @override
   void initState() {
     super.initState();
-    // Catch Flutter framework errors
-    FlutterError.onError = (details) {
+
+    // Log framework errors (and forward to the console / crash reporter) but
+    // DO NOT tear down the app. Keep the user where they are.
+    FlutterError.onError = (FlutterErrorDetails details) {
       FlutterError.presentError(details);
-      setState(() => _error = details.exception);
+      debugPrint('Caught framework error (non-fatal): ${details.exception}');
+    };
+
+    // Replace only the failing widget. In release, show nothing (an empty box)
+    // so users never see a red/grey crash panel; in debug, show a compact note.
+    ErrorWidget.builder = (FlutterErrorDetails details) {
+      if (kReleaseMode) return const SizedBox.shrink();
+      return Material(
+        color: const Color(0xFFFFF1F2),
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: Text(
+            'Widget error: ${details.exception}',
+            style: const TextStyle(fontSize: 11, color: Color(0xFFB91C1C)),
+          ),
+        ),
+      );
     };
   }
 
   @override
-  Widget build(BuildContext context) {
-    if (_error != null) {
-      return MaterialApp(
-        debugShowCheckedModeBanner: false,
-        theme: ThemeData(fontFamily: 'Outfit'),
-        home: Scaffold(
-          backgroundColor: const Color(0xFFF5F5F5),
-          body: Center(
-            child: Padding(
-              padding: const EdgeInsets.all(32.0),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.error_outline, size: 80, color: Colors.redAccent),
-                  const SizedBox(height: 24),
-                  const Text(
-                    'Something Went Wrong',
-                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF1A1A1A)),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    'An unexpected error occurred. Our team has been notified.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 16, color: Colors.grey[700]),
-                  ),
-                  const SizedBox(height: 32),
-                  ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF2E7D32),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                    onPressed: () => setState(() => _error = null),
-                    icon: const Icon(Icons.refresh),
-                    label: const Text('Try Again'),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-    return widget.child;
-  }
+  Widget build(BuildContext context) => widget.child;
 }

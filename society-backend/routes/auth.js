@@ -305,6 +305,20 @@ function addFirestoreDestinations(user, destinations) {
                 status: user.status || "approved"
             });
         }
+    } else if (["guard", "security_manager", "facility_manager", "supervisor", "maintenance_staff", "housekeeping_staff", "reception_staff", "parcel_desk_staff", "staff"].includes(normalizedRole)) {
+        // Staff/security users whose login lives in Firestore but who have no
+        // Postgres `staff` row yet (e.g. seeded demo guards) still need a staff
+        // destination, otherwise the staff portal check returns PORTAL_MISMATCH.
+        if (user.society_id && !destinations.some(d => d.type === "staff" && d.societyId === user.society_id)) {
+            destinations.push({
+                workspaceId: `staff-${user.society_id}`,
+                type: "staff",
+                role: user.role,
+                societyId: user.society_id,
+                societyName: "My Society",
+                status: user.status || "approved"
+            });
+        }
     } else if (normalizedRole === "resident") {
         if (user.society_id && !destinations.some(d => d.type === "resident" && d.societyId === user.society_id)) {
             destinations.push({
@@ -472,6 +486,9 @@ router.post("/firebase", async (req, res) => {
         logger.info({ ip, userId: userDoc.id }, "Firebase/Google sign-in successful");
 
         const { password: _pw, ...safeUser } = user;
+        // Surface the active-workspace scope (staff/guard docs lack society_id).
+        safeUser.society_id = safeUser.society_id ?? finalSocietyId ?? null;
+        safeUser.role = finalRole ?? safeUser.role;
         const responseData = {
             token,
             refreshToken,
@@ -644,6 +661,9 @@ router.post("/login", validate(LoginSchema), async (req, res) => {
         }
 
         const { password: _, ...safeUser } = user;
+        // Surface the active-workspace scope (staff/guard docs lack society_id).
+        safeUser.society_id = safeUser.society_id ?? finalSocietyId ?? null;
+        safeUser.role = finalRole ?? safeUser.role;
         const responseData = {
             token,
             refreshToken,

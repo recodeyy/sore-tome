@@ -9,10 +9,10 @@ import 'package:sero/widgets/common/stat_card.dart';
 import 'package:sero/widgets/common/status_badge.dart';
 import 'package:sero/providers/shared/notification_provider.dart';
 import 'package:sero/widgets/shared/admin_drawer.dart';
-import 'package:sero/widgets/admin/admin_actions.dart';
 import 'society_profile_screen.dart';
 import 'wings_blocks_screen.dart';
 import 'flats_units_screen.dart';
+import 'committee_members_screen.dart';
 
 /// Society Setup Home — Screen 1 of 6
 /// Main hub showing society overview, quick links, and summary stats.
@@ -184,7 +184,10 @@ class SocietySetupHomeScreen extends ConsumerWidget {
                   icon: Icons.groups_outlined,
                   title: 'Committee Members',
                   subtitle: 'Manage committee members',
-                  onTap: () => AdminActions.comingSoon(context, 'Committee management'),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const CommitteeMembersScreen()),
+                  ),
                 ),
               ]),
             ),

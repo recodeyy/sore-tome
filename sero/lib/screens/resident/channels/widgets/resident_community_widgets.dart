@@ -16,7 +16,7 @@ class DailyPulseWidget extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final noticesAsync = ref.watch(noticesStreamProvider);
+    final noticesAsync = ref.watch(noticesProvider);
     final pollsAsync = ref.watch(pollsProvider);
     final eventsAsync = ref.watch(eventsProvider);
     final directPulseAsync = ref.watch(directPulseProvider);

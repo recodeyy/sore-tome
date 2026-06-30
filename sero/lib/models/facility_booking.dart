@@ -25,6 +25,38 @@ class Facility {
       availabilityHours: map['availabilityHours'] ?? '09:00 - 21:00',
     );
   }
+
+  /// Maps a Postgres `/amenities` row (the canonical source) to a [Facility].
+  /// Fields: name, capacity, open_minutes/close_minutes (minutes from midnight),
+  /// price_minor (paise), requires_approval.
+  factory Facility.fromAmenity(Map<String, dynamic> map) {
+    String hhmm(dynamic minutes) {
+      final m = (minutes is num) ? minutes.toInt() : int.tryParse('$minutes') ?? 0;
+      final h = (m ~/ 60).toString().padLeft(2, '0');
+      final mm = (m % 60).toString().padLeft(2, '0');
+      return '$h:$mm';
+    }
+
+    final open = map['open_minutes'];
+    final close = map['close_minutes'];
+    final priceMinor = (map['price_minor'] is num)
+        ? (map['price_minor'] as num).toDouble()
+        : double.tryParse('${map['price_minor']}') ?? 0;
+    final cap = map['capacity'];
+    return Facility(
+      id: (map['id'] ?? '').toString(),
+      name: (map['name'] ?? '').toString(),
+      description: [
+        if (cap != null) 'Capacity $cap',
+        if (map['requires_approval'] == true) 'Approval required',
+      ].join(' • '),
+      icon: 'event',
+      hourlyRate: priceMinor / 100.0,
+      availabilityHours: (open != null && close != null)
+          ? '${hhmm(open)} - ${hhmm(close)}'
+          : '09:00 - 21:00',
+    );
+  }
 }
 
 class Booking {

@@ -48,6 +48,39 @@ export const ParkingService = {
     return rows;
   },
 
+  /**
+   * Resident-facing: the active parking allocations that belong to [userId] —
+   * either allocated directly to them (`allocated_to`) or to any unit they
+   * occupy (via `members` / `unit_occupancies`, mirroring Recipients.unitResidentUserIds).
+   * Joins the slot so the client can show code/type/location, and the vehicle
+   * plate when one is attached. This is the read side of the cross-role flow:
+   * admin allocates (POST /allocations) → resident sees it here.
+   */
+  async listForResident(societyId: string, userId: string) {
+    const { rows } = await db.query(
+      `SELECT a.id, a.slot_id, a.unit_id, a.allocated_to, a.status, a.allocated_at,
+              s.code AS slot_code, s.type AS slot_type, s.location AS slot_location,
+              v.plate AS vehicle_plate, v.type AS vehicle_type, v.make_model
+         FROM parking_allocations a
+         JOIN parking_slots s ON s.id = a.slot_id
+         LEFT JOIN vehicles v ON v.id = a.vehicle_id
+        WHERE a.society_id = $1 AND a.status = 'active'
+          AND (
+            a.allocated_to = $2
+            OR a.unit_id::text IN (
+              SELECT unit_id::text FROM members
+                WHERE society_id = $1 AND user_id = $2 AND unit_id IS NOT NULL
+              UNION
+              SELECT unit_id::text FROM unit_occupancies
+                WHERE society_id = $1 AND resident_id = $2 AND to_date IS NULL AND unit_id IS NOT NULL
+            )
+          )
+        ORDER BY a.allocated_at DESC`,
+      [societyId, userId]
+    );
+    return rows;
+  },
+
   async registerVehicle(
     societyId: string,
     input: { plate: string; type?: string; unitId?: string; ownerId?: string; makeModel?: string }

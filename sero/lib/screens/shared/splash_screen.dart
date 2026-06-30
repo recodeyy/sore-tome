@@ -42,7 +42,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
         // status checks (pending) and role checks.
         Navigator.pushReplacementNamed(context, '/home');
       } else {
-        Navigator.pushReplacementNamed(context, '/login');
+        Navigator.pushReplacementNamed(context, '/welcome');
       }
     } else if (userAsync is AsyncError) {
       Navigator.pushReplacementNamed(context, '/login');
@@ -58,15 +58,21 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
     });
 
     return Scaffold(
+      backgroundColor: kMintBg,
       body: Container(
-        decoration: const BoxDecoration(
-          color: kPrimaryGreen, // Deep matte green for luxury look
-        ),
+        decoration: const BoxDecoration(gradient: kAuthGreenGradient),
         child: Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const SocietyLogo(size: 80)
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: kMintTint,
+                  borderRadius: BorderRadius.circular(28),
+                ),
+                child: const SocietyLogo(size: 72, color: kFreshGreen),
+              )
                   .animate()
                   .fade(duration: 1200.ms, curve: Curves.easeInCirc)
                   .scale(
@@ -81,9 +87,9 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
               Text(
                 'SERO',
                 style: GoogleFonts.outfit(
-                  color: Colors.white,
+                  color: kInkGreen,
                   fontSize: 24,
-                  fontWeight: FontWeight.w300, // Thinner for elegance
+                  fontWeight: FontWeight.w600,
                   letterSpacing: 10, // Extreme tracking for luxury vibe
                 ),
               ).animate().fade(delay: 500.ms, duration: 1000.ms),
@@ -93,7 +99,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
               Text(
                 'Connects the Society',
                 style: GoogleFonts.outfit(
-                  color: Colors.white60,
+                  color: const Color(0xFF5B7468),
                   fontSize: 10,
                   fontWeight: FontWeight.w600,
                   letterSpacing: 8,

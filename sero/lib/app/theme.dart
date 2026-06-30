@@ -9,6 +9,26 @@ const kAccentBlue = Color(0xFF0EA5E9);   // Sky 500
 const kSlateBg = Color(0xFFF8FAFC);      // Soft Slate background
 const kSlateBorder = Color(0xFFE2E8F0);  // Slate border
 
+// White-green auth surfaces (landing + login). Light, fresh, airy.
+const kFreshGreen = Color(0xFF16A34A);       // Primary action green
+const kFreshGreenDark = Color(0xFF15803D);   // Pressed / gradient end
+const kMintBg = Color(0xFFF2FBF5);           // Very light mint page background
+const kMintTint = Color(0xFFE4F6EC);         // Soft green card tint
+const kMintBorder = Color(0xFFC7EBD5);       // Soft green border
+const kInkGreen = Color(0xFF0B3D2C);         // Deep green text on light
+
+const kAuthGreenGradient = LinearGradient(
+  colors: [Colors.white, kMintBg],
+  begin: Alignment.topCenter,
+  end: Alignment.bottomCenter,
+);
+
+const kFreshGreenGradient = LinearGradient(
+  colors: [kFreshGreen, kFreshGreenDark],
+  begin: Alignment.topLeft,
+  end: Alignment.bottomRight,
+);
+
 // Super Admin bright emerald (matches platform reference designs)
 const kSuperGreen = Color(0xFF16A45C);       // Vivid emerald header
 const kSuperGreenDark = Color(0xFF0E8A4B);   // Darker emerald for gradient end

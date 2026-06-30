@@ -7,21 +7,78 @@ import 'package:sero/widgets/common/quick_action_button.dart';
 import 'package:sero/widgets/common/async_state_views.dart';
 import 'package:sero/screens/admin/admin_more_screen.dart';
 import 'package:sero/screens/admin/governance/polls_dashboard_screen.dart';
-import 'package:sero/widgets/admin/admin_actions.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:sero/providers/shared/notification_provider.dart';
 import 'package:sero/providers/shared/auth_provider.dart';
 import 'package:sero/providers/admin/dashboard_provider.dart';
 import 'package:sero/providers/admin/admin_domain_providers.dart';
+import 'package:sero/services/admin/admin_dashboard_service.dart';
 
 /// Dashboard Home Overview — Screen 1 of 4
 /// Shows greeting, today's overview, quick actions, and recent activity.
-class DashboardHomeScreen extends ConsumerWidget {
+class DashboardHomeScreen extends ConsumerStatefulWidget {
   const DashboardHomeScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<DashboardHomeScreen> createState() => _DashboardHomeScreenState();
+}
+
+class _DashboardHomeScreenState extends ConsumerState<DashboardHomeScreen> {
+  /// Catalog of available quick actions, keyed by a stable id persisted in
+  /// dashboard preferences.
+  static const Map<String, Map<String, dynamic>> _quickActionCatalog = {
+    'notice': {'icon': Icons.campaign_outlined, 'label': 'Add Notice', 'color': null},
+    'poll': {'icon': Icons.poll_outlined, 'label': 'New Poll', 'color': 0xFF10B981},
+    'member': {'icon': Icons.person_add_outlined, 'label': 'Add Member', 'color': 0xFF064E3B},
+    'bill': {'icon': Icons.receipt_long_outlined, 'label': 'Generate Bill', 'color': 0xFF1E3A8A},
+    'more': {'icon': Icons.more_horiz, 'label': 'More', 'color': 0xFF475569},
+  };
+  static const List<String> _defaultOrder = ['notice', 'poll', 'member', 'bill', 'more'];
+
+  /// Ordered list of enabled quick-action ids.
+  List<String> _enabled = List.of(_defaultOrder);
+
+  @override
+  void initState() {
+    super.initState();
+    _loadQuickActionPrefs();
+  }
+
+  Future<void> _loadQuickActionPrefs() async {
+    final prefs = await AdminDashboardService.getPreferences();
+    final widgets = prefs['widgets'];
+    if (widgets is List && widgets.isNotEmpty) {
+      final ids = widgets
+          .map((e) => e.toString())
+          .where(_quickActionCatalog.containsKey)
+          .toList();
+      if (ids.isNotEmpty && mounted) setState(() => _enabled = ids);
+    }
+  }
+
+  void _runQuickAction(String id) {
+    switch (id) {
+      case 'notice':
+        Navigator.pushNamed(context, '/admin/communication/create-notice');
+        break;
+      case 'poll':
+        Navigator.push(context, MaterialPageRoute(builder: (_) => const PollsDashboardScreen()));
+        break;
+      case 'member':
+        Navigator.pushNamed(context, '/admin/society/flats');
+        break;
+      case 'bill':
+        Navigator.pushNamed(context, '/admin/finance/generate-bills');
+        break;
+      case 'more':
+        Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminMoreScreen()));
+        break;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final dashboardAsync = ref.watch(dashboardProvider);
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
@@ -268,7 +325,7 @@ class DashboardHomeScreen extends ConsumerWidget {
                     ),
                   ),
                   GestureDetector(
-                    onTap: () => AdminActions.comingSoon(context, 'Customizing quick actions'),
+                    onTap: _showCustomizeQuickActions,
                     child: Text(
                       'Edit',
                       style: GoogleFonts.outfit(
@@ -285,49 +342,23 @@ class DashboardHomeScreen extends ConsumerWidget {
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                   QuickActionButton(
-                     icon: Icons.campaign_outlined,
-                     label: 'Add Notice',
-                     onTap: () => Navigator.pushNamed(context, '/admin/communication/create-notice'),
-                   ),
-                   QuickActionButton(
-                     icon: Icons.poll_outlined,
-                     label: 'New Poll',
-                     bgColor: const Color(0xFF10B981),
-                     onTap: () => Navigator.push(
-                       context,
-                       MaterialPageRoute(builder: (_) => const PollsDashboardScreen()),
-                     ),
-                   ),
-                   QuickActionButton(
-                     icon: Icons.person_add_outlined,
-                     label: 'Add Member',
-                     bgColor: const Color(0xFF064E3B),
-                     onTap: () => Navigator.pushNamed(context, '/admin/society/flats'), // Or a direct add member route
-                   ),
-                   QuickActionButton(
-                     icon: Icons.receipt_long_outlined,
-                     label: 'Generate Bill',
-                     bgColor: const Color(0xFF1E3A8A),
-                     onTap: () => Navigator.pushNamed(context, '/admin/finance/generate-bills'),
-                   ),
-                   QuickActionButton(
-                     icon: Icons.more_horiz,
-                     label: 'More',
-                     bgColor: const Color(0xFF475569),
-                     onTap: () {
-                        // Switch to the "More" tab if possible, or just push the more screen
-                        // For simplicity in a stateless widget without access to AdminShell state, 
-                        // we can push or just leave it to the bottom nav.
-                        // Let's assume the user can use bottom nav, but for a "Quick Action" we can push.
-                        Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminMoreScreen()));
-                     },
-                   ),
-                 ],
-              ),
+              child: _enabled.isEmpty
+                  ? Text(
+                      'No quick actions. Tap Edit to add some.',
+                      style: GoogleFonts.outfit(fontSize: 12, color: const Color(0xFF94A3B8)),
+                    )
+                  : Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceAround,
+                      children: _enabled.map((id) {
+                        final meta = _quickActionCatalog[id]!;
+                        return QuickActionButton(
+                          icon: meta['icon'] as IconData,
+                          label: meta['label'] as String,
+                          bgColor: meta['color'] != null ? Color(meta['color'] as int) : null,
+                          onTap: () => _runQuickAction(id),
+                        );
+                      }).toList(),
+                    ),
             ),
           ),
 
@@ -380,6 +411,144 @@ class DashboardHomeScreen extends ConsumerWidget {
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
     );
+  }
+
+  /// Bottom-sheet to reorder and toggle the dashboard quick actions. The
+  /// resulting order is persisted to dashboard preferences and reflected live.
+  Future<void> _showCustomizeQuickActions() async {
+    // Working copy: full id list (enabled first, in order) + an enabled set.
+    final order = <String>[
+      ..._enabled,
+      ..._defaultOrder.where((id) => !_enabled.contains(id)),
+    ];
+    final on = _enabled.toSet();
+
+    final saved = await showModalBottomSheet<List<String>>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (sheetContext, setSheetState) {
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40, height: 4,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE2E8F0),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text('Customize Quick Actions',
+                      style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.w700, color: const Color(0xFF1E293B))),
+                  const SizedBox(height: 4),
+                  Text('Toggle and drag to reorder.',
+                      style: GoogleFonts.outfit(fontSize: 12, color: const Color(0xFF94A3B8))),
+                  const SizedBox(height: 12),
+                  ReorderableListView(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    buildDefaultDragHandles: false,
+                    onReorder: (oldIndex, newIndex) {
+                      setSheetState(() {
+                        if (newIndex > oldIndex) newIndex -= 1;
+                        final id = order.removeAt(oldIndex);
+                        order.insert(newIndex, id);
+                      });
+                    },
+                    children: [
+                      for (int i = 0; i < order.length; i++)
+                        Padding(
+                          key: ValueKey(order[i]),
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF8FAFC),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: const Color(0xFFF1F5F9)),
+                            ),
+                            child: Row(
+                              children: [
+                                ReorderableDragStartListener(
+                                  index: i,
+                                  child: const Icon(Icons.drag_indicator, color: Color(0xFFCBD5E1)),
+                                ),
+                                const SizedBox(width: 8),
+                                Icon(_quickActionCatalog[order[i]]!['icon'] as IconData,
+                                    size: 20, color: const Color(0xFF64748B)),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Text(_quickActionCatalog[order[i]]!['label'] as String,
+                                      style: GoogleFonts.outfit(
+                                          fontSize: 14, fontWeight: FontWeight.w600, color: const Color(0xFF1E293B))),
+                                ),
+                                Switch(
+                                  value: on.contains(order[i]),
+                                  activeThumbColor: kPrimaryGreen,
+                                  onChanged: (v) => setSheetState(() {
+                                    if (v) {
+                                      on.add(order[i]);
+                                    } else {
+                                      on.remove(order[i]);
+                                    }
+                                  }),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.pop(
+                        sheetContext,
+                        order.where(on.contains).toList(),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: kPrimaryGreen,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      child: Text('Save',
+                          style: GoogleFonts.outfit(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.white)),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    if (saved != null && mounted) {
+      setState(() => _enabled = saved);
+      // Persist to dashboard preferences (best-effort; reflected live regardless).
+      final ok = await AdminDashboardService.saveQuickActions(saved);
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(SnackBar(
+            backgroundColor: kPrimaryGreen,
+            behavior: SnackBarBehavior.floating,
+            content: Text(ok ? 'Quick actions updated' : 'Saved locally (sync failed)',
+                style: GoogleFonts.outfit(fontWeight: FontWeight.w600, color: Colors.white)),
+          ));
+      }
+    }
   }
 
   IconData _getActivityIcon(String type) {

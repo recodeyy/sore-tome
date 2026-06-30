@@ -9,7 +9,7 @@ import 'package:sero/widgets/common/async_state_views.dart';
 import 'package:sero/providers/shared/notification_provider.dart';
 import 'package:sero/providers/shared/notices_provider.dart';
 import 'package:sero/models/notice.dart';
-import 'package:sero/widgets/admin/admin_actions.dart';
+import 'package:sero/screens/admin/governance/polls_dashboard_screen.dart';
 
 /// Dashboard Notices & Quick Stats — Screen 4 of 4  
 /// Shows notice highlights, quick stats, and shortcuts section.
@@ -222,7 +222,11 @@ class DashboardNoticesScreen extends ConsumerWidget {
                       icon: Icons.poll_outlined,
                       label: 'Create Poll',
                       bgColor: const Color(0xFF7C3AED),
-                      onTap: () => AdminActions.comingSoon(context, 'Polls'),
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => const PollsDashboardScreen()),
+                      ),
                     ),
                     QuickActionButton(
                       icon: Icons.more_horiz,

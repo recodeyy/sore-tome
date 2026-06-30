@@ -12,21 +12,23 @@ class RoleLoginLandingScreen extends StatelessWidget {
     final isTablet = MediaQuery.of(context).size.width > 600;
 
     return Scaffold(
+      backgroundColor: kMintBg,
       body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [kPrimaryGreen, kDeepNavy],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-          ),
-        ),
+        decoration: const BoxDecoration(gradient: kAuthGreenGradient),
         child: SafeArea(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
             child: Column(
               children: [
-                const SizedBox(height: 32),
-                const SocietyLogo(size: 72)
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: kMintTint,
+                    borderRadius: BorderRadius.circular(22),
+                  ),
+                  child: const SocietyLogo(size: 56, color: kFreshGreen),
+                )
                     .animate()
                     .fade(duration: 600.ms)
                     .scale(begin: const Offset(0.9, 0.9)),
@@ -34,16 +36,16 @@ class RoleLoginLandingScreen extends StatelessWidget {
                 Text(
                   'SERO',
                   style: GoogleFonts.outfit(
-                    color: Colors.white,
+                    color: kInkGreen,
                     fontSize: 26,
-                    fontWeight: FontWeight.w400,
+                    fontWeight: FontWeight.w700,
                     letterSpacing: 8,
                   ),
                 ).animate().fade(delay: 200.ms),
                 Text(
                   'Choose how you use SERO',
                   style: GoogleFonts.outfit(
-                    color: Colors.white70,
+                    color: const Color(0xFF4B6358),
                     fontSize: 14,
                     fontWeight: FontWeight.w500,
                   ),
@@ -66,7 +68,7 @@ class RoleLoginLandingScreen extends StatelessWidget {
                 Text(
                   'Need help signing in? Contact support',
                   style: GoogleFonts.outfit(
-                    color: Colors.white54,
+                    color: const Color(0xFF7B9488),
                     fontSize: 12,
                     fontWeight: FontWeight.w400,
                   ),
@@ -132,25 +134,32 @@ class _PortalCard extends StatelessWidget {
       child: Container(
         margin: const EdgeInsets.only(bottom: 16),
         decoration: BoxDecoration(
-          color: Colors.white.withAlpha(25),
+          color: Colors.white,
           borderRadius: BorderRadius.circular(24),
           border: Border.all(
-            color: Colors.white.withAlpha(isSuper ? 40 : 20),
+            color: isSuper ? kPrimaryBlue.withAlpha(40) : kMintBorder,
             width: 1.5,
           ),
+          boxShadow: [
+            BoxShadow(
+              color: kFreshGreen.withValues(alpha: 0.06),
+              blurRadius: 18,
+              offset: const Offset(0, 8),
+            ),
+          ],
         ),
         padding: const EdgeInsets.all(20),
         child: Row(
           children: [
             Container(
               decoration: BoxDecoration(
-                color: isSuper ? kPrimaryBlue.withAlpha(60) : kAccentGreen.withAlpha(40),
+                color: isSuper ? kPrimaryBlue.withAlpha(22) : kMintTint,
                 shape: BoxShape.circle,
               ),
               padding: const EdgeInsets.all(12),
               child: Icon(
                 icon,
-                color: isSuper ? Colors.lightBlueAccent : kAccentGreen,
+                color: isSuper ? kPrimaryBlue : kFreshGreenDark,
                 size: 28,
               ),
             ),
@@ -163,16 +172,16 @@ class _PortalCard extends StatelessWidget {
                   Text(
                     title,
                     style: GoogleFonts.outfit(
-                      color: Colors.white,
+                      color: kInkGreen,
                       fontSize: 18,
-                      fontWeight: FontWeight.w600,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     subtitle,
                     style: GoogleFonts.outfit(
-                      color: Colors.white70,
+                      color: const Color(0xFF5B7468),
                       fontSize: 12,
                       fontWeight: FontWeight.w400,
                     ),
@@ -182,9 +191,9 @@ class _PortalCard extends StatelessWidget {
                 ],
               ),
             ),
-            const Icon(
+            Icon(
               Icons.chevron_right_rounded,
-              color: Colors.white54,
+              color: isSuper ? kPrimaryBlue : kFreshGreen,
             ),
           ],
         ),

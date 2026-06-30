@@ -102,6 +102,18 @@ router.post("/", authMiddleware, tenantMiddleware, adminOnly, validate(CreateAme
   }
 });
 
+// GET /amenities/bookings/mine — the caller's own bookings (registered BEFORE
+// any /:id route so "bookings" isn't captured as an amenity id)
+router.get("/bookings/mine", authMiddleware, tenantMiddleware, async (req: Request, res: Response) => {
+  try {
+    const bookings = await BookingService.listMine(societyOf(req), (req as any).user?.uid);
+    res.json({ bookings });
+  } catch (err: any) {
+    logger.error({ error: err.message }, "List my bookings failed");
+    res.status(500).json({ error: "Failed to list my bookings" });
+  }
+});
+
 // GET /amenities/:id/bookings — confirmed bookings for an amenity
 router.get("/:id/bookings", authMiddleware, tenantMiddleware, async (req: Request, res: Response) => {
   try {

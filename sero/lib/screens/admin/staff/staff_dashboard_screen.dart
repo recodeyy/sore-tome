@@ -7,7 +7,11 @@ import 'package:sero/widgets/common/section_header.dart';
 import 'package:sero/widgets/common/quick_action_button.dart';
 import 'package:sero/providers/shared/notification_provider.dart';
 import 'package:sero/widgets/shared/admin_drawer.dart';
-import 'package:sero/widgets/admin/admin_actions.dart';
+import 'package:sero/screens/admin/staff/mark_attendance_screen.dart';
+import 'package:sero/screens/admin/staff/add_staff_screen.dart';
+import 'package:sero/screens/admin/staff/leave_requests_screen.dart';
+import 'package:sero/screens/admin/staff/duty_roster_screen.dart';
+import 'package:sero/screens/admin/staff/payroll_screen.dart';
 
 /// Staff Dashboard Screen — Staff Module (1/2)
 /// Key metrics overview for staff attendance, leaves, payroll, and activities.
@@ -186,10 +190,10 @@ class StaffDashboardScreen extends ConsumerWidget {
               crossAxisSpacing: 10,
               childAspectRatio: 0.85,
               children: [
-                QuickActionButton(label: 'Mark\nAttendance', icon: Icons.check_circle_outline, bgColor: const Color(0xFF059669), onTap: () => AdminActions.comingSoon(context, 'Marking attendance')),
-                QuickActionButton(label: 'Leave\nRequests', icon: Icons.email_outlined, bgColor: const Color(0xFFEA580C), onTap: () => AdminActions.comingSoon(context, 'Leave requests')),
-                QuickActionButton(label: 'Duty\nRoster', icon: Icons.calendar_view_day_outlined, bgColor: const Color(0xFF7C3AED), onTap: () => AdminActions.comingSoon(context, 'Duty roster')),
-                QuickActionButton(label: 'Payroll\nSummary', icon: Icons.account_balance_outlined, bgColor: const Color(0xFF2563EB), onTap: () => AdminActions.comingSoon(context, 'Payroll summary')),
+                QuickActionButton(label: 'Mark\nAttendance', icon: Icons.check_circle_outline, bgColor: const Color(0xFF059669), onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MarkAttendanceScreen()))),
+                QuickActionButton(label: 'Leave\nRequests', icon: Icons.email_outlined, bgColor: const Color(0xFFEA580C), onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const LeaveRequestsScreen()))),
+                QuickActionButton(label: 'Duty\nRoster', icon: Icons.calendar_view_day_outlined, bgColor: const Color(0xFF7C3AED), onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const DutyRosterScreen()))),
+                QuickActionButton(label: 'Payroll\nSummary', icon: Icons.account_balance_outlined, bgColor: const Color(0xFF2563EB), onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PayrollScreen()))),
               ],
             ),
           ),
@@ -235,10 +239,14 @@ class StaffDashboardScreen extends ConsumerWidget {
           );
         },
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => Navigator.pushNamed(context, '/admin/staff/list'),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => Navigator.push(context,
+            MaterialPageRoute(builder: (_) => const AddStaffScreen())),
         backgroundColor: const Color(0xFF064E3B),
-        child: const Icon(Icons.add, color: Colors.white),
+        icon: const Icon(Icons.person_add_alt_1, color: Colors.white),
+        label: Text('Add Staff',
+            style: GoogleFonts.outfit(
+                color: Colors.white, fontWeight: FontWeight.w700)),
       ),
     );
   }

@@ -50,7 +50,42 @@ router.get("/me", authMiddleware, async (req, res) => {
     if (!doc.exists) return res.status(404).json({ error: "Profile not found. Please register." });
     // ✅ BUG-17 FIX: Strip sensitive fields before returning user data
     const { password, passwordHash, ...safeUser } = doc.data();
+    // The JWT carries the authoritative active-workspace scope (society_id +
+    // role). Staff/guard Firestore user docs do NOT store society_id (their
+    // society lives in the Postgres staff/workspace tables), so without this
+    // overlay the client builds a user with an empty societyId — which blanks
+    // every society-scoped screen and force-logs-out society-scoped roles on
+    // restart. Always surface the token's scope.
+    safeUser.society_id = safeUser.society_id ?? req.user.society_id ?? null;
+    safeUser.role = req.user.role ?? safeUser.role;
     res.json(safeUser);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /me — update your OWN editable profile fields (name, email, photoUrl).
+// Self-service; does not allow role/society/status changes.
+router.patch("/me", authMiddleware, async (req, res) => {
+  try {
+    const db = getDb();
+    const ref = db.collection("users").doc(req.user.uid);
+    const doc = await ref.get();
+    if (!doc.exists) return res.status(404).json({ error: "Profile not found." });
+
+    const updates = {};
+    if (typeof req.body.name === "string" && req.body.name.trim()) updates.name = req.body.name.trim().slice(0, 120);
+    if (typeof req.body.email === "string") updates.email = req.body.email.trim().toLowerCase().slice(0, 120);
+    if (typeof req.body.photoUrl === "string") updates.photoUrl = req.body.photoUrl.slice(0, 1000);
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: "No editable fields supplied" });
+    }
+    updates.updatedAt = getAdmin().firestore.FieldValue.serverTimestamp();
+    await ref.update(updates);
+
+    const fresh = await ref.get();
+    const { password, passwordHash, ...safeUser } = fresh.data();
+    res.json({ success: true, user: safeUser });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

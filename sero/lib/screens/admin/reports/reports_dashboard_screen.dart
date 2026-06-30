@@ -7,7 +7,7 @@ import 'financial_report_screen.dart';
 import 'package:sero/providers/shared/notification_provider.dart';
 import 'package:sero/providers/admin/admin_domain_providers.dart';
 import 'package:sero/widgets/shared/admin_drawer.dart';
-import 'package:sero/widgets/admin/admin_actions.dart';
+import 'package:sero/services/admin/admin_reports_service.dart';
 
 /// Fixed report taxonomy (config constant — allowed static content).
 const List<Map<String, dynamic>> _kReportCategories = [
@@ -242,7 +242,7 @@ class ReportsDashboardScreen extends ConsumerWidget {
             child: Padding(
               padding: const EdgeInsets.fromLTRB(20, 24, 20, 100),
               child: OutlinedButton(
-                onPressed: () => AdminActions.comingSoon(context, 'Scheduling reports'),
+                onPressed: () => _showScheduleReportSheet(context, ref),
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   side: const BorderSide(color: Color(0xFF064E3B)),
@@ -266,6 +266,210 @@ class ReportsDashboardScreen extends ConsumerWidget {
       ),
     );
   }
+}
+
+/// Bottom-sheet form to schedule a recurring report. Creates a template
+/// (carrying recipients) + a schedule via the reports endpoints.
+Future<void> _showScheduleReportSheet(BuildContext context, WidgetRef ref) async {
+  const kinds = {
+    'finance': 'Financial',
+    'occupancy': 'Occupancy',
+    'staff': 'Staff',
+    'complaints': 'Complaints',
+  };
+  const formats = {'pdf': 'PDF', 'excel': 'Excel', 'csv': 'CSV'};
+  const freqs = {'daily': 'Daily', 'weekly': 'Weekly', 'monthly': 'Monthly'};
+
+  final nameCtrl = TextEditingController();
+  final recipientsCtrl = TextEditingController();
+  String kind = 'finance';
+  String format = 'pdf';
+  String freq = 'monthly';
+  bool submitting = false;
+
+  await showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.white,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    ),
+    builder: (sheetContext) {
+      return StatefulBuilder(
+        builder: (sheetContext, setSheetState) {
+          InputDecoration dec(String label) => InputDecoration(
+                labelText: label,
+                labelStyle: GoogleFonts.outfit(fontSize: 13, color: const Color(0xFF64748B)),
+                filled: true,
+                fillColor: const Color(0xFFF8FAFC),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: Color(0xFFF1F5F9)),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: Color(0xFFF1F5F9)),
+                ),
+              );
+
+          Widget dropdown(String label, String value, Map<String, String> opts, ValueChanged<String> onChanged) {
+            return DropdownButtonFormField<String>(
+              initialValue: value,
+              decoration: dec(label),
+              style: GoogleFonts.outfit(fontSize: 14, color: const Color(0xFF1E293B)),
+              items: opts.entries
+                  .map((e) => DropdownMenuItem(value: e.key, child: Text(e.value)))
+                  .toList(),
+              onChanged: submitting ? null : (v) => setSheetState(() => onChanged(v ?? value)),
+            );
+          }
+
+          return Padding(
+            padding: EdgeInsets.only(
+              left: 20,
+              right: 20,
+              top: 20,
+              bottom: MediaQuery.of(sheetContext).viewInsets.bottom + 24,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE2E8F0),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text('Schedule Report',
+                    style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.w700, color: const Color(0xFF1E293B))),
+                const SizedBox(height: 16),
+                TextField(controller: nameCtrl, enabled: !submitting, decoration: dec('Report name')),
+                const SizedBox(height: 12),
+                dropdown('Category', kind, kinds, (v) => kind = v),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(child: dropdown('Format', format, formats, (v) => format = v)),
+                    const SizedBox(width: 12),
+                    Expanded(child: dropdown('Frequency', freq, freqs, (v) => freq = v)),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: recipientsCtrl,
+                  enabled: !submitting,
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: dec('Recipients (comma-separated emails)'),
+                ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: submitting
+                        ? null
+                        : () async {
+                            final name = nameCtrl.text.trim();
+                            if (name.isEmpty) {
+                              ScaffoldMessenger.of(sheetContext)
+                                ..hideCurrentSnackBar()
+                                ..showSnackBar(const SnackBar(content: Text('Please enter a report name')));
+                              return;
+                            }
+                            setSheetState(() => submitting = true);
+                            try {
+                              final recipients = recipientsCtrl.text
+                                  .split(',')
+                                  .map((e) => e.trim())
+                                  .where((e) => e.isNotEmpty)
+                                  .toList();
+                              await AdminReportsService.scheduleReport(
+                                name: name,
+                                kind: kind,
+                                format: format,
+                                cron: _cronFor(freq),
+                                nextRunAt: _nextRunFor(freq),
+                                config: {
+                                  'frequency': freq,
+                                  if (recipients.isNotEmpty) 'recipients': recipients,
+                                },
+                              );
+                              if (!sheetContext.mounted) return;
+                              Navigator.pop(sheetContext);
+                              ref.invalidate(reportsDashboardProvider);
+                              ScaffoldMessenger.of(context)
+                                ..hideCurrentSnackBar()
+                                ..showSnackBar(SnackBar(
+                                  backgroundColor: const Color(0xFF064E3B),
+                                  behavior: SnackBarBehavior.floating,
+                                  content: Text('${freqs[freq]} report scheduled',
+                                      style: GoogleFonts.outfit(fontWeight: FontWeight.w600, color: Colors.white)),
+                                ));
+                            } catch (e) {
+                              setSheetState(() => submitting = false);
+                              ScaffoldMessenger.of(sheetContext)
+                                ..hideCurrentSnackBar()
+                                ..showSnackBar(SnackBar(content: Text('Could not schedule: $e')));
+                            }
+                          },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF064E3B),
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: submitting
+                        ? const SizedBox(
+                            width: 20, height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        : Text('Schedule Report',
+                            style: GoogleFonts.outfit(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.white)),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      );
+    },
+  );
+}
+
+/// Standard cron expression for the chosen [freq] (runs at 08:00).
+String _cronFor(String freq) {
+  switch (freq) {
+    case 'daily':
+      return '0 8 * * *';
+    case 'weekly':
+      return '0 8 * * 1';
+    case 'monthly':
+    default:
+      return '0 8 1 * *';
+  }
+}
+
+/// First occurrence (UTC ISO-8601) of the schedule after now.
+String _nextRunFor(String freq) {
+  final now = DateTime.now();
+  DateTime next;
+  switch (freq) {
+    case 'daily':
+      next = DateTime(now.year, now.month, now.day + 1, 8);
+      break;
+    case 'weekly':
+      final daysUntilMonday = (DateTime.monday - now.weekday + 7) % 7;
+      next = DateTime(now.year, now.month, now.day + (daysUntilMonday == 0 ? 7 : daysUntilMonday), 8);
+      break;
+    case 'monthly':
+    default:
+      next = DateTime(now.year, now.month + 1, 1, 8);
+  }
+  return next.toUtc().toIso8601String();
 }
 
 class _SummaryMiniItem extends StatelessWidget {

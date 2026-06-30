@@ -11,7 +11,14 @@ import 'package:sero/screens/resident/visitors/visitor_approval_screen.dart';
 import 'package:sero/screens/resident/rules/resident_rules_screen.dart';
 import 'package:sero/screens/resident/channels/resident_channels_screen.dart';
 import 'package:sero/screens/resident/emergency/emergency_home_screen.dart';
+import 'package:sero/screens/resident/parking/my_parking_screen.dart';
+import 'package:sero/screens/resident/events/resident_events_screen.dart';
 import 'package:sero/screens/resident/notifications/notifications_center_screen.dart';
+import 'package:sero/screens/resident/marketplace/marketplace_screen.dart';
+import 'package:sero/screens/resident/carpool/carpool_screen.dart';
+import 'package:sero/screens/resident/lost_found/lost_found_screen.dart';
+import 'package:sero/screens/resident/documents/documents_screen.dart';
+import 'package:sero/screens/resident/bookings/my_bookings_screen.dart';
 
 /// Full Quick Actions grid (design: home.png screen 2) + Refer & Earn card.
 ///
@@ -27,18 +34,20 @@ class QuickActionsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final actions = <_QA>[
       _QA('Pay Bill', Icons.payments_rounded, (c) => const ResidentFundsScreen()),
-      _QA('My Messages', Icons.forum_rounded, null),
+      _QA('My Messages', Icons.forum_rounded, (c) => const ResidentChannelsScreen()),
       _QA('Visitors', Icons.people_alt_rounded, (c) => const VisitorApprovalScreen()),
       _QA('Raise Complaint', Icons.report_problem_rounded, (c) => const PostIssueScreen()),
       _QA('Amenities', Icons.pool_rounded, (c) => const FacilitiesScreen()),
       _QA('Book Slot', Icons.event_available_rounded, (c) => const FacilitiesScreen()),
+      _QA('My Parking', Icons.local_parking_rounded, (c) => const MyParkingScreen()),
       _QA('Notice Board', Icons.campaign_rounded, (c) => const ResidentChannelsScreen()),
-      _QA('Events', Icons.celebration_rounded, null),
+      _QA('Events', Icons.celebration_rounded, (c) => const ResidentEventsScreen()),
       _QA('Polls', Icons.how_to_vote_rounded, (c) => const PollsScreen()),
-      _QA('Marketplace', Icons.storefront_rounded, null),
-      _QA('Carpool', Icons.directions_car_rounded, null),
-      _QA('Lost & Found', Icons.search_rounded, null),
-      _QA('Documents', Icons.folder_rounded, null),
+      _QA('Marketplace', Icons.storefront_rounded, (c) => const MarketplaceScreen()),
+      _QA('Carpool', Icons.directions_car_rounded, (c) => const CarpoolScreen()),
+      _QA('Lost & Found', Icons.search_rounded, (c) => const LostFoundScreen()),
+      _QA('Documents', Icons.folder_rounded, (c) => const DocumentsScreen()),
+      _QA('My Bookings', Icons.event_note_rounded, (c) => const MyBookingsScreen()),
       _QA('Society Rules', Icons.gavel_rounded, (c) => const ResidentRulesScreen()),
       _QA('Emergency', Icons.emergency_rounded, (c) => const EmergencyHomeScreen()),
       _QA('Contact Admin', Icons.support_agent_rounded, (c) => const ResidentIssuesScreen()),

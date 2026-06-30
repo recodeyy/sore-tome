@@ -734,4 +734,35 @@ router.put("/societies/:societyId/integrations/:provider", async (req: Request, 
   }
 });
 
+// ─── Demo seed (super-admin only) ───────────────────────────────────────────
+// POST /super-admin/seed-demo  { societyId?, resUid?, resName?, resPhone?, ... }
+// Seeds rich demo data (structure, members, amenities, polls, notices, …) into a
+// target society so every screen has live data. Idempotent (re-seeds the same
+// society). Runs inside a single transaction.
+router.post("/seed-demo", async (req: Request, res: Response) => {
+  try {
+    const { withTx } = require("../services/finance/ledger");
+    const { seedDemoSociety } = require("../scripts/seedDemoSociety");
+    const b = req.body || {};
+    const opts = {
+      societyId: b.societyId || "demo-soc-1",
+      name: b.name || "Hubtown Sunmist (Demo)",
+      regNo: b.regNo || "MH/CHS/2016/HSM",
+      address: b.address || "Hubtown Sunmist, Andheri East, Mumbai 400069",
+      adminUid: b.adminUid || "admin-001",
+      adminName: b.adminName || "Society Main Admin",
+      adminPhone: b.adminPhone || "admin",
+      resUid: b.resUid || "8Lm9vDSenHMyIqcJlHAv",
+      resName: b.resName || "Avinash (A-1402)",
+      resPhone: b.resPhone || "9876543200",
+      resUnitNumber: b.resUnitNumber || "A-1402",
+    };
+    const result = await withTx((client: any) => seedDemoSociety(client, opts));
+    logger.info({ actor: actorId(req), societyId: opts.societyId }, "Demo society seeded");
+    return res.json({ success: true, data: result });
+  } catch (error: any) {
+    return sendError(res, "POST /super-admin/seed-demo", error);
+  }
+});
+
 export default router;

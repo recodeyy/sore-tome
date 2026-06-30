@@ -36,6 +36,7 @@ final presenceProvider = StreamProvider.family<List<UserPresence>, String>((ref,
       .doc(channelId)
       .collection('presence')
       .snapshots()
+      .handleError((_) {}) // never surface Firestore permission/network errors to the UI
       .map((snap) {
         final now = DateTime.now();
         return snap.docs.map((doc) => UserPresence.fromMap(doc.data(), doc.id))

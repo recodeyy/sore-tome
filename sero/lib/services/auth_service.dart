@@ -77,6 +77,33 @@ class AuthService {
     }
   }
 
+  // ─── Firebase custom-token sign-in ────────────────────────────────────────
+  /// Signs the user into Firebase Auth using the [firebaseToken] (a Firebase
+  /// custom token) returned by the backend `/auth/login`, `/auth/firebase` and
+  /// `/auth/workspace/select` responses. Its embedded claims (`role`,
+  /// `society_id`) become `request.auth.token.*`, which the Firestore security
+  /// rules require for every read/write. Without this, the app holds only a
+  /// custom backend JWT, `request.auth` is null, and EVERY Firestore-backed
+  /// screen (community, marketplace, guest passes, issues, records, chat,
+  /// presence) fails with "permission denied".
+  ///
+  /// Firebase persists the session locally after the first sign-in and
+  /// auto-refreshes the ID token, so this only needs to run at login time.
+  /// Failures are swallowed (logged) so a Firebase outage never blocks the
+  /// primary backend login.
+  static Future<void> signInToFirebase(String? firebaseToken) async {
+    if (firebaseToken == null || firebaseToken.isEmpty) {
+      debugPrint('signInToFirebase: no firebaseToken in auth response — '
+          'Firestore-backed screens will be unavailable.');
+      return;
+    }
+    try {
+      await FirebaseAuth.instance.signInWithCustomToken(firebaseToken);
+    } catch (e) {
+      debugPrint('Firebase custom-token sign-in failed: $e');
+    }
+  }
+
   // ─── Firebase Phone OTP ───────────────────────────────────────────────────
   // Live SMS OTP via Firebase Phone Authentication (no mock/stub).
 

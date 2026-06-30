@@ -4,6 +4,7 @@ import 'main_shell.dart';
 import 'admin_shell.dart';
 import 'staff_shell.dart';
 import 'super_admin_shell.dart';
+import '../screens/shared/auth/welcome_landing_screen.dart';
 import '../screens/shared/auth/role_login_landing_screen.dart';
 import '../screens/shared/auth/role_login_form_screen.dart';
 import '../screens/shared/auth/workspace_selector_screen.dart';
@@ -82,6 +83,7 @@ class SocietyApp extends StatelessWidget {
       initialRoute: '/splash',
       routes: {
         '/splash':            (_) => const SplashScreen(),
+        '/welcome':           (_) => const WelcomeLandingScreen(),
         '/login':             (_) => const RoleLoginLandingScreen(),
         '/login/super-admin': (_) => const RoleLoginFormScreen(portal: 'super-admin'),
         '/login/admin':       (_) => const RoleLoginFormScreen(portal: 'admin'),

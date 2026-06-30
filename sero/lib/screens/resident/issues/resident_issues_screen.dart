@@ -39,13 +39,13 @@ class _ResidentIssuesScreenState extends ConsumerState<ResidentIssuesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final issuesAsync = ref.watch(issuesStreamProvider);
+    final issuesAsync = ref.watch(issuesProvider);
 
     return Scaffold(
       backgroundColor: kSlateBg,
       body: RefreshIndicator(
         color: kPrimaryGreen,
-        onRefresh: () async => ref.refresh(issuesStreamProvider),
+        onRefresh: () async => ref.refresh(issuesProvider),
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
           padding: EdgeInsets.zero,

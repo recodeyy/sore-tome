@@ -1,13 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:sero/app/theme.dart';
 import 'package:sero/providers/admin/admin_domain_providers.dart';
 import 'package:sero/widgets/common/async_state_views.dart';
 import 'package:sero/widgets/common/section_header.dart';
 import 'package:sero/providers/shared/notification_provider.dart';
 import 'package:sero/widgets/shared/admin_drawer.dart';
-import 'package:sero/widgets/admin/admin_actions.dart';
+import 'package:sero/services/admin/admin_amenities_service.dart';
 
 /// Amenities Dashboard Screen — Amenities Module
 /// Central hub for booking summary cards, amenity cards with operating status, and upcoming bookings.
@@ -195,10 +194,100 @@ class AmenitiesDashboardScreen extends ConsumerWidget {
           );
         },
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => AdminActions.comingSoon(context, 'Adding amenities'),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => _showAddAmenityDialog(context, ref),
         backgroundColor: const Color(0xFF064E3B),
-        child: const Icon(Icons.add, color: Colors.white),
+        icon: const Icon(Icons.add, color: Colors.white),
+        label: Text('Add Amenity',
+            style: GoogleFonts.outfit(
+                color: Colors.white, fontWeight: FontWeight.w700)),
+      ),
+    );
+  }
+
+  /// Shows a dialog to create a new bookable amenity (POST /amenities) and
+  /// refreshes the dashboard on success.
+  void _showAddAmenityDialog(BuildContext context, WidgetRef ref) {
+    final nameCtrl = TextEditingController();
+    final capacityCtrl = TextEditingController(text: '1');
+    bool saving = false;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setState) => AlertDialog(
+          title: Text('Add Amenity',
+              style: GoogleFonts.outfit(fontWeight: FontWeight.w700)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameCtrl,
+                enabled: !saving,
+                textCapitalization: TextCapitalization.words,
+                decoration: const InputDecoration(
+                    labelText: 'Name (e.g. Clubhouse, Gym)'),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: capacityCtrl,
+                enabled: !saving,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'Capacity'),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: saving ? null : () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF064E3B),
+                  foregroundColor: Colors.white),
+              onPressed: saving
+                  ? null
+                  : () async {
+                      final name = nameCtrl.text.trim();
+                      if (name.isEmpty) return;
+                      setState(() => saving = true);
+                      try {
+                        await AdminAmenitiesService.createAmenity(
+                          name,
+                          capacity: int.tryParse(capacityCtrl.text.trim()),
+                        );
+                        ref.invalidate(amenitiesDashboardProvider);
+                        if (ctx.mounted) Navigator.pop(ctx);
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                                content: Text('Amenity added'),
+                                backgroundColor: Color(0xFF059669)),
+                          );
+                        }
+                      } catch (e) {
+                        setState(() => saving = false);
+                        if (ctx.mounted) {
+                          ScaffoldMessenger.of(ctx).showSnackBar(
+                            SnackBar(
+                                content: Text('Failed: $e'),
+                                backgroundColor: Colors.red),
+                          );
+                        }
+                      }
+                    },
+              child: saving
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                          color: Colors.white, strokeWidth: 2))
+                  : const Text('Add'),
+            ),
+          ],
+        ),
       ),
     );
   }

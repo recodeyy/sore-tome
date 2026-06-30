@@ -21,6 +21,7 @@ const CreateStaffSchema = z.object({
     isContractor: z.boolean().optional(), phone: z.string().max(20).optional(), userId: z.string().max(64).optional(),
     joiningDate: isoDate.optional(), assignedAreas: z.array(z.string().max(60)).optional(),
     monthlyWageMinor: z.number().int().nonnegative().optional(), kycExpiresAt: isoDate.optional(),
+    imageUrl: z.string().max(2000).optional(),
   }).strict(),
 });
 const StatusSchema = z.object({ body: z.object({ status: z.enum(["active", "suspended", "terminated"]), leavingDate: isoDate.optional() }).strict() });
@@ -83,6 +84,30 @@ router.post("/shift-templates", authMiddleware, tenantMiddleware, canManageConte
 router.post("/leave-types", authMiddleware, tenantMiddleware, canManageContent, validate(LeaveTypeSchema), async (req, res) => {
   try { res.status(201).json({ leaveType: await StaffService.createLeaveType(societyOf(req), req.body) }); }
   catch (e: any) { map(res, e, "Failed to create leave type"); }
+});
+
+// Leave-type list (for request form dropdown)
+router.get("/leave-types", authMiddleware, tenantMiddleware, canManageContent, async (req, res) => {
+  try { res.json({ leaveTypes: await StaffService.listLeaveTypes(societyOf(req)) }); }
+  catch (e: any) { map(res, e, "Failed to list leave types"); }
+});
+
+// Leave-request list (admin approval queue). Optional ?status=pending|approved|rejected
+router.get("/leave/requests", authMiddleware, tenantMiddleware, canManageContent, async (req, res) => {
+  try { res.json({ requests: await StaffService.listLeaveRequests(societyOf(req), req.query.status as string) }); }
+  catch (e: any) { map(res, e, "Failed to list leave requests"); }
+});
+
+// Duty-roster list. Optional ?date=YYYY-MM-DD (defaults to today onward).
+router.get("/roster", authMiddleware, tenantMiddleware, canManageContent, async (req, res) => {
+  try { res.json({ roster: await StaffService.listRoster(societyOf(req), req.query.date as string) }); }
+  catch (e: any) { map(res, e, "Failed to list roster"); }
+});
+
+// Payroll-run list (summary rows for the payroll screen).
+router.get("/payroll", authMiddleware, tenantMiddleware, canManageFunds, async (req, res) => {
+  try { res.json({ runs: await StaffService.listPayrollRuns(societyOf(req)) }); }
+  catch (e: any) { map(res, e, "Failed to list payroll runs"); }
 });
 
 // Leave

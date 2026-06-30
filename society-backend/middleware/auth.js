@@ -79,5 +79,43 @@ function canManageContent(req, res, next) {
   next();
 }
 
-module.exports = { authMiddleware, adminOnly, mainAdminOnly, canManageFunds, canManageContent };
+/**
+ * Gate operations (visitor check-in/out, gate passes, patrols, incidents) must
+ * be performable by on-duty SECURITY staff — guards, security managers,
+ * supervisors — in addition to the society admins. The content guard above
+ * excluded guards, which broke the core gate workflow.
+ */
+function canManageSecurity(req, res, next) {
+  const role = req.user?.role;
+  const allowed = [
+    "super_admin", "main_admin", "admin", "secretary",
+    "guard", "security_manager", "security", "supervisor", "facility_manager", "reception_staff",
+  ];
+  if (!allowed.includes(role)) {
+    logger.warn({ userId: req.user?.uid, role, path: req.path }, "SEC-WARN: Unauthorized Security/Gate Operation Attempt");
+    return res.status(403).json({ error: "Security or admin access required" });
+  }
+  next();
+}
+
+/**
+ * Facilities operations (parking slot allocation, amenities, asset upkeep) are
+ * day-to-day society administration that committee members, the treasurer, and
+ * the on-site facility manager handle alongside the core admins. The content
+ * guard above excluded those roles, which 403'd legitimate parking allocations.
+ */
+function canManageFacilities(req, res, next) {
+  const role = req.user?.role;
+  const allowed = [
+    "super_admin", "main_admin", "admin", "secretary",
+    "treasurer", "committee_member", "facility_manager",
+  ];
+  if (!allowed.includes(role)) {
+    logger.warn({ userId: req.user?.uid, role, path: req.path }, "SEC-WARN: Unauthorized Facilities Management Attempt");
+    return res.status(403).json({ error: "Committee or admin access required" });
+  }
+  next();
+}
+
+module.exports = { authMiddleware, adminOnly, mainAdminOnly, canManageFunds, canManageContent, canManageSecurity, canManageFacilities };
 
