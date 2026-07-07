@@ -1,0 +1,163 @@
+// Core UI i18n. Navigation, actions, and shell strings are translated via these
+// dictionaries (deterministic — never machine-translate IDs, amounts, receipt
+// numbers or code values). Long-form content (notice bodies etc.) can use the
+// AI translate helper separately. See WEBSITE_MULTILINGUAL_PLAN.md.
+export type Lang = "en" | "hi" | "mr" | "gu" | "kn";
+
+export const LANGS: { code: Lang; label: string; native: string }[] = [
+  { code: "en", label: "English", native: "English" },
+  { code: "hi", label: "Hindi", native: "हिन्दी" },
+  { code: "mr", label: "Marathi", native: "मराठी" },
+  { code: "gu", label: "Gujarati", native: "ગુજરાતી" },
+  { code: "kn", label: "Kannada", native: "ಕನ್ನಡ" },
+];
+
+type Dict = Record<string, string>;
+
+const en: Dict = {
+  "app.name": "SERO Control",
+  "nav.dashboard": "Dashboard",
+  "nav.members": "Members & Tenants",
+  "nav.billing": "Billing",
+  "nav.payments": "Payments",
+  "nav.reconciliation": "Bank Reconciliation",
+  "nav.expenses": "Expenses",
+  "nav.reports": "Reports",
+  "nav.notices": "Notices",
+  "nav.polls": "Polls & AGM",
+  "nav.events": "Events",
+  "nav.complaints": "Complaints",
+  "nav.staff": "Staff & Vendors",
+  "nav.visitors": "Visitors & Security",
+  "nav.parking": "Parking",
+  "nav.assets": "Assets",
+  "nav.ai": "AI Assistant",
+  "nav.settings": "Settings",
+  "nav.platformDashboard": "Platform Dashboard",
+  "nav.societies": "Societies",
+  "nav.approvals": "Approvals",
+  "nav.revenue": "Revenue",
+  "nav.support": "Support Tickets",
+  "nav.announcements": "Announcements",
+  "nav.systemHealth": "System Health",
+  "nav.auditLogs": "Audit Logs",
+  "action.logout": "Log out",
+  "action.search": "Search…",
+  "action.export": "Export",
+  "action.exportCsv": "Export CSV",
+  "action.exportPdf": "Export PDF",
+  "action.create": "Create",
+  "action.refresh": "Refresh",
+  "action.confirm": "Confirm",
+  "action.cancel": "Cancel",
+  "state.loading": "Loading…",
+  "state.empty": "Nothing here yet",
+  "state.error": "Something went wrong",
+  "state.retry": "Retry",
+  "dash.collectionToday": "Today's Collection",
+  "dash.outstanding": "Maintenance Due",
+  "dash.openComplaints": "Open Complaints",
+  "dash.pendingApprovals": "Pending Approvals",
+  "dash.visitorsToday": "Visitors Today",
+  "dash.staffOnDuty": "Staff On Duty",
+  "ai.title": "SERO Assistant",
+  "ai.placeholder": "Ask about dues, complaints, notices…",
+  "ai.confirmAction": "This action changes live data. Confirm to proceed.",
+  "voice.listen": "Read aloud",
+  "voice.privacy": "Voice is processed via a secure server proxy. Audio is not stored.",
+};
+
+const hi: Dict = {
+  "app.name": "SERO कंट्रोल",
+  "nav.dashboard": "डैशबोर्ड",
+  "nav.members": "सदस्य और किरायेदार",
+  "nav.billing": "बिलिंग",
+  "nav.payments": "भुगतान",
+  "nav.reconciliation": "बैंक समाधान",
+  "nav.expenses": "खर्च",
+  "nav.reports": "रिपोर्ट",
+  "nav.notices": "सूचनाएँ",
+  "nav.polls": "मतदान और एजीएम",
+  "nav.events": "कार्यक्रम",
+  "nav.complaints": "शिकायतें",
+  "nav.staff": "कर्मचारी और विक्रेता",
+  "nav.visitors": "आगंतुक और सुरक्षा",
+  "nav.parking": "पार्किंग",
+  "nav.assets": "संपत्तियाँ",
+  "nav.ai": "एआई सहायक",
+  "nav.settings": "सेटिंग्स",
+  "nav.platformDashboard": "प्लेटफ़ॉर्म डैशबोर्ड",
+  "nav.societies": "सोसायटियाँ",
+  "nav.approvals": "स्वीकृतियाँ",
+  "nav.revenue": "राजस्व",
+  "nav.support": "सहायता टिकट",
+  "nav.announcements": "घोषणाएँ",
+  "nav.systemHealth": "सिस्टम स्थिति",
+  "nav.auditLogs": "ऑडिट लॉग",
+  "action.logout": "लॉग आउट",
+  "action.search": "खोजें…",
+  "action.export": "निर्यात",
+  "action.exportCsv": "CSV निर्यात",
+  "action.exportPdf": "PDF निर्यात",
+  "action.create": "बनाएँ",
+  "action.refresh": "ताज़ा करें",
+  "action.confirm": "पुष्टि करें",
+  "action.cancel": "रद्द करें",
+  "state.loading": "लोड हो रहा है…",
+  "state.empty": "यहाँ अभी कुछ नहीं है",
+  "state.error": "कुछ गड़बड़ हो गई",
+  "state.retry": "पुनः प्रयास",
+  "dash.collectionToday": "आज का संग्रह",
+  "dash.outstanding": "बकाया रखरखाव",
+  "dash.openComplaints": "खुली शिकायतें",
+  "dash.pendingApprovals": "लंबित स्वीकृतियाँ",
+  "dash.visitorsToday": "आज के आगंतुक",
+  "dash.staffOnDuty": "ड्यूटी पर कर्मचारी",
+  "ai.title": "SERO सहायक",
+  "ai.placeholder": "बकाया, शिकायतों, सूचनाओं के बारे में पूछें…",
+  "ai.confirmAction": "यह क्रिया लाइव डेटा बदलती है। आगे बढ़ने के लिए पुष्टि करें।",
+  "voice.listen": "ज़ोर से पढ़ें",
+  "voice.privacy": "आवाज़ एक सुरक्षित सर्वर प्रॉक्सी से संसाधित होती है। ऑडियो संग्रहीत नहीं होता।",
+};
+
+// Marathi / Gujarati / Kannada: nav + key actions translated; others fall back
+// to English gracefully via the t() resolver.
+const mr: Dict = {
+  "nav.dashboard": "डॅशबोर्ड",
+  "nav.billing": "बिलिंग",
+  "nav.payments": "पेमेंट",
+  "nav.reports": "अहवाल",
+  "nav.notices": "सूचना",
+  "nav.complaints": "तक्रारी",
+  "nav.settings": "सेटिंग्ज",
+  "action.logout": "बाहेर पडा",
+  "dash.collectionToday": "आजचे संकलन",
+};
+const gu: Dict = {
+  "nav.dashboard": "ડેશબોર્ડ",
+  "nav.billing": "બિલિંગ",
+  "nav.payments": "ચુકવણી",
+  "nav.reports": "અહેવાલ",
+  "nav.notices": "સૂચનાઓ",
+  "nav.complaints": "ફરિયાદો",
+  "nav.settings": "સેટિંગ્સ",
+  "action.logout": "લોગ આઉટ",
+  "dash.collectionToday": "આજનું કલેક્શન",
+};
+const kn: Dict = {
+  "nav.dashboard": "ಡ್ಯಾಶ್‌ಬೋರ್ಡ್",
+  "nav.billing": "ಬಿಲ್ಲಿಂಗ್",
+  "nav.payments": "ಪಾವತಿಗಳು",
+  "nav.reports": "ವರದಿಗಳು",
+  "nav.notices": "ಪ್ರಕಟಣೆಗಳು",
+  "nav.complaints": "ದೂರುಗಳು",
+  "nav.settings": "ಸೆಟ್ಟಿಂಗ್‌ಗಳು",
+  "action.logout": "ಲಾಗ್ ಔಟ್",
+  "dash.collectionToday": "ಇಂದಿನ ಸಂಗ್ರಹ",
+};
+
+export const DICTS: Record<Lang, Dict> = { en, hi, mr, gu, kn };
+
+export function translate(lang: Lang, key: string): string {
+  return DICTS[lang]?.[key] ?? DICTS.en[key] ?? key;
+}

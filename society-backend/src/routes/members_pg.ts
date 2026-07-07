@@ -75,6 +75,25 @@ router.get("/committee", authMiddleware, tenantMiddleware, async (req, res) => {
   catch (e: any) { map(res, e, "Failed to list committee"); }
 });
 
+// ── MR-006: admin review of resident join requests ────────────────────────
+// (MUST be declared before "/:id" or "join-requests" is swallowed by it.)
+router.get("/join-requests", authMiddleware, tenantMiddleware, canManageContent, async (req, res) => {
+  try { res.json({ requests: await MemberService.listJoinRequests(societyOf(req)) }); }
+  catch (e: any) { map(res, e, "Failed to list join requests"); }
+});
+
+router.post("/join-requests/:id/approve", authMiddleware, tenantMiddleware, canManageContent, async (req, res) => {
+  try {
+    res.json({ request: await MemberService.decideJoinRequest(societyOf(req), (req.params.id as string), "approved", userOf(req)) });
+  } catch (e: any) { map(res, e, "Failed to approve join request"); }
+});
+
+router.post("/join-requests/:id/reject", authMiddleware, tenantMiddleware, canManageContent, async (req, res) => {
+  try {
+    res.json({ request: await MemberService.decideJoinRequest(societyOf(req), (req.params.id as string), "rejected", userOf(req)) });
+  } catch (e: any) { map(res, e, "Failed to reject join request"); }
+});
+
 // Get one member (with family + committee + kyc)
 router.get("/:id", authMiddleware, tenantMiddleware, async (req, res) => {
   try { res.json({ member: await MemberService.getMember(societyOf(req), (req.params.id as string)) }); }

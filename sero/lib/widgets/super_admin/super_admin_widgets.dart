@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:sero/app/theme.dart';
 import 'package:sero/models/super_admin/super_admin_models.dart';
+import 'package:sero/widgets/shared/sero_ui.dart';
 
 export 'super_admin_drawer.dart';
 export 'super_admin_bottom_nav.dart';
@@ -518,42 +519,22 @@ class SuperAdminAsyncView<T> extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (loading) {
-      return const Center(
-        child: Padding(
-          padding: EdgeInsets.all(32),
-          child: CircularProgressIndicator(),
+      return const Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SkeletonCard(height: 88),
+            SkeletonCard(height: 88),
+            SkeletonCard(height: 88, margin: EdgeInsets.zero),
+          ],
         ),
       );
     }
     if (error != null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.error_outline,
-                  color: Color(0xFFEF4444), size: 42),
-              const SizedBox(height: 12),
-              Text(
-                'Could not load Super Admin data.',
-                textAlign: TextAlign.center,
-                style: GoogleFonts.outfit(fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                error.toString(),
-                textAlign: TextAlign.center,
-                style: GoogleFonts.outfit(
-                    color: const Color(0xFF64748B), fontSize: 12),
-              ),
-              if (onRetry != null) ...[
-                const SizedBox(height: 12),
-                ElevatedButton(onPressed: onRetry, child: const Text('Retry')),
-              ],
-            ],
-          ),
-        ),
+      return ErrorRetryView(
+        message: error.toString().replaceFirst('Exception: ', ''),
+        onRetry: onRetry ?? () {},
       );
     }
     final value = data ?? snapshot?.data;

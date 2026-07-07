@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 /// Global error handling.
@@ -36,17 +35,36 @@ class _GlobalErrorBoundaryState extends State<GlobalErrorBoundary> {
       debugPrint('Caught framework error (non-fatal): ${details.exception}');
     };
 
-    // Replace only the failing widget. In release, show nothing (an empty box)
-    // so users never see a red/grey crash panel; in debug, show a compact note.
+    // Replace only the failing widget with a small, recoverable card — NEVER a
+    // blank screen. Showing nothing (SizedBox.shrink) hid real crashes as an
+    // empty page; a compact message keeps the app usable and tells us what
+    // failed. The surrounding app (nav, other tabs) keeps working.
     ErrorWidget.builder = (FlutterErrorDetails details) {
-      if (kReleaseMode) return const SizedBox.shrink();
       return Material(
-        color: const Color(0xFFFFF1F2),
-        child: Padding(
-          padding: const EdgeInsets.all(8),
-          child: Text(
-            'Widget error: ${details.exception}',
-            style: const TextStyle(fontSize: 11, color: Color(0xFFB91C1C)),
+        color: const Color(0xFFF8FAFC),
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.warning_amber_rounded, color: Color(0xFFEA580C), size: 40),
+                const SizedBox(height: 12),
+                const Text(
+                  "This section couldn't load",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF1E293B)),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '${details.exception}',
+                  textAlign: TextAlign.center,
+                  maxLines: 6,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
+                ),
+              ],
+            ),
           ),
         ),
       );

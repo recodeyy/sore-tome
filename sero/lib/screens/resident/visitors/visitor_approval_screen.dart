@@ -4,6 +4,8 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:sero/app/theme.dart';
 import 'package:sero/providers/shared/visitors_provider.dart';
 import 'package:sero/models/visitor.dart';
+import 'package:sero/screens/resident/visitors/invite_visitor_screen.dart';
+import 'package:sero/widgets/shared/sero_ui.dart';
 
 class VisitorApprovalScreen extends ConsumerWidget {
   const VisitorApprovalScreen({super.key});
@@ -19,10 +21,28 @@ class VisitorApprovalScreen extends ConsumerWidget {
         elevation: 0,
         title: Text('My Visitors', style: GoogleFonts.outfit(color: const Color(0xFF0F172A), fontWeight: FontWeight.w700)),
       ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () async {
+          final created = await Navigator.of(context).push<bool>(
+            MaterialPageRoute(builder: (_) => const InviteVisitorScreen()),
+          );
+          if (created == true) ref.invalidate(visitorsProvider);
+        },
+        backgroundColor: kPrimaryGreen,
+        foregroundColor: Colors.white,
+        icon: const Icon(Icons.person_add_alt_1_rounded),
+        label: Text('Invite Visitor',
+            style: GoogleFonts.outfit(fontWeight: FontWeight.w700)),
+      ),
       body: visitorsAsync.when(
         data: (visitors) {
           if (visitors.isEmpty) {
-            return const Center(child: Text('No recent visitors.'));
+            return const EmptyState(
+              icon: Icons.people_alt_outlined,
+              title: 'No visitors yet',
+              message:
+                  'When a guest, delivery or service provider arrives at the gate, they will show up here for your approval.',
+            );
           }
           return ListView.builder(
             padding: const EdgeInsets.all(16),
@@ -33,8 +53,11 @@ class VisitorApprovalScreen extends ConsumerWidget {
             },
           );
         },
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
+        loading: () => const SkeletonList(itemCount: 4, itemHeight: 96),
+        error: (e, _) => ErrorRetryView(
+          message: 'Could not load your visitors. Please try again.',
+          onRetry: () => ref.invalidate(visitorsProvider),
+        ),
       ),
     );
   }
@@ -100,19 +123,14 @@ class _VisitorCardResidentState extends ConsumerState<_VisitorCardResident> {
                   ],
                 ),
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: isPending ? Colors.orange.withValues(alpha: 0.1) : Colors.grey.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(widget.visitor.status.toUpperCase(), 
-                  style: GoogleFonts.outfit(
-                    color: isPending ? Colors.orange : Colors.grey, 
-                    fontWeight: FontWeight.w800, 
-                    fontSize: 10
-                  ),
-                ),
+              StatusChip(
+                label: widget.visitor.status.toUpperCase(),
+                semantic: switch (widget.visitor.status) {
+                  'pending' => ChipSemantic.warning,
+                  'approved' || 'inside' => ChipSemantic.success,
+                  'denied' || 'rejected' => ChipSemantic.error,
+                  _ => ChipSemantic.neutral,
+                },
               ),
             ],
           ),

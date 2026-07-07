@@ -458,9 +458,9 @@ class _DashboardHomeScreenState extends ConsumerState<DashboardHomeScreen> {
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
                     buildDefaultDragHandles: false,
-                    onReorder: (oldIndex, newIndex) {
+                    onReorderItem: (oldIndex, newIndex) {
+                      // newIndex is already adjusted by onReorderItem.
                       setSheetState(() {
-                        if (newIndex > oldIndex) newIndex -= 1;
                         final id = order.removeAt(oldIndex);
                         order.insert(newIndex, id);
                       });

@@ -86,6 +86,7 @@ router.post("/:id/assign", authMiddleware, requireSociety, tenantMiddleware, can
     res.json({ complaint: c });
   } catch (err: any) {
     if (err.code === "NOT_FOUND") return res.status(404).json({ error: "Complaint not found" });
+    if (err.code === "INVALID_ASSIGNEE") return res.status(400).json({ error: err.message });
     logger.error({ error: err.message }, "Assign complaint failed");
     res.status(500).json({ error: "Failed to assign complaint" });
   }

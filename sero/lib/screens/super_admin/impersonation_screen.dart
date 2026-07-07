@@ -57,12 +57,14 @@ class _ImpersonationScreenState extends ConsumerState<ImpersonationScreen> {
 
     try {
       await ref.read(superAdminServiceProvider).stopImpersonationSession();
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(expired ? 'Impersonation session expired.' : 'Impersonation session terminated.'),
         ),
       );
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed to end session: $e')),
       );
@@ -172,7 +174,7 @@ class _ImpersonationScreenState extends ConsumerState<ImpersonationScreen> {
                           return _isActive
                               ? _buildDetailRow('Society', societies.firstWhere((s) => s.id == activeSocId).name)
                               : DropdownButtonFormField<String>(
-                                  value: activeSocId,
+                                  initialValue: activeSocId,
                                   decoration: InputDecoration(
                                     labelText: 'Target Society',
                                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
@@ -263,10 +265,12 @@ class _ImpersonationScreenState extends ConsumerState<ImpersonationScreen> {
                                     durationMinutes: _selectedDuration,
                                   );
                               _startTimer(_selectedDuration);
+                              if (!context.mounted) return;
                               ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(content: Text('Impersonation session successfully started.')),
                               );
                             } catch (e) {
+                              if (!context.mounted) return;
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(content: Text('Failed to start session: $e')),
                               );

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:sero/app/theme.dart';
+import 'package:sero/widgets/common/async_state_views.dart';
 import 'package:sero/providers/super_admin/super_admin_provider.dart';
 import 'package:sero/widgets/super_admin/super_admin_widgets.dart';
 
@@ -34,10 +35,7 @@ class SuperAdminRevenueScreen extends ConsumerWidget {
               ),
             ),
             revenue.when(
-              loading: () => const SliverFillRemaining(
-                hasScrollBody: false,
-                child: Center(child: CircularProgressIndicator()),
-              ),
+              loading: () => const SliverToBoxAdapter(child: LiveLoadingView()),
               error: (error, _) => SliverFillRemaining(
                 hasScrollBody: false,
                 child: SuperAdminAsyncView<void>(
@@ -79,10 +77,7 @@ class SuperAdminRevenueScreen extends ConsumerWidget {
                     SuperAdminSectionCard(
                       title: 'Plans and Pricing',
                       child: plans.when(
-                        loading: () => const Padding(
-                          padding: EdgeInsets.all(20),
-                          child: Center(child: CircularProgressIndicator()),
-                        ),
+                        loading: () => const LiveLoadingView(),
                         error: (error, _) => Text(
                           'Could not load plans: $error',
                           style: GoogleFonts.outfit(

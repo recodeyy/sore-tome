@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:sero/app/theme.dart';
+import 'package:sero/widgets/shared/sero_ui.dart';
 import 'package:sero/models/super_admin/super_admin_models.dart';
 import 'package:sero/providers/super_admin/super_admin_providers.dart';
 
@@ -186,8 +187,8 @@ class SystemHealthScreen extends ConsumerWidget {
             ),
           );
         },
-        loading: () => const Center(child: CircularProgressIndicator(color: kPrimaryGreen)),
-        error: (err, _) => Center(child: Text('Error: $err')),
+        loading: () => const SkeletonList(itemCount: 4),
+        error: (err, _) => ErrorRetryView(message: 'Could not load system health.', onRetry: () => ref.invalidate(superAdminSystemHealthProvider)),
       ),
     );
   }

@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import { z } from "zod";
 import { ResidentService } from "../services/resident/ResidentService";
+import { MemberService } from "../services/members/MemberService";
 import { validate } from "../middleware/validate";
 import { logger } from "../shared/Logger";
 
@@ -59,6 +60,51 @@ async function withCtx(req: Request, res: Response, fn: (ctx: any) => Promise<an
     return await fn(ctx);
   } catch (e: any) { return map(res, e, fallback); }
 }
+
+// ── MR-006: resident onboarding (join requests) ─────────────────────────────
+// Declared BEFORE the tenant gate: a joining resident has no society scope yet.
+const JoinRequestSchema = z.object({ body: z.object({
+  societyId: s.max(80),
+  wing: z.string().max(20).optional(),
+  block: z.string().max(20).optional(),
+  floor: z.union([z.string().max(10), z.number().int()]).optional(),
+  unitNumber: s.max(20),
+  name: s.max(120),
+  phone: z.string().max(20).optional(),
+}).strict() });
+
+router.post("/join-requests", authMiddleware, validate(JoinRequestSchema), async (req: Request, res: Response) => {
+  try {
+    const userId = userIdOf(req);
+    if (!userId) return res.status(401).json({ error: "Unauthenticated" });
+    const { request, existed } = await MemberService.createJoinRequest({
+      societyId: req.body.societyId,
+      userId,
+      name: req.body.name,
+      phone: req.body.phone || (req as any).user?.phone,
+      wing: req.body.wing,
+      block: req.body.block,
+      floor: req.body.floor,
+      unitNumber: req.body.unitNumber,
+    });
+    res.status(existed ? 200 : 201).json({ request, existed });
+  } catch (e: any) {
+    if (e.code === "NOT_FOUND") return res.status(404).json({ error: e.message });
+    logger.error({ error: e.message }, "Create join request failed");
+    res.status(500).json({ error: "Failed to create join request" });
+  }
+});
+
+router.get("/join-requests/my", authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const userId = userIdOf(req);
+    if (!userId) return res.status(401).json({ error: "Unauthenticated" });
+    res.json({ requests: await MemberService.myJoinRequests(userId) });
+  } catch (e: any) {
+    logger.error({ error: e.message }, "List my join requests failed");
+    res.status(500).json({ error: "Failed to list join requests" });
+  }
+});
 
 router.use(authMiddleware, tenantMiddleware);
 

@@ -3,8 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:sero/app/theme.dart';
 import 'package:sero/providers/shared/notification_provider.dart';
+import 'package:sero/widgets/shared/sero_ui.dart';
 import 'package:intl/intl.dart';
 
+/// Modern notification inbox (§16): category icon chip, title, time-ago and an
+/// unread dot per item, with mark-all-read and pull-to-refresh.
 class NotificationsScreen extends ConsumerWidget {
   const NotificationsScreen({super.key});
 
@@ -13,12 +16,12 @@ class NotificationsScreen extends ConsumerWidget {
     final notifications = ref.watch(notificationProvider);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
+      backgroundColor: kSlateBg,
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Color(0xFF1E293B)),
+          icon: const Icon(Icons.arrow_back, color: kTextPrimary),
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
@@ -26,7 +29,7 @@ class NotificationsScreen extends ConsumerWidget {
           style: GoogleFonts.outfit(
             fontSize: 18,
             fontWeight: FontWeight.w700,
-            color: const Color(0xFF1E293B),
+            color: kTextPrimary,
           ),
         ),
         actions: [
@@ -46,12 +49,26 @@ class NotificationsScreen extends ConsumerWidget {
         ],
       ),
       body: notifications.isEmpty
-          ? _buildEmptyState()
+          ? RefreshIndicator(
+              onRefresh: () => ref.read(notificationProvider.notifier).refresh(),
+              color: kPrimaryGreen,
+              child: ListView(
+                children: const [
+                  SizedBox(height: 100),
+                  EmptyState(
+                    icon: Icons.notifications_none_rounded,
+                    title: 'No notifications yet',
+                    message:
+                        "You're all caught up! Society updates, bills and visitor alerts will land here.",
+                  ),
+                ],
+              ),
+            )
           : RefreshIndicator(
               onRefresh: () => ref.read(notificationProvider.notifier).refresh(),
               color: kPrimaryGreen,
               child: ListView.separated(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                padding: const EdgeInsets.all(16),
                 itemCount: notifications.length,
                 separatorBuilder: (_, __) => const SizedBox(height: 12),
                 itemBuilder: (context, index) {
@@ -62,108 +79,102 @@ class NotificationsScreen extends ConsumerWidget {
             ),
     );
   }
-
-  Widget _buildEmptyState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF1F5F9),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Icons.notifications_off_outlined,
-              size: 48,
-              color: Color(0xFF94A3B8),
-            ),
-          ),
-          const SizedBox(height: 24),
-          Text(
-            'No notifications yet',
-            style: GoogleFonts.outfit(
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-              color: const Color(0xFF1E293B),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            "You're all caught up!",
-            style: GoogleFonts.outfit(
-              fontSize: 14,
-              color: const Color(0xFF64748B),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 class _NotificationTile extends ConsumerWidget {
   final dynamic item;
   const _NotificationTile({required this.item});
 
+  static String _timeAgo(DateTime time) {
+    final diff = DateTime.now().difference(time);
+    if (diff.inMinutes < 1) return 'Just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    if (diff.inDays < 7) return '${diff.inDays}d ago';
+    return DateFormat('d MMM').format(time);
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final bool unread = !(item.isRead as bool);
     return GestureDetector(
       onTap: () => ref.read(notificationProvider.notifier).markAsRead(item.id),
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: item.isRead ? Colors.white : const Color(0xFFF0FDF4),
+          color: unread ? kLightMint : Colors.white,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: item.isRead ? const Color(0xFFF1F5F9) : kPrimaryGreen.withOpacity(0.1),
+            color: unread ? kAccentGreen.withValues(alpha: 0.25) : kSlateBorder,
           ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.03),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Category icon chip
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: item.color.withOpacity(0.1),
+                color: (item.color as Color).withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Icon(item.icon, color: item.color, size: 20),
             ),
-            const SizedBox(width: 16),
+            const SizedBox(width: 14),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Expanded(
                         child: Text(
                           item.title,
                           style: GoogleFonts.outfit(
                             fontSize: 14,
-                            fontWeight: FontWeight.w700,
-                            color: const Color(0xFF1E293B),
+                            fontWeight: unread ? FontWeight.w800 : FontWeight.w600,
+                            color: kTextPrimary,
                           ),
                         ),
                       ),
+                      const SizedBox(width: 8),
                       Text(
-                        DateFormat('h:mm a').format(item.createdAt),
+                        _timeAgo(item.createdAt as DateTime),
                         style: GoogleFonts.outfit(
                           fontSize: 11,
-                          color: const Color(0xFF94A3B8),
+                          color: kTextSecondary,
                         ),
                       ),
+                      if (unread) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          width: 8,
+                          height: 8,
+                          margin: const EdgeInsets.only(top: 3),
+                          decoration: const BoxDecoration(
+                            color: kAccentGreen,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                   const SizedBox(height: 4),
                   Text(
                     item.message,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
                     style: GoogleFonts.outfit(
                       fontSize: 13,
-                      color: const Color(0xFF64748B),
+                      color: kTextSecondary,
                       height: 1.4,
                     ),
                   ),

@@ -19,11 +19,16 @@ class FloatingPillNavbar extends StatelessWidget {
   final List<NavItemData> items;
   final ValueChanged<int> onTap;
 
+  /// Optional index rendered as a raised, prominent circular button
+  /// (e.g. the resident "Pay" action in the center of the bar).
+  final int? centerIndex;
+
   const FloatingPillNavbar({
     super.key,
     required this.currentIndex,
     required this.items,
     required this.onTap,
+    this.centerIndex,
   });
 
   @override
@@ -51,6 +56,14 @@ class FloatingPillNavbar extends StatelessWidget {
           children: List.generate(items.length, (index) {
             final isSelected = currentIndex == index;
             final item = items[index];
+
+            if (index == centerIndex) {
+              return _CenterActionButton(
+                item: item,
+                isSelected: isSelected,
+                onTap: () => onTap(index),
+              );
+            }
 
             return Padding(
               padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -96,6 +109,76 @@ class FloatingPillNavbar extends StatelessWidget {
               ),
             );
           }),
+        ),
+      ),
+    );
+  }
+}
+
+/// Raised circular emerald action button used for the prominent center item
+/// of [FloatingPillNavbar] (resident "Pay").
+class _CenterActionButton extends StatelessWidget {
+  final NavItemData item;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _CenterActionButton({
+    required this.item,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: SizedBox(
+        width: 68,
+        height: 44,
+        child: OverflowBox(
+          maxHeight: 96,
+          alignment: Alignment.bottomCenter,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 54,
+                height: 54,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [kAccentGreen, kPrimaryGreen],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 3),
+                  boxShadow: [
+                    BoxShadow(
+                      color: kPrimaryGreen.withValues(alpha: 0.35),
+                      blurRadius: 14,
+                      offset: const Offset(0, 6),
+                    ),
+                  ],
+                ),
+                child: Icon(
+                  isSelected ? item.activeIcon : item.icon,
+                  color: Colors.white,
+                  size: 26,
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                item.label,
+                style: GoogleFonts.outfit(
+                  color: isSelected ? kPrimaryGreen : const Color(0xFF94A3B8),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: -0.2,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

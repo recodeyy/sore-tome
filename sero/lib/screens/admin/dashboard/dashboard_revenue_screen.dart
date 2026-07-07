@@ -267,8 +267,6 @@ class DashboardRevenueScreen extends ConsumerWidget {
                 _FinanceDetailCard(
                   title: 'Pending Dues',
                   value: money(pending),
-                  trendUp: false,
-                  trendColor: const Color(0xFFDC2626),
                 ),
                 _FinanceDetailCard(
                   title: 'This Month Revenue',
@@ -278,7 +276,6 @@ class DashboardRevenueScreen extends ConsumerWidget {
                 _FinanceDetailCard(
                   title: 'Total Expenses',
                   value: money(expense),
-                  trendUp: true,
                 ),
                 _FinanceDetailCard(
                   title: 'Balance',
@@ -505,20 +502,12 @@ class _MiniFinanceCard extends StatelessWidget {
 class _FinanceDetailCard extends StatelessWidget {
   final String title;
   final String value;
-  final String? trend;
-  final bool trendUp;
-  final Color? trendColor;
   final bool showSparkline;
-  final String? subtitle;
 
   const _FinanceDetailCard({
     required this.title,
     required this.value,
-    this.trend,
-    this.trendUp = true,
-    this.trendColor,
     this.showSparkline = false,
-    this.subtitle,
   });
 
   @override
@@ -546,30 +535,6 @@ class _FinanceDetailCard extends StatelessWidget {
               color: const Color(0xFF1E293B),
             ),
           ),
-          if (trend != null)
-            Row(
-              children: [
-                Icon(
-                  trendUp ? Icons.trending_up : Icons.trending_down,
-                  size: 12,
-                  color: trendColor ?? (trendUp ? const Color(0xFF059669) : const Color(0xFFDC2626)),
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  trend!,
-                  style: GoogleFonts.outfit(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: trendColor ?? (trendUp ? const Color(0xFF059669) : const Color(0xFFDC2626)),
-                  ),
-                ),
-              ],
-            ),
-          if (subtitle != null)
-            Text(
-              subtitle!,
-              style: GoogleFonts.outfit(fontSize: 11, fontWeight: FontWeight.w500, color: kPrimaryGreen),
-            ),
           if (showSparkline)
             SizedBox(
               height: 24,

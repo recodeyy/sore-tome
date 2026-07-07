@@ -32,6 +32,7 @@ class SocietyLogoScreen extends ConsumerWidget {
       ),
     );
     if (url == null || url.isEmpty) return;
+    if (!context.mounted) return;
     final messenger = ScaffoldMessenger.of(context);
     try {
       final ok = await AdminSocietyService.updateLogo(url);
@@ -64,6 +65,7 @@ class SocietyLogoScreen extends ConsumerWidget {
       ),
     );
     if (confirm != true) return;
+    if (!context.mounted) return;
     final messenger = ScaffoldMessenger.of(context);
     try {
       final ok = await AdminSocietyService.deleteLogo();

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:sero/app/theme.dart';
+import 'package:sero/widgets/common/async_state_views.dart';
 import 'package:sero/models/super_admin/super_admin_models.dart';
 import 'package:sero/providers/super_admin/super_admin_providers.dart';
 import 'package:sero/widgets/common/info_list_tile.dart';
@@ -39,12 +40,7 @@ class SuperAdminSupportScreen extends ConsumerWidget {
             ),
             const SizedBox(height: 18),
             support.when(
-              loading: () => const Center(
-                child: Padding(
-                  padding: EdgeInsets.all(32),
-                  child: CircularProgressIndicator(),
-                ),
-              ),
+              loading: () => const LiveLoadingView(),
               error: (error, stackTrace) => SuperAdminAsyncError(
                 error: error,
                 onRetry: () =>

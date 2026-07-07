@@ -1,5 +1,6 @@
 import type { PoolClient } from "pg";
 import { OutboxService } from "../outbox/OutboxService";
+import { queuePush } from "./Push";
 
 /**
  * Cross-role notification fan-out helpers.
@@ -47,6 +48,9 @@ async function insertNotifications(
       [societyId, userId, n.title, n.body || null, n.type, JSON.stringify(n.data || {})]
     );
   }
+  // MR-001/§10: bridge in-app notification rows to real FCM pushes (multi-device,
+  // best-effort, post-transaction). Every fanOut caller gets push for free.
+  queuePush(unique, { title: n.title, body: n.body, data: { type: n.type, ...(n.data || {}) } });
   return unique.length;
 }
 

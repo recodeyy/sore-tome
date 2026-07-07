@@ -35,19 +35,34 @@ class _SlotAllocationScreenState extends ConsumerState<SlotAllocationScreen> {
     }
 
     final messenger = ScaffoldMessenger.of(context);
-    List<dynamic> units;
+    // Load real residents (with their user_id + unit_id). Allocating to a
+    // resident's *user id* is what makes the slot show up on their "My Parking"
+    // screen — the resident query matches `allocated_to = userId` (and unit_id).
+    List<dynamic> members;
     try {
-      units = await AdminSocietyService.getUnits();
+      members = await AdminSocietyService.getMembers();
     } catch (e) {
       messenger.showSnackBar(
-        SnackBar(content: Text('Could not load units: $e'), backgroundColor: const Color(0xFFB91C1C)),
+        SnackBar(content: Text('Could not load residents: $e'), backgroundColor: const Color(0xFFB91C1C)),
       );
       return;
     }
+    // Only residents that have a linked login (user_id) can receive an
+    // allocation that surfaces on their app.
+    final residents = members
+        .whereType<Map>()
+        .where((m) => (m['user_id'] ?? '').toString().isNotEmpty)
+        .toList();
     if (!mounted) return;
 
-    final allocatedToController = TextEditingController();
-    String? selectedUnitId;
+    if (residents.isEmpty) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('No registered residents found to allocate to.'), backgroundColor: Color(0xFFB91C1C)),
+      );
+      return;
+    }
+
+    String? selectedUserId;
 
     final result = await showModalBottomSheet<Map<String, String>>(
       context: context,
@@ -68,30 +83,23 @@ class _SlotAllocationScreenState extends ConsumerState<SlotAllocationScreen> {
             children: [
               Text('Allocate Slot $slotCode',
                   style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.w800, color: const Color(0xFF1E293B))),
+              const SizedBox(height: 6),
+              Text('Pick the resident this slot is for.',
+                  style: GoogleFonts.outfit(fontSize: 13, color: const Color(0xFF64748B))),
               const SizedBox(height: 16),
-              if (units.isEmpty)
-                Text('No units found. Add flats/units first.',
-                    style: GoogleFonts.outfit(fontSize: 13, color: const Color(0xFF64748B)))
-              else
-                DropdownButtonFormField<String>(
-                  initialValue: selectedUnitId,
-                  isExpanded: true,
-                  decoration: const InputDecoration(labelText: 'Unit / Flat'),
-                  items: units.map((u) {
-                    final map = (u as Map?) ?? const {};
-                    final id = (map['id'] ?? '').toString();
-                    final label = (map['number'] ?? map['name'] ?? map['code'] ?? 'Unit').toString();
-                    return DropdownMenuItem(value: id, child: Text(label, style: GoogleFonts.outfit(fontSize: 14)));
-                  }).toList(),
-                  onChanged: (v) => setLocal(() => selectedUnitId = v),
-                ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: allocatedToController,
-                decoration: const InputDecoration(
-                  labelText: 'Allocated to (name, optional)',
-                  hintText: 'Resident / owner name',
-                ),
+              DropdownButtonFormField<String>(
+                initialValue: selectedUserId,
+                isExpanded: true,
+                decoration: const InputDecoration(labelText: 'Resident'),
+                items: residents.map((m) {
+                  final map = m.cast<String, dynamic>();
+                  final uid = (map['user_id'] ?? '').toString();
+                  final name = (map['member_name'] ?? map['name'] ?? 'Resident').toString();
+                  final flat = (map['unit_label'] ?? map['flat'] ?? map['unit_number'] ?? '').toString();
+                  final label = flat.isNotEmpty ? '$name • $flat' : name;
+                  return DropdownMenuItem(value: uid, child: Text(label, style: GoogleFonts.outfit(fontSize: 14), overflow: TextOverflow.ellipsis));
+                }).toList(),
+                onChanged: (v) => setLocal(() => selectedUserId = v),
               ),
               const SizedBox(height: 20),
               SizedBox(
@@ -103,10 +111,18 @@ class _SlotAllocationScreenState extends ConsumerState<SlotAllocationScreen> {
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                   ),
-                  onPressed: () => Navigator.pop(ctx, {
-                    'unitId': selectedUnitId ?? '',
-                    'allocatedTo': allocatedToController.text.trim(),
-                  }),
+                  onPressed: selectedUserId == null
+                      ? null
+                      : () {
+                          final m = residents
+                              .whereType<Map>()
+                              .firstWhere((e) => (e['user_id'] ?? '').toString() == selectedUserId,
+                                  orElse: () => const {});
+                          Navigator.pop(ctx, {
+                            'allocatedTo': selectedUserId ?? '',
+                            'unitId': (m['unit_id'] ?? '').toString(),
+                          });
+                        },
                   child: Text('Confirm Allocation',
                       style: GoogleFonts.outfit(fontSize: 15, fontWeight: FontWeight.w700)),
                 ),
@@ -120,9 +136,9 @@ class _SlotAllocationScreenState extends ConsumerState<SlotAllocationScreen> {
     if (result == null) return;
     final unitId = result['unitId'] ?? '';
     final allocatedTo = result['allocatedTo'] ?? '';
-    if (unitId.isEmpty && allocatedTo.isEmpty) {
+    if (allocatedTo.isEmpty) {
       messenger.showSnackBar(
-        const SnackBar(content: Text('Select a unit or enter who the slot is for.'), backgroundColor: Color(0xFFB91C1C)),
+        const SnackBar(content: Text('Select a resident to allocate the slot to.'), backgroundColor: Color(0xFFB91C1C)),
       );
       return;
     }
@@ -307,7 +323,7 @@ class _SlotAllocationScreenState extends ConsumerState<SlotAllocationScreen> {
           color: Colors.white,
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.05),
+              color: Colors.black.withValues(alpha: 0.05),
               blurRadius: 10,
               offset: const Offset(0, -2),
             ),
@@ -376,10 +392,10 @@ class _SlotAllocationScreenState extends ConsumerState<SlotAllocationScreen> {
         Container(
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
-            color: isSelected ? color.withOpacity(0.1) : Colors.transparent,
+            color: isSelected ? color.withValues(alpha: 0.1) : Colors.transparent,
             borderRadius: BorderRadius.circular(10),
             border: Border.all(
-              color: isSelected ? color : color.withOpacity(0.3),
+              color: isSelected ? color : color.withValues(alpha: 0.3),
               width: isSelected ? 2 : 1,
             ),
           ),
@@ -415,7 +431,7 @@ class _SlotAllocationScreenState extends ConsumerState<SlotAllocationScreen> {
         color: const Color(0xFFF8FAFC),
         borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
         boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 15, offset: const Offset(0, -5)),
+          BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 15, offset: const Offset(0, -5)),
         ],
       ),
       child: Column(

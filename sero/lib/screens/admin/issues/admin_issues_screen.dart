@@ -4,6 +4,8 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sero/providers/shared/issues_provider.dart';
 import 'package:sero/app/theme.dart';
+import 'package:sero/widgets/common/async_state_views.dart';
+import 'package:sero/widgets/shared/sero_ui.dart';
 import 'package:sero/models/issue.dart';
 import 'package:sero/widgets/admin/issue_card.dart';
 import '../../shared/ai_chat/ai_chat_screen.dart';
@@ -277,30 +279,13 @@ class _AdminIssuesScreenState extends ConsumerState<AdminIssuesScreen> {
                   ),
                 );
               },
-              loading: () => const SliverFillRemaining(
-                child: Center(
-                  child: CircularProgressIndicator(color: kPrimaryGreen, strokeWidth: 2),
-                ),
+              loading: () => const SliverToBoxAdapter(
+                child: LiveLoadingView(),
               ),
               error: (err, st) => SliverFillRemaining(
-                child: Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(Icons.error_outline, size: 48, color: Colors.red),
-                        const SizedBox(height: 16),
-                        Text('Sync Error: $err', textAlign: TextAlign.center),
-                        const SizedBox(height: 24),
-                        ElevatedButton(
-                          onPressed: () => ref.read(issuesProvider.notifier).refresh(),
-                          style: ElevatedButton.styleFrom(backgroundColor: kPrimaryGreen),
-                          child: const Text('Retry Connection', style: TextStyle(color: Colors.white)),
-                        ),
-                      ],
-                    ),
-                  ),
+                child: ErrorRetryView(
+                  message: 'Could not load complaints.',
+                  onRetry: () => ref.read(issuesProvider.notifier).refresh(),
                 ),
               ),
             ),

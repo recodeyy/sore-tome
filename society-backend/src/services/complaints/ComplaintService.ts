@@ -174,6 +174,17 @@ export const ComplaintService = {
     assignedBy?: string,
     reason?: string
   ) {
+    // MR-005: assigneeId may be a staff.id (uuid) OR a login user_id (free text,
+    // e.g. "staff-1"). A non-uuid value used to hit `staff.id = $1` and blow up
+    // with 22P02 (invalid input syntax for type uuid) -> 500. Validate up front
+    // and branch the lookup instead.
+    const cleanAssignee = (assigneeId || "").trim();
+    if (!cleanAssignee || cleanAssignee.length > 64) {
+      throw err("Invalid assignee id", "INVALID_ASSIGNEE");
+    }
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanAssignee);
+    assigneeId = cleanAssignee;
+
     return withTx(async (client) => {
       const { rows } = await client.query(
         `SELECT * FROM complaints WHERE id = $1 AND society_id = $2 FOR UPDATE`,
@@ -206,14 +217,24 @@ export const ComplaintService = {
       }
 
       // Cross-role: notify the assigned staff member. For staff assignments the
-      // assigneeId is a staff.id — resolve to its login user_id.
+      // assigneeId is either a staff.id (uuid — resolve to its login user_id)
+      // or already a login user_id (text — use it directly, verifying against
+      // the staff roster when a matching row exists).
       let assigneeUserId: string | null = null;
       if (assigneeType === "staff") {
-        const sres = await client.query(
-          `SELECT user_id FROM staff WHERE id = $1 AND society_id = $2`,
-          [assigneeId, societyId]
-        );
-        assigneeUserId = sres.rows[0]?.user_id || null;
+        if (isUuid) {
+          const sres = await client.query(
+            `SELECT user_id FROM staff WHERE id = $1 AND society_id = $2`,
+            [assigneeId, societyId]
+          );
+          assigneeUserId = sres.rows[0]?.user_id || null;
+        } else {
+          const sres = await client.query(
+            `SELECT user_id FROM staff WHERE user_id = $1 AND society_id = $2`,
+            [assigneeId, societyId]
+          );
+          assigneeUserId = sres.rows[0]?.user_id || assigneeId;
+        }
       }
       const recipients = assigneeUserId ? [assigneeUserId] : [];
       await Recipients.fanOut(client, {

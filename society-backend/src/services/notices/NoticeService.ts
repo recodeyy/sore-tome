@@ -2,6 +2,7 @@ import { db } from "../../shared/Database";
 import { logger } from "../../shared/Logger";
 import { withTx } from "../finance/ledger";
 import { OutboxService } from "../outbox/OutboxService";
+import { queuePush } from "../notifications/Push";
 
 /**
  * Phase 4 notices workflow (capabilities 43–49).
@@ -237,6 +238,13 @@ export const NoticeService = {
             ]
           );
         }
+        // §10 trigger: new notice published → FCM push to every member device
+        // (best-effort, post-transaction; the app does not subscribe to topics yet).
+        queuePush(recipients.rows.map((r: any) => r.user_id), {
+          title: next.title,
+          body: next.body,
+          data: { type: "notice", noticeId: next.id, deeplink: `/notices/${next.id}` },
+        });
         logger.info(
           { societyId, noticeId, recipients: recipients.rows.length },
           "Notice publish side-effects emitted (outbox + notifications)"

@@ -52,6 +52,16 @@ router.post("/vehicles", authMiddleware, tenantMiddleware, validate(VehicleSchem
 });
 
 // Allocations
+// MR-004: the Flutter admin app lists allocations here; only POST existed
+// before, so GET 404'd. Society-scoped; committee/admin roles only.
+router.get("/allocations", authMiddleware, tenantMiddleware, canManageFacilities, async (req, res) => {
+  try {
+    res.json({ allocations: await ParkingService.listAllocations(societyOf(req), {
+      status: req.query.status as string,
+      limit: req.query.limit ? Number(req.query.limit) : undefined,
+    }) });
+  } catch (e: any) { map(res, e, "Failed to list allocations"); }
+});
 router.post("/allocations", authMiddleware, tenantMiddleware, canManageFacilities, validate(AllocateSchema), async (req, res) => {
   try { res.status(201).json({ allocation: await ParkingService.allocate(societyOf(req), { ...req.body, allocatedBy: userOf(req).uid }) }); }
   catch (e: any) { map(res, e, "Failed to allocate slot"); }

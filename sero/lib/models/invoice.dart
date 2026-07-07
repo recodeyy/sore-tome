@@ -12,6 +12,8 @@ class Invoice {
   final String currency;
   final String? dueDate;
   final DateTime? createdAt;
+  final int lateFeeMinor;
+  final String? lateFeeAppliedAt;
   final List<InvoiceLine> lines;
 
   Invoice({
@@ -25,12 +27,22 @@ class Invoice {
     this.currency = 'INR',
     this.dueDate,
     this.createdAt,
+    this.lateFeeMinor = 0,
+    this.lateFeeAppliedAt,
     this.lines = const [],
   });
 
   double get total => totalMinor / 100.0;
+  double get lateFee => lateFeeMinor / 100.0;
   bool get isDraft => status == 'draft';
   bool get isPublished => status == 'published';
+  bool get hasLateFee => lateFeeMinor > 0;
+
+  /// True when the due date has passed.
+  bool get isOverdue {
+    final due = DateTime.tryParse(dueDate ?? '');
+    return due != null && due.isBefore(DateTime.now());
+  }
 
   factory Invoice.fromJson(Map<String, dynamic> json) {
     return Invoice(
@@ -44,6 +56,8 @@ class Invoice {
       currency: json['currency'] as String? ?? 'INR',
       dueDate: json['due_date'] as String?,
       createdAt: DateTime.tryParse(json['created_at']?.toString() ?? ''),
+      lateFeeMinor: _toInt(json['late_fee_minor']),
+      lateFeeAppliedAt: json['late_fee_applied_at']?.toString(),
       lines: (json['lines'] as List?)
               ?.map((l) => InvoiceLine.fromJson(l as Map<String, dynamic>))
               .toList() ??

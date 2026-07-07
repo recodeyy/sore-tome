@@ -1,8 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:sero/app/theme.dart';
+import 'package:sero/widgets/shared/sero_ui.dart';
 
 /// Shared loading / empty / error presenters for live-data screens (spec 15 & 16).
 /// Never render fake data — these are the truthful fallbacks.
+///
+/// UI QA pass (§16): these now delegate to the canonical SERO UI kit
+/// (SkeletonCard / ErrorRetryView / EmptyState styling) so every consumer
+/// screen gets modern skeleton loading and recoverable error states for free.
 
 class LiveLoadingView extends StatelessWidget {
   final String? label;
@@ -11,18 +17,15 @@ class LiveLoadingView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.all(40),
-      child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const CircularProgressIndicator(strokeWidth: 2),
-            if (label != null) ...[
-              const SizedBox(height: 16),
-              Text(label!, style: GoogleFonts.outfit(color: const Color(0xFF64748B))),
-            ],
-          ],
-        ),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: const [
+          SkeletonCard(height: 88),
+          SkeletonCard(height: 88),
+          SkeletonCard(height: 88),
+          SkeletonCard(height: 88, margin: EdgeInsets.zero),
+        ],
       ),
     );
   }
@@ -35,36 +38,9 @@ class LiveErrorView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(40),
-      child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.cloud_off_rounded, color: Color(0xFF94A3B8), size: 48),
-            const SizedBox(height: 16),
-            Text(
-              'Could not load live data.',
-              style: GoogleFonts.outfit(
-                color: const Color(0xFF1E293B),
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              error.toString().replaceFirst('Exception: ', ''),
-              textAlign: TextAlign.center,
-              style: GoogleFonts.outfit(color: const Color(0xFF64748B), fontSize: 12),
-            ),
-            const SizedBox(height: 16),
-            OutlinedButton.icon(
-              onPressed: onRetry,
-              icon: const Icon(Icons.refresh, size: 18),
-              label: const Text('Retry'),
-            ),
-          ],
-        ),
-      ),
+    return ErrorRetryView(
+      message: error.toString().replaceFirst('Exception: ', ''),
+      onRetry: onRetry,
     );
   }
 }
@@ -77,14 +53,30 @@ class LiveEmptyView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.all(40),
+      padding: const EdgeInsets.all(28),
       child: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: const Color(0xFF94A3B8), size: 48),
-            const SizedBox(height: 16),
-            Text(message, style: GoogleFonts.outfit(color: const Color(0xFF64748B))),
+            Container(
+              width: 76,
+              height: 76,
+              decoration: BoxDecoration(
+                color: kLightMint,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Icon(icon, color: kAccentGreen, size: 36),
+            ),
+            const SizedBox(height: 18),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: GoogleFonts.outfit(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: kTextSecondary,
+              ),
+            ),
           ],
         ),
       ),

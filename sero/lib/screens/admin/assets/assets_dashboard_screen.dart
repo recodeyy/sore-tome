@@ -29,22 +29,22 @@ class AssetsDashboardScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final unreadCount = ref.watch(notificationProvider.notifier).unreadCount;
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
+      backgroundColor: kSlateBg,
       drawer: const AdminDrawer(),
       appBar: AppBar(
-        flexibleSpace: Container(
-          decoration: const BoxDecoration(gradient: kPremiumGradient),
-        ),
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.white,
+        elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.menu, color: Colors.white),
+          icon: const Icon(Icons.menu, color: kTextPrimary),
           onPressed: () => Scaffold.of(context).openDrawer(),
         ),
         title: Text(
           'Assets Dashboard',
           style: GoogleFonts.outfit(
-            color: Colors.white,
-            fontSize: 20,
-            fontWeight: FontWeight.w600,
+            color: kTextPrimary,
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
           ),
         ),
         actions: [
@@ -54,7 +54,7 @@ class AssetsDashboardScreen extends ConsumerWidget {
               children: [
                 IconButton(
                   onPressed: null,
-                  icon: const Icon(Icons.notifications_outlined, color: Colors.white),
+                  icon: const Icon(Icons.notifications_outlined, color: kTextPrimary),
                 ),
                 if (unreadCount > 0)
                   Positioned(
@@ -171,7 +171,7 @@ class AssetsDashboardScreen extends ConsumerWidget {
                               Container(
                                 padding: const EdgeInsets.all(10),
                                 decoration: BoxDecoration(
-                                  color: Color(color).withOpacity(0.1),
+                                  color: Color(color).withValues(alpha: 0.1),
                                   borderRadius: BorderRadius.circular(12),
                                 ),
                                 child: Icon(
@@ -260,7 +260,7 @@ class AssetsDashboardScreen extends ConsumerWidget {
                               Container(
                                 padding: const EdgeInsets.all(10),
                                 decoration: BoxDecoration(
-                                  color: Color(color).withOpacity(0.1),
+                                  color: Color(color).withValues(alpha: 0.1),
                                   shape: BoxShape.circle,
                                 ),
                                 child: Icon(
@@ -328,7 +328,7 @@ class AssetsDashboardScreen extends ConsumerWidget {
           color: Colors.white,
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.05),
+              color: Colors.black.withValues(alpha: 0.05),
               blurRadius: 10,
               offset: const Offset(0, -2),
             ),
@@ -483,7 +483,7 @@ class AssetsDashboardScreen extends ConsumerWidget {
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: Color(color).withOpacity(0.1),
+                color: Color(color).withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Icon(_iconForType(type), color: Color(color), size: 20),

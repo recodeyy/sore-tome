@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:sero/widgets/shared/sero_ui.dart';
 import '../../../models/invoice.dart';
 import '../../../providers/invoices_provider.dart';
 
@@ -36,14 +37,14 @@ class _InvoicesViewState extends ConsumerState<InvoicesView> {
 
   String _money(int minor) => '₹${(minor / 100).toStringAsFixed(2)}';
 
-  Color _statusColor(String status) {
+  ChipSemantic _statusSemantic(String status) {
     switch (status) {
       case 'published':
-        return Colors.green;
+        return ChipSemantic.success;
       case 'cancelled':
-        return Colors.red;
+        return ChipSemantic.error;
       default:
-        return Colors.orange;
+        return ChipSemantic.warning;
     }
   }
 
@@ -79,16 +80,26 @@ class _InvoicesViewState extends ConsumerState<InvoicesView> {
 
   Widget _buildList(InvoicesState state) {
     if (state.isLoading && state.invoices.isEmpty) {
-      return const Center(child: CircularProgressIndicator());
+      return const SkeletonList(itemCount: 5, itemHeight: 80);
     }
-    final message = state.errorMessage.isNotEmpty && state.invoices.isEmpty
-        ? state.errorMessage
-        : (state.invoices.isEmpty ? 'No invoices yet. Create one to get started.' : null);
-    if (message != null) {
+    if (state.errorMessage.isNotEmpty && state.invoices.isEmpty) {
       return ListView(children: [
-        Padding(
-          padding: const EdgeInsets.only(top: 120),
-          child: Center(child: Text(message, textAlign: TextAlign.center)),
+        const SizedBox(height: 80),
+        ErrorRetryView(
+          message: state.errorMessage,
+          onRetry: () => ref.read(invoicesProvider.notifier).fetch(),
+        ),
+      ]);
+    }
+    if (state.invoices.isEmpty) {
+      return ListView(children: [
+        const SizedBox(height: 60),
+        EmptyState(
+          icon: Icons.receipt_long_outlined,
+          title: 'No invoices yet',
+          message: 'Create your first invoice to start billing members.',
+          actionLabel: 'New Invoice',
+          onAction: _showCreateDialog,
         ),
       ]);
     }
@@ -112,10 +123,9 @@ class _InvoicesViewState extends ConsumerState<InvoicesView> {
           spacing: 8,
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            Chip(
-              label: Text(invoice.status, style: const TextStyle(fontSize: 11, color: Colors.white)),
-              backgroundColor: _statusColor(invoice.status),
-              visualDensity: VisualDensity.compact,
+            StatusChip(
+              label: invoice.status.toUpperCase(),
+              semantic: _statusSemantic(invoice.status),
             ),
             if (invoice.isDraft)
               TextButton(onPressed: () => _publish(invoice), child: const Text('Publish'))

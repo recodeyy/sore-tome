@@ -7,7 +7,10 @@ import 'package:sero/models/user.dart';
 
 // Modularized Widgets
 import 'widgets/admin_users_widgets.dart';
+import 'package:sero/app/theme.dart';
+import 'package:sero/screens/admin/members/join_requests_screen.dart';
 import 'package:sero/widgets/shared/admin_drawer.dart';
+import 'package:sero/widgets/shared/sero_ui.dart';
 
 class AdminUsersScreen extends ConsumerStatefulWidget {
   const AdminUsersScreen({super.key});
@@ -36,10 +39,10 @@ class _AdminUsersScreenState extends ConsumerState<AdminUsersScreen> {
     );
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FA),
+      backgroundColor: kSlateBg,
       drawer: const AdminDrawer(),
       body: DefaultTabController(
-        length: 2,
+        length: 3,
         child: Column(
           children: [
             Builder(
@@ -94,7 +97,8 @@ class _AdminUsersScreenState extends ConsumerState<AdminUsersScreen> {
                   ),
                   tabs: [
                     Tab(text: "Pending"),
-                    Tab(text: "Residents List"),
+                    Tab(text: "Residents"),
+                    Tab(text: "Join Requests"),
                   ],
                 ),
               ),
@@ -106,6 +110,7 @@ class _AdminUsersScreenState extends ConsumerState<AdminUsersScreen> {
               child: TabBarView(children: [
                 _PendingTab(),
                 _AllUsersTab(),
+                const JoinRequestsScreen(embedded: true),
               ]),
             ),
           ],
@@ -123,26 +128,12 @@ class _PendingTab extends ConsumerWidget {
     return pendingAsync.when(
       data: (users) {
         if (users.isEmpty) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(
-                  Icons.person_outline_rounded,
-                  size: 64,
-                  color: Color(0xFFCBD5E1),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  'No pending approvals',
-                  style: GoogleFonts.outfit(
-                    color: const Color(0xFF64748B),
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
-            ),
+          return EmptyState(
+            icon: Icons.person_outline_rounded,
+            title: 'No pending approvals',
+            message: 'New resident sign-ups awaiting approval will show here.',
+            actionLabel: 'Refresh',
+            onAction: () => ref.invalidate(pendingUsersProvider),
           ).animate().fade();
         }
         return ListView.separated(
@@ -160,10 +151,11 @@ class _PendingTab extends ConsumerWidget {
           },
         );
       },
-      loading: () => const Center(
-        child: CircularProgressIndicator(color: Color(0xFF345D7E)),
+      loading: () => const SkeletonList(itemCount: 4, itemHeight: 110),
+      error: (e, st) => ErrorRetryView(
+        message: 'Could not load pending approvals.',
+        onRetry: () => ref.invalidate(pendingUsersProvider),
       ),
-      error: (e, st) => Center(child: Text('Error: $e')),
     );
   }
 }
@@ -176,11 +168,12 @@ class _AllUsersTab extends ConsumerWidget {
     return allAsync.when(
       data: (users) {
         if (users.isEmpty) {
-          return Center(
-            child: Text(
-              'No users found',
-              style: GoogleFonts.outfit(color: const Color(0xFF64748B)),
-            ),
+          return EmptyState(
+            icon: Icons.people_outline_rounded,
+            title: 'No residents yet',
+            message: 'Approved residents of your society will appear here.',
+            actionLabel: 'Refresh',
+            onAction: () => ref.invalidate(allUsersProvider),
           );
         }
         return ListView.separated(
@@ -197,10 +190,11 @@ class _AllUsersTab extends ConsumerWidget {
           },
         );
       },
-      loading: () => const Center(
-        child: CircularProgressIndicator(color: Color(0xFF345D7E)),
+      loading: () => const SkeletonList(itemCount: 5, itemHeight: 88),
+      error: (e, st) => ErrorRetryView(
+        message: 'Could not load residents.',
+        onRetry: () => ref.invalidate(allUsersProvider),
       ),
-      error: (e, st) => Center(child: Text('Error: $e')),
     );
   }
 

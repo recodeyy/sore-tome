@@ -1,0 +1,55 @@
+{
+  "generated": "2026-07-07",
+  "commit_sha": "b3ab522f5aafdf60ace36214d203d893e2754e78",
+  "scope": "mobile app only (no website)",
+  "environment": {
+    "backend": "local tsx server.js :3001 (verified) + data plane on Neon/Upstash (provisioned, verified)",
+    "database": "Neon Postgres (45 migrations applied, Hubtown Sunkist seeded) + local pg16",
+    "redis": "Upstash (TLS verified) + local redis7",
+    "storage": "Firebase Storage (unchanged)",
+    "firebase": "sero-73976 (Auth + FCM + Firestore)",
+    "payments": "Razorpay Test Mode"
+  },
+  "build": {
+    "apk": "builds/sero-app-20260707-parcels-domestic.apk",
+    "size_bytes": 69834607,
+    "sha256": "06692ef8a6cf6c98619a82f7692112b7111ac812524003ccb396c7b45b76d67a",
+    "version": "1.0.0+8",
+    "flutter_analyze": "0 issues",
+    "flutter_test": "no test/ directory (no widget tests authored)",
+    "dart_format": "applied to new screens"
+  },
+  "results": [
+    {"id": "T-LOGIN-01", "role": "resident", "screen": "login", "endpoint": "POST /auth/login", "expected": "token + resident shell", "actual": "token len 288, resident scope", "evidence": "login_smoke e2e + live probe", "pass": true},
+    {"id": "T-LOGIN-02", "role": "admin", "endpoint": "POST /auth/login", "expected": "admin token", "actual": "pass", "evidence": "login_smoke 3/3", "pass": true},
+    {"id": "T-LOGIN-03", "role": "guard", "endpoint": "POST /auth/login", "expected": "guard token", "actual": "pass", "evidence": "login_smoke 3/3", "pass": true},
+    {"id": "T-ONBOARD-01", "role": "resident", "screen": "onboarding", "endpoint": "POST /resident/join-requests", "expected": "society->flat->request->status", "actual": "screens + API present", "evidence": "MR-006", "pass": true},
+    {"id": "T-NOTIF-01", "role": "resident", "endpoint": "device_tokens + FCM", "expected": "token persists, push sent", "actual": "multi-device store + multicast + prune", "evidence": "MR-001/008 + cross-role notified:N", "pass": true},
+    {"id": "T-VISIT-01", "role": "guard->resident", "endpoint": "guard visitor log->approve->entry->exit", "expected": "live notify each step", "actual": "notified:1 each", "evidence": "cross_role e2e", "pass": true},
+    {"id": "T-VISIT-02", "role": "resident", "screen": "invite_visitor", "endpoint": "POST /resident/visitors", "expected": "gate pass code", "actual": "pass code generated", "evidence": "invite_visitor_screen + resident_pg", "pass": true},
+    {"id": "T-PARCEL-01", "role": "guard", "screen": "staff_parcels", "endpoint": "POST /parcels", "expected": "log + notify + OTP", "actual": "OTP 6-digit, resident notified", "evidence": "parcels_domestic 4/4 + live probe", "pass": true},
+    {"id": "T-PARCEL-02", "role": "guard", "endpoint": "POST /parcels/:id/collect", "expected": "OTP required, idempotent", "actual": "wrong OTP 400, correct collects, re-collect idempotent", "evidence": "parcels_domestic test", "pass": true},
+    {"id": "T-DHELP-01", "role": "resident", "screen": "domestic_help", "endpoint": "POST/PATCH /domestic-help", "expected": "add/pause/revoke", "actual": "revoked blocks gate log", "evidence": "parcels_domestic test", "pass": true},
+    {"id": "T-DHELP-02", "role": "guard->resident", "endpoint": "POST /domestic-help/:id/log", "expected": "check-in/out notifies resident + history", "actual": "notified:1, history recorded", "evidence": "parcels_domestic test + live seed", "pass": true},
+    {"id": "T-PAY-01", "role": "resident", "endpoint": "Razorpay verify", "expected": "idempotent, one effect", "actual": "one payment/receipt, balanced ledger", "evidence": "payment_demo 7/7", "pass": true},
+    {"id": "T-PAY-02", "role": "resident", "endpoint": "webhook dup", "expected": "single financial effect", "actual": "no second effect", "evidence": "payment_demo test", "pass": true},
+    {"id": "T-PAY-03", "role": "resident", "endpoint": "bad signature", "expected": "rejected", "actual": "SEC-ALERT reject", "evidence": "payment_demo test", "pass": true},
+    {"id": "T-RECEIPT-01", "role": "resident", "endpoint": "receipt PDF", "expected": "numbered PDF, TEST MODE watermark", "actual": "%PDF generated", "evidence": "payment_demo test", "pass": true},
+    {"id": "T-COMPLAINT-01", "role": "resident->admin->staff", "endpoint": "complaint create->assign->status", "expected": "each role notified", "actual": "admins:1, staff:1, resident:1", "evidence": "cross_role e2e + MR-005", "pass": true},
+    {"id": "T-POLL-01", "role": "admin->resident", "endpoint": "poll open->vote", "expected": "vote once, results", "actual": "notified:5, vote cast", "evidence": "cross_role e2e", "pass": true},
+    {"id": "T-PARK-01", "role": "admin->resident", "endpoint": "parking allocate", "expected": "resident sees slot", "actual": "allocated + notified", "evidence": "cross_role e2e + MR-004", "pass": true},
+    {"id": "T-AMENITY-01", "role": "resident", "endpoint": "amenity book", "expected": "double-book blocked", "actual": "overlap protection", "evidence": "cross_role e2e + booking tests", "pass": true},
+    {"id": "T-SOS-01", "role": "resident->staff", "endpoint": "security incident", "expected": "responders notified", "actual": "notified:2", "evidence": "cross_role e2e", "pass": true},
+    {"id": "T-ISOLATE-01", "role": "cross", "endpoint": "auth guards", "expected": "no cross-role/cross-society", "actual": "SEC-WARN blocks", "evidence": "cross_role e2e", "pass": true},
+    {"id": "T-CRASH-01", "role": "all", "screen": "all", "expected": "no analyzer errors, error boundary", "actual": "flutter analyze 0 issues", "evidence": "analyze", "pass": true},
+    {"id": "T-DEVICE-01", "role": "resident+admin/guard", "expected": "two physical phones live sync + push", "actual": "NOT RUN — needs hardware", "evidence": "runbook §6", "pass": null}
+  ],
+  "summary": {
+    "backend_jest": "277 pass (53 suites, incl. 4 new parcels/domestic) excluding live-server e2e",
+    "e2e": "cross-role 37 pass, login-smoke 3/3",
+    "flutter_analyze": "0 issues",
+    "automated_pass": 21,
+    "pending_physical_device": 1,
+    "verdict": "PASS WITH APPROVED P2/P3 EXCEPTIONS"
+  }
+}

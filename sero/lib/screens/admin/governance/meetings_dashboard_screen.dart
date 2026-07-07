@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:sero/app/theme.dart';
+import 'package:sero/widgets/shared/sero_ui.dart';
 import 'package:sero/providers/shared/auth_provider.dart';
 import 'package:sero/providers/shared/community_providers.dart';
 import 'package:sero/widgets/common/stat_card.dart';
@@ -17,17 +18,17 @@ class MeetingsDashboardScreen extends ConsumerWidget {
     final meetingsAsync = ref.watch(meetingsProvider);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
+      backgroundColor: kSlateBg,
       appBar: AppBar(
-        flexibleSpace: Container(
-          decoration: const BoxDecoration(gradient: kPremiumGradient),
-        ),
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.white,
+        elevation: 0,
         title: Text(
           'Meetings & AGM',
           style: GoogleFonts.outfit(
-            color: Colors.white,
-            fontSize: 20,
-            fontWeight: FontWeight.w600,
+            color: kTextPrimary,
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
           ),
         ),
       ),
@@ -39,8 +40,11 @@ class MeetingsDashboardScreen extends ConsumerWidget {
             style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.w600)),
       ),
       body: meetingsAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator(color: kPrimaryGreen)),
-        error: (e, _) => Center(child: Text('Error: $e', style: GoogleFonts.outfit())),
+        loading: () => const SkeletonList(itemCount: 4),
+        error: (e, _) => ErrorRetryView(
+          message: 'Could not load meetings.',
+          onRetry: () => ref.invalidate(meetingsProvider),
+        ),
         data: (meetings) {
           final scheduled =
               meetings.where((m) => m.status == 'scheduled').length;

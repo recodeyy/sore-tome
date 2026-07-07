@@ -94,15 +94,17 @@ class _AddStaffScreenState extends ConsumerState<AddStaffScreen> {
     try {
       // Wage entered in rupees; backend stores minor units (paise).
       final rupees = int.tryParse(_wageCtrl.text.trim());
-      // TODO: wire image upload endpoint — no reusable, side-effect-free image
-      // upload route exists yet (the only ones mutate the caller's own profile
-      // or require a channel messageId). Once one exists, upload [_photo] here
-      // and pass the returned URL as `imageUrl` below.
+      // Upload the captured/selected photo (if any) and persist its URL.
+      String? imageUrl;
+      if (_photo != null) {
+        imageUrl = await AdminStaffService.uploadImage(_photo!.path);
+      }
       await AdminStaffService.createStaff(
         name: _nameCtrl.text.trim(),
         role: _role,
         phone: _phoneCtrl.text.trim(),
         monthlyWageMinor: rupees == null ? null : rupees * 100,
+        imageUrl: imageUrl,
       );
       ref.invalidate(staffDashboardProvider);
       ref.invalidate(staffListProvider);

@@ -81,6 +81,20 @@ class ResidentDrawer extends ConsumerWidget {
                       () => const EmergencyHomeScreen()),
                   const Divider(height: 24),
                   ListTile(
+                    leading: const Icon(Icons.swap_horiz_rounded, color: kPrimaryGreen),
+                    title: Text('Switch Portal',
+                        style: GoogleFonts.outfit(fontWeight: FontWeight.w700, color: kDeepNavy)),
+                    subtitle: Text('Admin / Staff / Resident',
+                        style: GoogleFonts.outfit(fontSize: 11, color: const Color(0xFF94A3B8))),
+                    onTap: () async {
+                      Navigator.pop(context);
+                      await ref.read(authProvider.notifier).logout();
+                      if (context.mounted) {
+                        Navigator.pushNamedAndRemoveUntil(context, '/login', (_) => false);
+                      }
+                    },
+                  ),
+                  ListTile(
                     leading: const Icon(Icons.logout_rounded, color: kBadgeRedText),
                     title: Text('Logout',
                         style: GoogleFonts.outfit(fontWeight: FontWeight.w700, color: kBadgeRedText)),

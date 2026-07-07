@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:sero/app/theme.dart';
+import 'package:sero/widgets/common/async_state_views.dart';
 import 'package:sero/providers/super_admin/super_admin_provider.dart';
 import 'package:sero/widgets/super_admin/super_admin_widgets.dart';
 
@@ -37,10 +38,7 @@ class SuperAdminOverviewScreen extends ConsumerWidget {
               ),
             ),
             dashboard.when(
-              loading: () => const SliverFillRemaining(
-                hasScrollBody: false,
-                child: Center(child: CircularProgressIndicator()),
-              ),
+              loading: () => const SliverToBoxAdapter(child: LiveLoadingView()),
               error: (error, _) => SliverFillRemaining(
                 hasScrollBody: false,
                 child: SuperAdminAsyncView<void>(

@@ -76,6 +76,16 @@ export const RazorpayWebhookService = {
       metadata: { order_id: payment.order_id, event: event.event },
     });
 
+    // Retire the pending checkout intent for this order (if the client-side
+    // verify has not already done so) — the captured row is the source of truth.
+    if (payment.order_id) {
+      await db.query(
+        `UPDATE payments SET status = 'failed'
+          WHERE society_id = $1 AND idempotency_key = $2 AND status = 'pending'`,
+        [societyId, `rzp_order:${payment.order_id}`]
+      );
+    }
+
     await db.query(`UPDATE payment_webhook_events SET processed = true WHERE event_id = $1 AND provider = 'razorpay'`, [eventId]);
     logger.info({ eventId, paymentId: payment.id, invoiceId, ledgerDuplicate: duplicate }, "Razorpay webhook processed");
     return { duplicate: false, processed: true };

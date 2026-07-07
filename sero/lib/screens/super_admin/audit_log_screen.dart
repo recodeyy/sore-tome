@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:sero/app/theme.dart';
+import 'package:sero/widgets/shared/sero_ui.dart';
 import 'package:sero/providers/super_admin/super_admin_providers.dart';
 
 class AuditLogScreen extends ConsumerWidget {
@@ -112,8 +113,8 @@ class AuditLogScreen extends ConsumerWidget {
             },
           );
         },
-        loading: () => const Center(child: CircularProgressIndicator(color: kPrimaryGreen)),
-        error: (err, _) => Center(child: Text('Error loading audit logs: $err')),
+        loading: () => const SkeletonList(itemCount: 4),
+        error: (err, _) => ErrorRetryView(message: 'Could not load audit logs.', onRetry: () => ref.invalidate(superAdminAuditLogsProvider)),
       ),
     );
   }

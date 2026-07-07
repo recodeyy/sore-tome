@@ -12,24 +12,23 @@ class AdminMoreScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
+      backgroundColor: kSlateBg,
       appBar: AppBar(
-        flexibleSpace: Container(
-          decoration: const BoxDecoration(gradient: kPremiumGradient),
-        ),
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.white,
+        elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.menu, color: Colors.white),
+          icon: const Icon(Icons.menu, color: kTextPrimary),
           onPressed: () => Scaffold.of(context).openDrawer(),
         ),
         title: Text(
           'More Modules',
           style: GoogleFonts.outfit(
-            color: Colors.white,
-            fontSize: 20,
-            fontWeight: FontWeight.w600,
+            color: kTextPrimary,
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
           ),
         ),
-        elevation: 0,
       ),
       drawer: const AdminDrawer(),
       body: SingleChildScrollView(
@@ -215,7 +214,7 @@ class AdminMoreScreen extends ConsumerWidget {
         title: title,
         subtitle: subtitle,
         iconColor: color,
-        iconBgColor: color.withOpacity(0.1),
+        iconBgColor: color.withValues(alpha: 0.1),
         onTap: () {
           if (route == 'logout') {
             _showLogoutDialog(context, ref);

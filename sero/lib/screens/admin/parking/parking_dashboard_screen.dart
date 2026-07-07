@@ -20,22 +20,22 @@ class ParkingDashboardScreen extends ConsumerWidget {
     final unreadCount = ref.watch(notificationProvider.notifier).unreadCount;
     final parkingAsync = ref.watch(parkingDashboardProvider);
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
+      backgroundColor: kSlateBg,
       drawer: const AdminDrawer(),
       appBar: AppBar(
-        flexibleSpace: Container(
-          decoration: const BoxDecoration(gradient: kPremiumGradient),
-        ),
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.white,
+        elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.menu, color: Colors.white),
+          icon: const Icon(Icons.menu, color: kTextPrimary),
           onPressed: () => Scaffold.of(context).openDrawer(),
         ),
         title: Text(
           'Parking Dashboard',
           style: GoogleFonts.outfit(
-            color: Colors.white,
-            fontSize: 20,
-            fontWeight: FontWeight.w600,
+            color: kTextPrimary,
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
           ),
         ),
         actions: [
@@ -45,7 +45,7 @@ class ParkingDashboardScreen extends ConsumerWidget {
               children: [
                 IconButton(
                   onPressed: null,
-                  icon: const Icon(Icons.notifications_outlined, color: Colors.white),
+                  icon: const Icon(Icons.notifications_outlined, color: kTextPrimary),
                 ),
                 if (unreadCount > 0)
                   Positioned(
@@ -95,7 +95,7 @@ class ParkingDashboardScreen extends ConsumerWidget {
               .length;
           final pendingRequests = requests.length;
           final violationCases = violations.length;
-          final pct = (int v) =>
+          String pct(int v) =>
               totalSlots == 0 ? '0 (0%)' : '$v (${((v / totalSlots) * 100).round()}%)';
           return CustomScrollView(
             physics: const BouncingScrollPhysics(),
@@ -344,7 +344,7 @@ class ParkingDashboardScreen extends ConsumerWidget {
           color: Colors.white,
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.05),
+              color: Colors.black.withValues(alpha: 0.05),
               blurRadius: 10,
               offset: const Offset(0, -2),
             ),

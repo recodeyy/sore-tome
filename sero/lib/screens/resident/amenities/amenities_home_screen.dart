@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:sero/app/theme.dart';
 import 'package:sero/providers/shared/community_providers.dart';
 import 'package:sero/models/facility_booking.dart';
+import 'package:sero/widgets/shared/sero_ui.dart';
 import '../facilities/facilities_screen.dart';
 
 /// Amenities Home (design: amenities.png screen 1).
@@ -93,8 +94,7 @@ class AmenitiesHomeScreen extends ConsumerWidget {
             _label('Quick Access'),
             const SizedBox(height: 12),
             facilitiesAsync.when(
-              loading: () => const Center(
-                  child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator(color: kPrimaryGreen))),
+              loading: () => const SkeletonCard(height: 120, margin: EdgeInsets.zero),
               error: (e, _) => _errorBox('Could not load amenities'),
               data: (facilities) {
                 if (facilities.isEmpty) {
@@ -156,8 +156,7 @@ class AmenitiesHomeScreen extends ConsumerWidget {
             _label('Upcoming Bookings'),
             const SizedBox(height: 12),
             bookingsAsync.when(
-              loading: () => const Center(
-                  child: Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator(color: kPrimaryGreen))),
+              loading: () => const SkeletonCard(height: 88, margin: EdgeInsets.zero),
               error: (e, _) => _errorBox('Could not load bookings'),
               data: (bookings) {
                 final upcoming = bookings

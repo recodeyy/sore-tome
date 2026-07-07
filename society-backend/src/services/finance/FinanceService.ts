@@ -4,6 +4,7 @@ import { logger } from "../../shared/Logger";
 import { withTx, ensureAccount, postJournal, prorateMinor } from "./ledger";
 import { PaymentService } from "../payment/PaymentService";
 import { isRazorpayConfigured, isRazorpayTestMode } from "../payment/RazorpayProvider";
+import { Recipients } from "../notifications/Recipients";
 
 /**
  * Finance service: invoices + double-entry ledger + payments.
@@ -43,6 +44,30 @@ async function nextNumber(client: any, societyId: string, prefix: string): Promi
   );
   const next = Number(rows[0].n) + 1;
   return `${prefix}-${String(next).padStart(6, "0")}`;
+}
+
+/**
+ * §10 notification triggers — resolve who should be notified about an invoice:
+ * the billed member's login (invoices.member_id -> members.user_id) plus the
+ * billed unit's residents. De-duplicated by Recipients.fanOut.
+ */
+async function invoiceRecipients(client: any, societyId: string, invoice: any): Promise<string[]> {
+  const out: string[] = [];
+  try {
+    if (invoice.member_id) {
+      const m = await client.query(
+        `SELECT user_id FROM members WHERE society_id = $1 AND id::text = $2::text AND user_id IS NOT NULL`,
+        [societyId, String(invoice.member_id)]
+      );
+      if (m.rows[0]?.user_id) out.push(m.rows[0].user_id);
+    }
+    if (invoice.unit_id) {
+      out.push(...await Recipients.unitResidentUserIds(client, societyId, invoice.unit_id));
+    }
+  } catch (e: any) {
+    logger.warn({ societyId, invoiceId: invoice.id, error: e.message }, "invoiceRecipients resolution failed");
+  }
+  return Array.from(new Set(out));
 }
 
 export const FinanceService = {
@@ -136,7 +161,24 @@ export const FinanceService = {
          WHERE id = $1 AND society_id = $2 RETURNING *`,
         [invoiceId, societyId]
       );
-      logger.info({ societyId, invoiceId, total: invoice.total_minor }, "Invoice published + ledger posted");
+
+      // §10 trigger: invoice published → notify the billed resident(s).
+      const recipients = await invoiceRecipients(client, societyId, upd.rows[0]);
+      if (recipients.length) {
+        await Recipients.fanOut(client, {
+          societyId,
+          eventType: "invoice.published",
+          payload: { id: invoice.id, number: invoice.number, totalMinor: Number(invoice.total_minor) },
+          recipients,
+          notification: {
+            title: "New invoice",
+            body: `Invoice ${invoice.number}${invoice.period ? ` for ${invoice.period}` : ""} of ₹${(Number(invoice.total_minor) / 100).toFixed(2)} is due${invoice.due_date ? ` by ${new Date(invoice.due_date).toISOString().slice(0, 10)}` : ""}.`,
+            type: "billing",
+            data: { invoiceId: invoice.id, number: invoice.number, deeplink: `/billing/invoices/${invoice.id}` },
+          },
+        });
+      }
+      logger.info({ societyId, invoiceId, total: invoice.total_minor, notified: recipients.length }, "Invoice published + ledger posted");
       return upd.rows[0];
     });
   },
@@ -203,7 +245,24 @@ export const FinanceService = {
         [societyId, rcptNo, payment.id, input.amountMinor, input.metadata?.createdBy || null]
       );
 
-      logger.info({ societyId, paymentId: payment.id, invoiceId: invoice.id, amount: input.amountMinor }, "Payment recorded + ledger posted");
+      // §10 trigger: payment captured/verified → notify the billed resident(s).
+      const recipients = await invoiceRecipients(client, societyId, invoice);
+      if (recipients.length) {
+        await Recipients.fanOut(client, {
+          societyId,
+          eventType: "payment.captured",
+          payload: { paymentId: payment.id, invoiceId: invoice.id, amountMinor: input.amountMinor },
+          recipients,
+          notification: {
+            title: "Payment received",
+            body: `Your payment of ₹${(input.amountMinor / 100).toFixed(2)} for invoice ${invoice.number} was verified. Receipt ${rcpt.rows[0]?.number || "issued"}.`,
+            type: "billing",
+            data: { paymentId: payment.id, invoiceId: invoice.id, deeplink: `/billing/invoices/${invoice.id}` },
+          },
+        });
+      }
+
+      logger.info({ societyId, paymentId: payment.id, invoiceId: invoice.id, amount: input.amountMinor, notified: recipients.length }, "Payment recorded + ledger posted");
       return { payment, duplicate: false, receipt: rcpt.rows[0] || null };
     });
   },
@@ -608,6 +667,213 @@ export const FinanceService = {
       [invoiceId, societyId]
     );
     return { ...inv.rows[0], lines: lines.rows };
+  },
+
+  /**
+   * §13 demo — admin-only UPI-demo "mark paid". Settles an invoice's outstanding
+   * balance through the normal recordPayment path (ONE financial effect:
+   * payment + allocation + ledger + receipt, idempotent on the reference), and
+   * writes a demo_payment_audits row (who/when/reference). Route gates this to
+   * non-production / ADMIN_DEMO_MODE.
+   */
+  async markInvoicePaidDemo(
+    societyId: string,
+    input: { invoiceId: string; reference: string; actorId: string }
+  ) {
+    // Idempotency first: a repeat of the same invoice+reference returns the
+    // existing payment (no second financial effect, no "already settled" error).
+    const idempotencyKey = `upi-demo:${input.invoiceId}:${input.reference}`;
+    const existing = await db.query(
+      `SELECT * FROM payments WHERE society_id = $1 AND idempotency_key = $2`,
+      [societyId, idempotencyKey]
+    );
+    if (existing.rows.length > 0) {
+      return { payment: existing.rows[0], duplicate: true, amountMinor: Number(existing.rows[0].amount_minor), invoiceId: input.invoiceId };
+    }
+
+    const amountMinor = await this.outstandingMinor(db, societyId, input.invoiceId);
+    if (amountMinor <= 0) {
+      throw Object.assign(new Error("Invoice is already settled"), { code: "INVALID_STATE" });
+    }
+    const result = await this.recordPayment(societyId, {
+      idempotencyKey,
+      invoiceId: input.invoiceId,
+      amountMinor,
+      provider: "upi_demo",
+      providerPaymentId: input.reference,
+      metadata: { source: "upi_demo_mark_paid", reference: input.reference, markedBy: input.actorId, testMode: true },
+    });
+    await db.query(
+      `INSERT INTO demo_payment_audits (society_id, invoice_id, payment_id, action, reference, actor_id)
+       VALUES ($1, $2, $3, 'upi_demo_mark_paid', $4, $5)`,
+      [societyId, input.invoiceId, result.payment.id, input.reference, input.actorId]
+    );
+    logger.info({ societyId, invoiceId: input.invoiceId, reference: input.reference, actor: input.actorId, duplicate: result.duplicate }, "UPI demo mark-paid");
+    return { ...result, amountMinor, invoiceId: input.invoiceId };
+  },
+
+  /**
+   * §7.2 receipts list. Admin/committee callers see the whole society;
+   * a resident (userId set) sees only receipts whose paid invoice is billed to
+   * their member record or unit.
+   */
+  async listReceipts(societyId: string, opts: { limit?: number; userId?: string } = {}) {
+    const params: any[] = [societyId];
+    let where = `r.society_id = $1`;
+    if (opts.userId) {
+      params.push(opts.userId);
+      where += ` AND EXISTS (
+        SELECT 1 FROM payment_allocations pa
+        JOIN invoices i ON i.id = pa.invoice_id
+        LEFT JOIN members m ON m.id::text = i.member_id::text AND m.society_id = i.society_id
+        WHERE pa.payment_id = r.payment_id AND pa.society_id = r.society_id
+          AND (m.user_id = $${params.length}
+               OR i.unit_id::text IN (SELECT unit_id::text FROM members WHERE society_id = $1 AND user_id = $${params.length} AND unit_id IS NOT NULL))
+      )`;
+    }
+    params.push(Math.min(opts.limit || 50, 200));
+    const { rows } = await db.query(
+      `SELECT r.*, p.provider, p.provider_payment_id, p.status AS payment_status, p.metadata AS payment_metadata,
+              inv.id AS invoice_id, inv.number AS invoice_number, inv.period AS invoice_period
+         FROM receipts r
+         JOIN payments p ON p.id = r.payment_id
+         LEFT JOIN LATERAL (
+           SELECT i.id, i.number, i.period FROM payment_allocations pa
+           JOIN invoices i ON i.id = pa.invoice_id
+           WHERE pa.payment_id = r.payment_id AND pa.society_id = r.society_id
+           LIMIT 1
+         ) inv ON true
+        WHERE ${where}
+        ORDER BY r.created_at DESC
+        LIMIT $${params.length}`,
+      params
+    );
+    return rows;
+  },
+
+  /**
+   * Full detail for one receipt (PDF rendering + API access checks):
+   * receipt + payment + invoice(+lines) + society profile + unit + payer.
+   * Returns null when not found in this society.
+   */
+  async getReceiptDetail(societyId: string, receiptId: string) {
+    const { rows } = await db.query(
+      `SELECT r.*, p.provider, p.provider_payment_id, p.status AS payment_status,
+              p.metadata AS payment_metadata, p.created_at AS payment_created_at, p.currency AS payment_currency
+         FROM receipts r JOIN payments p ON p.id = r.payment_id
+        WHERE r.id = $1 AND r.society_id = $2`,
+      [receiptId, societyId]
+    );
+    const receipt = rows[0];
+    if (!receipt) return null;
+
+    const alloc = await db.query(
+      `SELECT i.* FROM payment_allocations pa JOIN invoices i ON i.id = pa.invoice_id
+        WHERE pa.payment_id = $1 AND pa.society_id = $2 LIMIT 1`,
+      [receipt.payment_id, societyId]
+    );
+    const invoice = alloc.rows[0] || null;
+    let lines: any[] = [];
+    let unit: any = null;
+    let payer: any = null;
+    if (invoice) {
+      lines = (await db.query(
+        `SELECT * FROM invoice_lines WHERE invoice_id = $1 AND society_id = $2 ORDER BY id`,
+        [invoice.id, societyId]
+      )).rows;
+      if (invoice.unit_id) {
+        unit = (await db.query(`SELECT number FROM units WHERE id::text = $1::text AND society_id = $2`, [String(invoice.unit_id), societyId])).rows[0] || null;
+      }
+      if (invoice.member_id) {
+        payer = (await db.query(`SELECT name, phone, user_id FROM members WHERE id::text = $1::text AND society_id = $2`, [String(invoice.member_id), societyId])).rows[0] || null;
+      }
+    }
+    const society = (await db.query(
+      `SELECT name, address, registration_no FROM society_profiles WHERE society_id = $1`,
+      [societyId]
+    )).rows[0] || null;
+
+    return { receipt, invoice, lines, unit, payer, society };
+  },
+
+  /**
+   * §13 dues reminders — pushes a "dues reminder" (category billing, deeplink
+   * /resident/payments) for every published invoice past its due date that still
+   * has an outstanding balance. At most once per invoice per day, tracked via
+   * invoices.last_reminded_at (claimed atomically so concurrent runs can't
+   * double-send).
+   */
+  async runDuesReminders(societyId: string) {
+    const { rows: due } = await db.query(
+      `SELECT i.*,
+              i.total_minor - COALESCE((
+                SELECT SUM(pa.amount_minor) FROM payment_allocations pa
+                JOIN payments p ON p.id = pa.payment_id
+                WHERE pa.society_id = i.society_id AND pa.invoice_id = i.id AND p.status IN ('captured','verified')
+              ), 0) AS outstanding_minor
+         FROM invoices i
+        WHERE i.society_id = $1 AND i.status = 'published'
+          AND i.due_date IS NOT NULL AND i.due_date < current_date
+          AND (i.last_reminded_at IS NULL OR i.last_reminded_at::date < current_date)`,
+      [societyId]
+    );
+
+    let reminded = 0;
+    const results: any[] = [];
+    for (const inv of due) {
+      const outstanding = Number(inv.outstanding_minor);
+      if (outstanding <= 0) continue;
+      await withTx(async (client) => {
+        // Atomically claim today's reminder slot; skip if another run beat us.
+        const claim = await client.query(
+          `UPDATE invoices SET last_reminded_at = now()
+            WHERE id = $1 AND society_id = $2
+              AND (last_reminded_at IS NULL OR last_reminded_at::date < current_date)
+            RETURNING id`,
+          [inv.id, societyId]
+        );
+        if (claim.rows.length === 0) return;
+        const recipients = await invoiceRecipients(client, societyId, inv);
+        let notified = 0;
+        if (recipients.length) {
+          notified = await Recipients.fanOut(client, {
+            societyId,
+            eventType: "invoice.due_reminder",
+            payload: { id: inv.id, number: inv.number, outstandingMinor: outstanding },
+            recipients,
+            notification: {
+              title: "Dues reminder",
+              body: `Invoice ${inv.number}${inv.period ? ` (${inv.period})` : ""} of ₹${(outstanding / 100).toFixed(2)} is overdue since ${new Date(inv.due_date).toISOString().slice(0, 10)}. Please pay to avoid late fees.`,
+              type: "billing",
+              data: { invoiceId: inv.id, number: inv.number, deeplink: `/resident/payments` },
+            },
+          });
+        }
+        reminded++;
+        results.push({ invoiceId: inv.id, number: inv.number, outstandingMinor: outstanding, notified });
+      });
+    }
+    logger.info({ societyId, checked: due.length, reminded }, "Dues reminder run completed");
+    return { checked: due.length, reminded, invoices: results };
+  },
+
+  /** Cron entry point: run dues reminders for every society with overdue invoices. */
+  async runDuesRemindersAll() {
+    const { rows } = await db.query(
+      `SELECT DISTINCT society_id FROM invoices
+        WHERE status = 'published' AND due_date IS NOT NULL AND due_date < current_date
+          AND (last_reminded_at IS NULL OR last_reminded_at::date < current_date)`
+    );
+    const out: Record<string, any> = {};
+    for (const r of rows) {
+      try {
+        out[r.society_id] = await this.runDuesReminders(r.society_id);
+      } catch (e: any) {
+        logger.error({ societyId: r.society_id, error: e.message }, "Dues reminder run failed for society");
+        out[r.society_id] = { error: e.message };
+      }
+    }
+    return out;
   },
 
   async listInvoices(societyId: string, opts: { status?: string; limit?: number } = {}) {

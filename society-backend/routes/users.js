@@ -64,8 +64,11 @@ router.get("/me", authMiddleware, async (req, res) => {
   }
 });
 
-// PATCH /me — update your OWN editable profile fields (name, email, photoUrl).
-// Self-service; does not allow role/society/status changes.
+// PATCH /me — update your OWN editable profile fields (name, email, photoUrl,
+// fcmToken). Self-service; does not allow role/society/status changes.
+// MR-001: `fcmToken` is accepted for backward compat with shipped APKs — it is
+// upserted into Postgres device_tokens (multi-device store used by
+// notificationService.sendToUser) AND mirrored onto the Firestore user doc.
 router.patch("/me", authMiddleware, async (req, res) => {
   try {
     const db = getDb();
@@ -77,6 +80,22 @@ router.patch("/me", authMiddleware, async (req, res) => {
     if (typeof req.body.name === "string" && req.body.name.trim()) updates.name = req.body.name.trim().slice(0, 120);
     if (typeof req.body.email === "string") updates.email = req.body.email.trim().toLowerCase().slice(0, 120);
     if (typeof req.body.photoUrl === "string") updates.photoUrl = req.body.photoUrl.slice(0, 1000);
+    if (typeof req.body.fcmToken === "string" && req.body.fcmToken.trim()) {
+      const fcmToken = req.body.fcmToken.trim().slice(0, 4096);
+      updates.fcmToken = fcmToken; // legacy Firestore mirror
+      try {
+        const { NotificationService: PgNotifications } = require("../src/services/notifications/NotificationService");
+        await PgNotifications.registerDevice(
+          req.user.society_id || null, req.user.uid, fcmToken,
+          typeof req.body.platform === "string" && ["android", "ios", "web"].includes(req.body.platform)
+            ? req.body.platform : "android",
+          typeof req.body.appVersion === "string" ? req.body.appVersion.slice(0, 40) : undefined
+        );
+      } catch (e) {
+        // Token registration must not fail the profile update.
+        req.log ? req.log.warn({ error: e.message }, "fcmToken device upsert failed") : console.warn("fcmToken device upsert failed:", e.message);
+      }
+    }
     if (Object.keys(updates).length === 0) {
       return res.status(400).json({ error: "No editable fields supplied" });
     }
@@ -322,6 +341,26 @@ router.patch("/:uid", authMiddleware, tenantMiddleware, mainAdminOnly, async (re
 // ─── Phase 2: Profile Photo Upload ────────────────
 const { getStorage } = require("../config/firebase");
 // multer and upload are already defined above
+
+// POST /users/upload-image — generic authenticated image upload that returns a
+// public URL (no side effects). Used by Add Staff (staff photo) and any other
+// screen that needs to attach an image. Field name: "image".
+router.post("/upload-image", authMiddleware, upload.single("image"), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+    const bucket = getStorage().bucket();
+    const fileName = `uploads/${req.user.uid}_${Date.now()}.jpg`;
+    const file = bucket.file(fileName);
+    await file.save(req.file.buffer, {
+      metadata: { contentType: req.file.mimetype || "image/jpeg" },
+      public: true,
+    });
+    const url = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
+    res.json({ url });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // POST /users/me/photo
 router.post("/me/photo", authMiddleware, upload.single("photo"), async (req, res) => {

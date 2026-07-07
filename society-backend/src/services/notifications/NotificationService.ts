@@ -18,23 +18,35 @@ function err(message: string, code: string) {
 export const NotificationService = {
   /** Register (or refresh) a device token. Idempotent on the token. */
   async registerDevice(
-    societyId: string,
+    societyId: string | null | undefined,
     userId: string,
     token: string,
-    platform: "android" | "ios" | "web" = "android"
+    platform: "android" | "ios" | "web" = "android",
+    appVersion?: string
   ) {
     const { rows } = await db.query(
-      `INSERT INTO device_tokens (society_id, user_id, token, platform, is_active)
-       VALUES ($1,$2,$3,$4,true)
+      `INSERT INTO device_tokens (society_id, user_id, token, platform, app_version, is_active, last_seen_at)
+       VALUES ($1,$2,$3,$4,$5,true, now())
        ON CONFLICT (token) DO UPDATE
          SET user_id = EXCLUDED.user_id,
-             society_id = EXCLUDED.society_id,
+             society_id = COALESCE(EXCLUDED.society_id, device_tokens.society_id),
              platform = EXCLUDED.platform,
-             is_active = true
+             app_version = COALESCE(EXCLUDED.app_version, device_tokens.app_version),
+             is_active = true,
+             last_seen_at = now()
        RETURNING *`,
-      [societyId || null, userId, token, platform]
+      [societyId || null, userId, token, platform, appVersion || null]
     );
     return rows[0];
+  },
+
+  /** Unregister a device token (logout / token rotation). Scoped to the caller. */
+  async removeDevice(userId: string, token: string) {
+    const { rows } = await db.query(
+      `DELETE FROM device_tokens WHERE token = $1 AND user_id = $2 RETURNING id`,
+      [token, userId]
+    );
+    return { removed: rows.length };
   },
 
   /**

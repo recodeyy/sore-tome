@@ -4,6 +4,27 @@ const { getDb, getAdmin } = require("../config/firebase");
 const { authMiddleware, canManageSecurity } = require("../middleware/auth");
 const { tenantMiddleware } = require("../middleware/tenantMiddleware");
 const { logger } = require("../src/shared/Logger");
+const NotificationService = require("../services/notificationService");
+
+/**
+ * §10 triggers — push to every resident login of a flat (Firestore users are
+ * the identity store for this legacy Firestore-backed visitors flow).
+ * Best-effort: failures are logged, never surfaced to the gate operation.
+ */
+async function pushToFlatResidents(societyId, targetFlat, payload) {
+  try {
+    const db = getDb();
+    const snap = await db.collection("users")
+      .where("society_id", "==", societyId)
+      .where("flatNumber", "==", targetFlat)
+      .get();
+    await Promise.all(snap.docs.map((doc) => NotificationService.sendToUser(doc.id, payload)));
+    return snap.size;
+  } catch (err) {
+    logger.warn({ societyId, targetFlat, error: err.message }, "Visitor push to flat residents failed");
+    return 0;
+  }
+}
 
 // Gate operations (check-in/checkout) are performable by on-duty security
 // staff (guards, security managers, supervisors, reception) AND society admins
@@ -83,6 +104,13 @@ router.post("/checkin", authMiddleware, tenantMiddleware, canManageSecurity, asy
       createdAt: getAdmin().firestore.FieldValue.serverTimestamp(),
     });
 
+    // §10 trigger: staff-initiated visitor → real FCM push to the flat's residents.
+    await pushToFlatResidents(req.societyId, targetFlat, {
+      title: "Visitor at the gate",
+      body: `${name} (${type}) is at the gate for Flat ${targetFlat}. Approve or deny?`,
+      data: { type: "visitor_approval", visitorId: docRef.id, deeplink: `/visitors/${docRef.id}` },
+    });
+
     res.status(201).json({ message: "Visitor logged. Waiting for approval.", id: docRef.id });
   } catch (err) {
     logger.error({ error: err.message }, "Error checking in visitor");
@@ -123,6 +151,16 @@ router.patch("/:id/action", authMiddleware, tenantMiddleware, async (req, res) =
       actionedAt: getAdmin().firestore.FieldValue.serverTimestamp()
     });
 
+    // §10 trigger: visitor approved → entry confirmation to the flat's residents
+    // (skip echoing to the actor when a resident actioned it themselves).
+    if (newStatus === "approved" && req.user.role !== "resident") {
+      await pushToFlatResidents(req.societyId, visitor.targetFlat, {
+        title: "Visitor entry approved",
+        body: `${visitor.name} has been approved to enter for Flat ${visitor.targetFlat}.`,
+        data: { type: "visitor_entry", visitorId: req.params.id, deeplink: `/visitors/${req.params.id}` },
+      });
+    }
+
     res.json({ message: `Visitor ${newStatus}` });
   } catch (err) {
     logger.error({ error: err.message }, "Error updating visitor action");
@@ -141,10 +179,20 @@ router.patch("/:id/checkout", authMiddleware, tenantMiddleware, canManageSecurit
       return res.status(404).json({ error: "Visitor not found" });
     }
 
+    const visitor = doc.data();
     await docRef.update({
       status: "checked_out",
       exitTime: getAdmin().firestore.FieldValue.serverTimestamp()
     });
+
+    // §10 trigger: visitor exit → notify the flat's residents.
+    if (visitor.targetFlat) {
+      await pushToFlatResidents(req.societyId, visitor.targetFlat, {
+        title: "Visitor checked out",
+        body: `${visitor.name || "Your visitor"} has left the premises.`,
+        data: { type: "visitor_exit", visitorId: req.params.id, deeplink: `/visitors/${req.params.id}` },
+      });
+    }
 
     res.json({ message: "Visitor checked out" });
   } catch (err) {

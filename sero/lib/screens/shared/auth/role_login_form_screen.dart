@@ -291,6 +291,24 @@ class _RoleLoginFormScreenState extends ConsumerState<RoleLoginFormScreen> {
                           ),
                         ),
                       ),
+                      TextButton(
+                        onPressed: () => Navigator.pushNamed(context, '/onboarding'),
+                        child: RichText(
+                          text: TextSpan(
+                            text: 'New to your society? ',
+                            style: GoogleFonts.outfit(color: const Color(0xFF64748B)),
+                            children: [
+                              TextSpan(
+                                text: 'Join a society →',
+                                style: GoogleFonts.outfit(
+                                  color: kFreshGreenDark,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              )
+                            ],
+                          ),
+                        ),
+                      ),
                     ] else ...[
                       TextButton(
                         onPressed: () {}, // Recover workflow

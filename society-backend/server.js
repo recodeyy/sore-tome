@@ -50,8 +50,10 @@ initFirebase();
 // ─── Init Cron Jobs ────────────────────────────────────────────────────────────
 const { VisitorCronJob } = require("./src/services/cron/VisitorCronJob");
 const { FinanceReportCronJob } = require("./src/services/cron/FinanceReportCronJob");
+const { DuesReminderCronJob } = require("./src/services/cron/DuesReminderCronJob");
 VisitorCronJob.init();
 FinanceReportCronJob.init();
+DuesReminderCronJob.init();
 // Outbox → EventBus publisher feeds the /realtime/sse gateway.
 require("./src/services/realtime/OutboxPublisher").startOutboxPublisher();
 
@@ -151,11 +153,16 @@ v1Router.use("/guard", standardLimiter, require("./src/routes/guard_pg").default
 v1Router.use("/structure", standardLimiter, require("./src/routes/structure_pg").default);
 v1Router.use("/members-v2", standardLimiter, require("./src/routes/members_pg").default);
 v1Router.use("/society", standardLimiter, require("./src/routes/society_pg").default);
+// MR-006: public society directory for resident onboarding (no auth; rate limited).
+v1Router.use("/societies", standardLimiter, require("./src/routes/societies_public").default);
 v1Router.use("/reports", standardLimiter, require("./src/routes/reports_pg").default);
 v1Router.use("/audit", standardLimiter, require("./src/routes/audit_pg").default);
 v1Router.use("/realtime", require("./src/routes/realtime").default);
 v1Router.use("/notifications", standardLimiter, require("./src/routes/notifications_pg").default);
 v1Router.use("/community", standardLimiter, require("./src/routes/community_pg").default);
+// Mobile revamp §8 parcels + §7.3 domestic help (real backend modules).
+v1Router.use("/parcels", standardLimiter, require("./src/routes/parcels_pg").default);
+v1Router.use("/domestic-help", standardLimiter, require("./src/routes/domestic_help_pg").default);
 
 // 🚀 MOUNT V1
 app.use("/api/v1", v1Router);

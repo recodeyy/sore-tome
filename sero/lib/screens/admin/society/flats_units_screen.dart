@@ -73,11 +73,6 @@ class _FlatsUnitsScreenState extends ConsumerState<FlatsUnitsScreen> {
       (f['resident'] ?? f['occupancy_type'] ?? f['occupancy'] ?? '').toString();
   bool _isVacant(Map f) =>
       (f['status'] ?? '').toString().toLowerCase() == 'vacant';
-  bool _isOwner(Map f) {
-    final o = _occupancy(f).toLowerCase();
-    return o == 'owner';
-  }
-
   List _filteredFlats(List units) {
     return units.where((f) {
       final m = f is Map ? f : const {};

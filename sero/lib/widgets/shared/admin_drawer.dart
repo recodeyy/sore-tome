@@ -32,8 +32,9 @@ class AdminDrawer extends ConsumerWidget {
               children: [
                 _buildDrawerItem(context, ref, 'Dashboard', Icons.dashboard_outlined, '/admin/dashboard', tabIndex: 0),
                 _buildDrawerItem(context, ref, 'Members', Icons.people_outline, '', tabIndex: 1),
-                _buildDrawerItem(context, ref, 'Finance', Icons.account_balance_wallet_outlined, '/admin/finance', tabIndex: 2),
-                _buildDrawerItem(context, ref, 'Complaint Management', Icons.report_problem_outlined, '/admin/complaints', tabIndex: 3),
+                _buildDrawerItem(context, ref, 'Billing', Icons.account_balance_wallet_outlined, '/admin/finance', tabIndex: 2),
+                _buildDrawerItem(context, ref, 'Operations', Icons.widgets_outlined, '', tabIndex: 3),
+                _buildDrawerItem(context, ref, 'Complaint Management', Icons.report_problem_outlined, '/admin/complaints'),
                 _buildDrawerItem(context, ref, 'More Modules', Icons.more_horiz, '', tabIndex: 4),
                 const Divider(height: 24, indent: 20, endIndent: 20),
                 _buildDrawerItem(context, ref, 'Society Setup', Icons.business_outlined, '/admin/society-setup'),

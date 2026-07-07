@@ -13,7 +13,7 @@ class SuperAdminBottomNav extends StatelessWidget {
   });
 
   static const _items = [
-    _Item(Icons.dashboard_outlined, Icons.dashboard_rounded, 'Overview'),
+    _Item(Icons.dashboard_outlined, Icons.dashboard_rounded, 'Platform'),
     _Item(Icons.business_outlined, Icons.business_rounded, 'Societies'),
     _Item(null, null, 'Revenue'),
     _Item(Icons.support_agent_outlined, Icons.support_agent_rounded, 'Support'),

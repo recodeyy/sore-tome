@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:sero/widgets/shared/sero_ui.dart';
 import 'rules_cards.dart';
 import 'package:sero/providers/shared/ai_provider.dart';
 import 'package:sero/providers/shared/rules_provider.dart';
-import 'package:sero/app/theme.dart';
 
 class GovernanceRulesListView extends ConsumerWidget {
   final String selectedCategory;
@@ -137,11 +137,15 @@ class GovernanceRulesListView extends ConsumerWidget {
           error: (e, stack) => SliverToBoxAdapter(child: Center(child: Text('Manual data unavailable: $e'))),
         );
       },
-      loading: () => SliverToBoxAdapter(
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 80),
-          child: const Center(
-            child: CircularProgressIndicator(color: kPrimaryGreen, strokeWidth: 2),
+      loading: () => const SliverToBoxAdapter(
+        child: Padding(
+          padding: EdgeInsets.all(16),
+          child: Column(
+            children: [
+              SkeletonCard(height: 96),
+              SkeletonCard(height: 96),
+              SkeletonCard(height: 96, margin: EdgeInsets.zero),
+            ],
           ),
         ),
       ),

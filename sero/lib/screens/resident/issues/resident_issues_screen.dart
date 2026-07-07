@@ -5,6 +5,7 @@ import 'package:sero/providers/shared/issues_provider.dart';
 import 'package:sero/app/theme.dart';
 import 'package:sero/models/issue.dart';
 import 'package:sero/widgets/resident/issue_card.dart';
+import 'package:sero/widgets/shared/sero_ui.dart';
 
 /// My Complaints (design: complain.png screen 2).
 ///
@@ -53,13 +54,18 @@ class _ResidentIssuesScreenState extends ConsumerState<ResidentIssuesScreen> {
             _header(context),
             issuesAsync.when(
               loading: () => const Padding(
-                padding: EdgeInsets.only(top: 80),
-                child: Center(child: CircularProgressIndicator(color: kPrimaryGreen)),
+                padding: EdgeInsets.all(16),
+                child: Column(
+                  children: [
+                    SkeletonCard(height: 96),
+                    SkeletonCard(height: 96),
+                    SkeletonCard(height: 96, margin: EdgeInsets.zero),
+                  ],
+                ),
               ),
-              error: (e, _) => _stateBox(
-                Icons.cloud_off_rounded,
-                'Could not load complaints',
-                '$e'.split('\n').first,
+              error: (e, _) => ErrorRetryView(
+                message: 'Could not load complaints.',
+                onRetry: () => ref.invalidate(issuesProvider),
               ),
               data: (all) {
                 final filtered = all.where(_matchesFilter).toList()

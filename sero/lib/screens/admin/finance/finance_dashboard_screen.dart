@@ -313,7 +313,7 @@ class _MiniSparklinePainter extends CustomPainter {
     for (int i = 0; i < points.length; i++) {
       final x = i * step;
       final y = size.height - (points[i] * size.height);
-      if (i == 0) path.moveTo(x, y); else path.lineTo(x, y);
+      if (i == 0) { path.moveTo(x, y); } else { path.lineTo(x, y); }
     }
     canvas.drawPath(path, paint);
   }

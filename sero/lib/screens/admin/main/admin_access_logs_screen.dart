@@ -5,6 +5,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:sero/models/audit_log.dart';
 import 'package:sero/providers/admin/audit_provider.dart';
 import 'package:sero/app/theme.dart';
+import 'package:sero/widgets/shared/sero_ui.dart';
 
 class AdminAccessLogsScreen extends ConsumerStatefulWidget {
   const AdminAccessLogsScreen({super.key});
@@ -88,20 +89,11 @@ class _AdminAccessLogsScreenState extends ConsumerState<AdminAccessLogsScreen> w
                   },
                 ),
         ),
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (err, stack) => Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.error_outline, size: 48, color: Colors.red),
-              const SizedBox(height: 16),
-              Text("Failed to load logs", style: GoogleFonts.outfit()),
-              TextButton(
-                onPressed: () => ref.read(auditLogsProvider(_currentType).notifier).refresh(),
-                child: const Text("Retry"),
-              ),
-            ],
-          ),
+        loading: () => const SkeletonList(itemCount: 5, itemHeight: 76),
+        error: (err, stack) => ErrorRetryView(
+          message: 'Could not load access logs.',
+          onRetry: () =>
+              ref.read(auditLogsProvider(_currentType).notifier).refresh(),
         ),
       ),
       floatingActionButtonLocation: kPillNavbarFabLocation,

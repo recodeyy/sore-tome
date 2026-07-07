@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:sero/app/theme.dart';
+import 'package:sero/widgets/shared/sero_ui.dart';
 import 'package:sero/providers/super_admin/super_admin_providers.dart';
 
 class FeatureControlsScreen extends ConsumerStatefulWidget {
@@ -153,10 +154,12 @@ class _FeatureControlsScreenState extends ConsumerState<FeatureControlsScreen> {
                                         );
                                         // Invalidate to reload Detail provider
                                         ref.invalidate(superAdminSocietyDetailProvider(activeSocietyId));
+                                        if (!context.mounted) return;
                                         ScaffoldMessenger.of(context).showSnackBar(
                                           SnackBar(content: Text('Feature "$featureName" toggled to ${newVal ? "ON" : "OFF"}.')),
                                         );
                                       } catch (e) {
+                                        if (!context.mounted) return;
                                         ScaffoldMessenger.of(context).showSnackBar(
                                           SnackBar(content: Text('Failed to update feature: $e')),
                                         );
@@ -170,16 +173,16 @@ class _FeatureControlsScreenState extends ConsumerState<FeatureControlsScreen> {
                         },
                       );
                     },
-                    loading: () => const Center(child: CircularProgressIndicator(color: kPrimaryGreen)),
-                    error: (err, _) => Center(child: Text('Error: $err')),
+                    loading: () => const SkeletonList(itemCount: 4),
+                    error: (err, _) => ErrorRetryView(message: 'Could not load feature settings.', onRetry: () => ref.invalidate(superAdminSocietyDetailProvider(activeSocietyId))),
                   ),
                 ),
               ],
             ),
           );
         },
-        loading: () => const Center(child: CircularProgressIndicator(color: kPrimaryGreen)),
-        error: (err, _) => Center(child: Text('Error: $err')),
+        loading: () => const SkeletonList(itemCount: 4),
+        error: (err, _) => ErrorRetryView(message: 'Could not load societies.', onRetry: () => ref.invalidate(superAdminSocietiesProvider)),
       ),
     );
   }

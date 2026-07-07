@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:sero/app/theme.dart';
+import 'package:sero/widgets/shared/sero_ui.dart';
+import 'package:sero/widgets/common/async_state_views.dart';
 import 'package:sero/providers/super_admin/super_admin_provider.dart';
 import 'package:sero/widgets/super_admin/super_admin_widgets.dart';
 
@@ -80,10 +81,7 @@ class SuperAdminSocietiesScreen extends ConsumerWidget {
               ),
             ),
             societies.when(
-              loading: () => const SliverFillRemaining(
-                hasScrollBody: false,
-                child: Center(child: CircularProgressIndicator()),
-              ),
+              loading: () => const SliverToBoxAdapter(child: LiveLoadingView()),
               error: (error, _) => SliverFillRemaining(
                 hasScrollBody: false,
                 child: SuperAdminAsyncView<void>(
@@ -94,14 +92,13 @@ class SuperAdminSocietiesScreen extends ConsumerWidget {
               ),
               data: (page) {
                 if (page.items.isEmpty) {
-                  return SliverFillRemaining(
+                  return const SliverFillRemaining(
                     hasScrollBody: false,
-                    child: Center(
-                      child: Text(
-                        'No societies match this view.',
-                        style:
-                            GoogleFonts.outfit(color: const Color(0xFF64748B)),
-                      ),
+                    child: EmptyState(
+                      icon: Icons.business_outlined,
+                      title: 'No societies here',
+                      message:
+                          'No societies match this view. Try a different filter.',
                     ),
                   );
                 }

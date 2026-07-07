@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -89,11 +90,24 @@ class _GuardHomeState extends ConsumerState<GuardHome> {
     );
   }
 
-  void _showNewEntryDialog(BuildContext context) {
+  Future<void> _showNewEntryDialog(BuildContext context) async {
     final nameCtrl = TextEditingController();
-    final flatCtrl = TextEditingController();
     String type = 'guest';
+    String? selectedUnitId;
     bool isLoading = false;
+
+    // Load the society's units so the guard picks the exact flat. Sending the
+    // real unit_id is what lets the backend notify that flat's resident(s).
+    List<Map<String, dynamic>> units = [];
+    try {
+      final res = await ApiService.get('/structure/units');
+      if (res.statusCode == 200) {
+        units = ((jsonDecode(res.body)['units'] as List?) ?? const [])
+            .map((u) => (u as Map).cast<String, dynamic>())
+            .toList();
+      }
+    } catch (_) {/* dropdown will be empty; still allow logging */}
+    if (!context.mounted) return;
 
     showDialog(
       context: context,
@@ -122,38 +136,49 @@ class _GuardHomeState extends ConsumerState<GuardHome> {
                 decoration: const InputDecoration(labelText: 'Name / Company'),
               ),
               const SizedBox(height: 12),
-              TextField(
-                controller: flatCtrl,
-                enabled: !isLoading,
-                decoration: const InputDecoration(labelText: 'Target Flat (e.g. 402A)'),
+              DropdownButtonFormField<String>(
+                initialValue: selectedUnitId,
+                isExpanded: true,
+                decoration: const InputDecoration(labelText: 'Target Flat'),
+                items: units.map((u) {
+                  final id = (u['id'] ?? '').toString();
+                  final number = (u['number'] ?? 'Flat').toString();
+                  return DropdownMenuItem(value: id, child: Text(number, overflow: TextOverflow.ellipsis));
+                }).toList(),
+                onChanged: isLoading ? null : (v) => setState(() => selectedUnitId = v),
               ),
             ],
           ),
           actions: [
             TextButton(
-              onPressed: isLoading ? null : () => Navigator.pop(context), 
+              onPressed: isLoading ? null : () => Navigator.pop(context),
               child: const Text('CANCEL')
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: kPrimaryGreen, foregroundColor: Colors.white),
               onPressed: isLoading ? null : () async {
-                if (nameCtrl.text.isEmpty || flatCtrl.text.isEmpty) return;
-                
+                if (nameCtrl.text.trim().isEmpty || selectedUnitId == null) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Enter a name and select the target flat.')),
+                  );
+                  return;
+                }
+
                 setState(() => isLoading = true);
-                
-                final v = Visitor(
-                  id: '',
-                  name: nameCtrl.text,
-                  type: type,
-                  targetFlat: flatCtrl.text,
-                  vehicleNumber: '',
-                  phone: '',
-                  status: 'pending',
-                  entryTime: DateTime.now(),
-                );
-                
+
                 try {
-                  await ref.read(visitorsProvider.notifier).logVisitor(v);
+                  // Canonical guard endpoint: lands in /guard/visitors (shown on
+                  // this page) and, with a real unit_id, fans out a notification
+                  // to that flat's resident(s).
+                  final res = await ApiService.post('/guard/visitors/check-in', {
+                    'name': nameCtrl.text.trim(),
+                    'purpose': type,
+                    'unitId': selectedUnitId,
+                  });
+                  if (res.statusCode < 200 || res.statusCode >= 300) {
+                    throw Exception('Check-in failed (${res.statusCode})');
+                  }
+                  ref.invalidate(guardVisitorsProvider);
                   if (context.mounted) Navigator.pop(context);
                 } catch (e) {
                   setState(() => isLoading = false);
@@ -162,8 +187,8 @@ class _GuardHomeState extends ConsumerState<GuardHome> {
                   }
                 }
               },
-              child: isLoading 
-                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) 
+              child: isLoading
+                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                   : const Text('CHECK IN'),
             ),
           ],

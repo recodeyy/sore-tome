@@ -17,7 +17,12 @@ const RegisterDeviceSchema = z.object({
   body: z.object({
     token: z.string().min(1),
     platform: z.enum(["android", "ios", "web"]).optional(),
+    appVersion: z.string().max(40).optional(),
   }),
+});
+
+const RemoveDeviceSchema = z.object({
+  body: z.object({ token: z.string().min(1) }),
 });
 
 const TestNotifySchema = z.object({
@@ -28,16 +33,30 @@ const TestNotifySchema = z.object({
   }),
 });
 
-// POST /devices — register the caller's device token
-router.post("/devices", authMiddleware, tenantMiddleware, validate(RegisterDeviceSchema), async (req: Request, res: Response) => {
+// POST /devices — register/refresh the caller's device token (MR-001).
+// Auth only — a user without an active society scope (e.g. mid-onboarding)
+// must still be reachable by push, so tenantMiddleware is NOT required here.
+router.post("/devices", authMiddleware, validate(RegisterDeviceSchema), async (req: Request, res: Response) => {
   try {
     const device = await NotificationService.registerDevice(
-      societyOf(req), userOf(req).uid, req.body.token, req.body.platform || "android"
+      userOf(req).society_id || null, userOf(req).uid, req.body.token,
+      req.body.platform || "android", req.body.appVersion
     );
-    res.status(201).json({ device });
+    res.status(200).json({ success: true, device });
   } catch (err: any) {
     logger.error({ error: err.message }, "Register device failed");
     res.status(500).json({ error: "Failed to register device" });
+  }
+});
+
+// DELETE /devices — unregister a device token (logout / token rotation).
+router.delete("/devices", authMiddleware, validate(RemoveDeviceSchema), async (req: Request, res: Response) => {
+  try {
+    const result = await NotificationService.removeDevice(userOf(req).uid, req.body.token);
+    res.status(200).json({ success: true, ...result });
+  } catch (err: any) {
+    logger.error({ error: err.message }, "Remove device failed");
+    res.status(500).json({ error: "Failed to remove device" });
   }
 });
 

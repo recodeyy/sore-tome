@@ -1,21 +1,33 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-// Premium Green & Blue Palette
-const kPrimaryGreen = Color(0xFF064E3B); // Deep Emerald
-const kPrimaryBlue = Color(0xFF1E3A8A);  // Deep Navy Blue
-const kAccentGreen = Color(0xFF10B981);  // Emerald 500
-const kAccentBlue = Color(0xFF0EA5E9);   // Sky 500
-const kSlateBg = Color(0xFFF8FAFC);      // Soft Slate background
-const kSlateBorder = Color(0xFFE2E8F0);  // Slate border
+// ─── Canonical SERO palette (MR-010) ─────────────────────────────────────────
+// Single source of truth. All other green constants below are aliases of
+// these tokens so every screen shifts to the unified palette.
+const kPrimaryGreen = Color(0xFF064E3B); // Primary — Deep Emerald
+const kAccentGreen = Color(0xFF10B981);  // Accent — Emerald 500
+const kLightMint = Color(0xFFECFDF5);  // Light green surface (Emerald 50)
+const kSlateBg = Color(0xFFF8FAFC);      // App background
+const kSlateBorder = Color(0xFFE2E8F0);  // Border
+const kTextPrimary = Color(0xFF111827);  // Primary text
+const kTextSecondary = Color(0xFF64748B);// Secondary text
+const kError = Color(0xFFEF4444);        // Error
+const kWarning = Color(0xFFF59E0B);      // Warning
+const kInfo = Color(0xFF0EA5E9);         // Info
 
-// White-green auth surfaces (landing + login). Light, fresh, airy.
-const kFreshGreen = Color(0xFF16A34A);       // Primary action green
-const kFreshGreenDark = Color(0xFF15803D);   // Pressed / gradient end
-const kMintBg = Color(0xFFF2FBF5);           // Very light mint page background
-const kMintTint = Color(0xFFE4F6EC);         // Soft green card tint
-const kMintBorder = Color(0xFFC7EBD5);       // Soft green border
-const kInkGreen = Color(0xFF0B3D2C);         // Deep green text on light
+// Secondary brand hues
+const kPrimaryBlue = Color(0xFF1E3A8A);  // Deep Navy Blue
+const kAccentBlue = kInfo;               // Sky 500 (alias of kInfo)
+
+// ── Legacy "fresh mint" tokens — now ALIASES of the canonical palette ───────
+// (Previously an independent green ramp that caused visual drift; kept as
+// names so existing screens compile, but they now resolve to canonical hues.)
+const kFreshGreen = kAccentGreen;        // was #16A34A → Emerald 500
+const kFreshGreenDark = kPrimaryGreen;   // was #15803D → Deep Emerald
+const kMintBg = kLightMint;            // was #F2FBF5 → Emerald 50
+const kMintTint = kLightMint;          // was #E4F6EC → Emerald 50
+const kMintBorder = kSlateBorder;        // was #C7EBD5 → canonical border
+const kInkGreen = kPrimaryGreen;         // was #0B3D2C → Deep Emerald
 
 const kAuthGreenGradient = LinearGradient(
   colors: [Colors.white, kMintBg],

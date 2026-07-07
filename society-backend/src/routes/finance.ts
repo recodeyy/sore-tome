@@ -3,6 +3,7 @@ import { FinanceService } from "../services/finance/FinanceService";
 import { ExpenseService } from "../services/finance/ExpenseService";
 import { RazorpayWebhookService } from "../services/payment/RazorpayWebhookService";
 import { FinanceReportService } from "../services/finance/FinanceReportService";
+import { ReceiptPdfService } from "../services/finance/ReceiptPdfService";
 import { ReconciliationService } from "../services/finance/ReconciliationService";
 import { validate } from "../middleware/validate";
 import { CreateInvoiceSchema, RecordPaymentSchema, CreateExpenseSchema, DecideExpenseSchema, CreatePaymentOrderSchema, VerifyPaymentSchema } from "../shared/schemas";
@@ -113,6 +114,66 @@ router.post("/recurring-billing", authMiddleware, requireSociety, tenantMiddlewa
     if (err.code === "23505") return res.status(409).json({ error: "Invoice number already exists" });
     logger.error({ error: err.message }, "Recurring billing failed");
     res.status(500).json({ error: "Failed to run recurring billing" });
+  }
+});
+
+// Roles that may see ALL of the society's receipts; everyone else sees own only.
+const FINANCE_VIEW_ROLES = ["super_admin", "main_admin", "admin", "treasurer", "secretary", "committee_member"];
+
+// GET /finance/receipts?limit= — §7.2: resident sees own receipts, admin sees the society's.
+router.get("/receipts", authMiddleware, requireSociety, tenantMiddleware, async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    const isAdmin = FINANCE_VIEW_ROLES.includes(user?.role);
+    const limit = req.query.limit ? Number(req.query.limit) : undefined;
+    const receipts = await FinanceService.listReceipts(societyOf(req), {
+      limit,
+      userId: isAdmin ? undefined : user?.uid,
+    });
+    res.json({ receipts });
+  } catch (err: any) {
+    logger.error({ error: err.message }, "List receipts failed");
+    res.status(500).json({ error: "Failed to list receipts" });
+  }
+});
+
+// GET /finance/receipts/:id/pdf — §7.2: streams the receipt as a PDF.
+// Residents may only fetch receipts for invoices billed to them/their unit.
+router.get("/receipts/:id/pdf", authMiddleware, requireSociety, tenantMiddleware, async (req: Request, res: Response) => {
+  try {
+    const societyId = societyOf(req);
+    const detail = await FinanceService.getReceiptDetail(societyId, req.params.id as string);
+    if (!detail) return res.status(404).json({ error: "Receipt not found" });
+
+    const user = (req as any).user;
+    if (!FINANCE_VIEW_ROLES.includes(user?.role)) {
+      const own = await FinanceService.listReceipts(societyId, { userId: user?.uid, limit: 200 });
+      if (!own.some((r: any) => String(r.id) === String(req.params.id))) {
+        return res.status(403).json({ error: "You can only download your own receipts" });
+      }
+    }
+
+    const pdf = await ReceiptPdfService.render(detail);
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `inline; filename="${detail.receipt.number}.pdf"`);
+    res.send(Buffer.from(pdf));
+  } catch (err: any) {
+    logger.error({ error: err.message }, "Receipt PDF failed");
+    res.status(500).json({ error: "Failed to render receipt PDF" });
+  }
+});
+
+// POST /finance/reminders/run — §13: admin-triggered dues reminder run for this
+// society. Finds published invoices past due with an outstanding balance and
+// pushes a billing notification (deeplink /resident/payments), at most once per
+// invoice per day (invoices.last_reminded_at).
+router.post("/reminders/run", authMiddleware, requireSociety, tenantMiddleware, canManageFunds, async (req: Request, res: Response) => {
+  try {
+    const result = await FinanceService.runDuesReminders(societyOf(req));
+    res.json({ success: true, ...result });
+  } catch (err: any) {
+    logger.error({ error: err.message }, "Dues reminder run failed");
+    res.status(500).json({ error: "Failed to run dues reminders" });
   }
 });
 

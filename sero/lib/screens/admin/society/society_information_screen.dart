@@ -320,12 +320,10 @@ class _SocietyInformationScreenState extends ConsumerState<SocietyInformationScr
 class _FormField extends StatelessWidget {
   final String label;
   final TextEditingController controller;
-  final bool readOnly;
 
   const _FormField({
     required this.label,
     required this.controller,
-    this.readOnly = false,
   });
 
   @override
@@ -337,7 +335,6 @@ class _FormField extends StatelessWidget {
         const SizedBox(height: 6),
         TextField(
           controller: controller,
-          readOnly: readOnly,
           style: GoogleFonts.outfit(fontSize: 14, color: const Color(0xFF1E293B)),
           decoration: InputDecoration(
             filled: true,

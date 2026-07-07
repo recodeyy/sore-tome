@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 // import 'firebase_options.dart';
 import 'services/notification_service.dart';
 import 'app/app.dart';
@@ -14,7 +15,10 @@ Future<void> main() async {
       // options: DefaultFirebaseOptions.currentPlatform,
     );
 
-    // AI V2.4: Initialize Push Notifications
+    // MR-008: background/terminated message handler (top-level entry point).
+    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+
+    // Initialize push notifications (channels, listeners, deep links).
     await NotificationService().init();
   } catch (e) {
     debugPrint("Firebase/Notification Init Error: $e");

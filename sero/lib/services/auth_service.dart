@@ -3,9 +3,9 @@ import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import '../config/env.dart';
+import 'notification_service.dart';
 
 // Use centralized environment config
 final String kBaseUrl = Environment.apiBaseUrl.replaceAll('/api/v1', '');
@@ -59,14 +59,12 @@ class AuthService {
       await _storage.write(key: 'refreshToken', value: data['refreshToken']);
       await _storage.write(key: 'user', value: jsonEncode(data['user']));
       
-      // AI V2.4: Sync FCM Token
+      // MR-008: Register this device's FCM token with the backend
+      // (multi-device endpoint with legacy PATCH fallback inside).
       try {
-        final fcmToken = await FirebaseMessaging.instance.getToken();
-        if (fcmToken != null) {
-          await updateFcmToken(fcmToken);
-        }
+        await NotificationService().registerDeviceToken();
       } catch (e) {
-        debugPrint('FCM Token sync failed: $e');
+        debugPrint('FCM token registration failed: $e');
       }
       
       return data;

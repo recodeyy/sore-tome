@@ -1,4 +1,8 @@
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 import 'package:sero/services/api_service.dart';
+import 'package:sero/services/api_client.dart';
+import 'package:sero/services/auth_service.dart';
 
 /// Service for Staff Management module.
 ///
@@ -42,6 +46,23 @@ class AdminStaffService {
     final res = await ApiService.post('/staff-v2', body);
     final data = ApiService.unwrap(res);
     return (data as Map?)?.cast<String, dynamic>() ?? <String, dynamic>{};
+  }
+
+  /// POST /users/upload-image — uploads [filePath] and returns the public URL.
+  /// Used to persist a staff member's captured/selected photo. Throws on failure.
+  static Future<String> uploadImage(String filePath) async {
+    final token = await AuthService.getToken();
+    final req = http.MultipartRequest(
+      'POST',
+      Uri.parse('${ApiClient.baseUrl}/users/upload-image'),
+    );
+    req.headers['Authorization'] = 'Bearer $token';
+    req.files.add(await http.MultipartFile.fromPath('image', filePath));
+    final res = await http.Response.fromStream(await req.send());
+    if (res.statusCode == 200) {
+      return (jsonDecode(res.body)['url'] ?? '').toString();
+    }
+    throw Exception('Image upload failed (${res.statusCode})');
   }
 
   /// PATCH /staff-v2/:id/status — change a staff member's employment status.

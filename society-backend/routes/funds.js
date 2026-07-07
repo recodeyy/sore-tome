@@ -381,85 +381,136 @@ router.post("/payments/verify", authMiddleware, tenantMiddleware, async (req, re
   }
 });
 
-// POST /payments/webhook
+// POST /payments/webhook — Razorpay server-to-server webhook (§7.2c).
+// The client callback is never trusted as final: this endpoint validates
+// X-Razorpay-Signature (HMAC-SHA256 of the RAW body with
+// RAZORPAY_WEBHOOK_SECRET), then marks the payment verified/captured and posts
+// it to the Postgres ledger via the idempotent RazorpayWebhookService (one
+// financial effect per gateway payment, guaranteed by the payments
+// idempotency/unique keys and the payment_webhook_events event store).
 router.post("/payments/webhook", async (req, res) => {
+  const { RazorpayWebhookService } = require("../src/services/payment/RazorpayWebhookService");
   try {
-    const signature = req.headers["x-razorpay-signature"];
-    if (!signature || !req.rawBody) {
-      logger.warn({ ip: req.ip }, "SEC-ALERT: Webhook missing signature or raw body");
-      return res.status(400).send("Bad Request");
-    }
-
-    const secret = process.env.RAZORPAY_WEBHOOK_SECRET;
-    if (!secret) {
+    if (!process.env.RAZORPAY_WEBHOOK_SECRET) {
       // Fail closed: never accept a webhook signed with a guessable placeholder.
       logger.error({ ip: req.ip }, "SEC-ALERT: RAZORPAY_WEBHOOK_SECRET not configured; rejecting webhook");
-      return res.status(503).send("Webhook not configured");
+      return res.status(503).json({ error: "Webhook not configured" });
+    }
+    const rawBody = req.rawBody || JSON.stringify(req.body);
+    const signature = req.headers["x-razorpay-signature"];
+    const eventId = req.headers["x-razorpay-event-id"];
+    const result = await RazorpayWebhookService.handle(rawBody, signature, eventId);
+    // Always 200 on a valid signature so Razorpay stops retrying.
+    res.status(200).json({ ok: true, ...result });
+  } catch (err) {
+    if (err.code === "INVALID_SIGNATURE") {
+      logger.warn({ ip: req.ip }, "SEC-ALERT: Invalid Razorpay webhook signature");
+      return res.status(400).json({ error: "Invalid signature" });
+    }
+    logger.error({ error: err.message }, "Webhook Processing Error");
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+// ─── §13: UPI demo QR + admin mark-paid ─────────────────────────────────────
+// Lazily required so loading this router never instantiates the Postgres pool
+// (unit tests load routes/funds.js without DATABASE_URL).
+const getFinanceService = () => require("../src/services/finance/FinanceService").FinanceService;
+
+/** Demo write-paths are allowed outside production, or with ADMIN_DEMO_MODE=true. */
+function demoModeEnabled() {
+  return process.env.NODE_ENV !== "production" || process.env.ADMIN_DEMO_MODE === "true";
+}
+
+// GET /payments/upi-qr?invoiceId= — server-built UPI intent URI + QR PNG for the
+// invoice's outstanding balance. Payee comes from backend env config
+// (UPI_DEMO_VPA / UPI_DEMO_NAME), never from the client. DEMO/TEST only — the
+// QR does not settle anything; an admin confirms via upi-demo/mark-paid.
+router.get("/payments/upi-qr", authMiddleware, tenantMiddleware, async (req, res) => {
+  try {
+    const invoiceId = req.query.invoiceId;
+    if (!invoiceId) return res.status(400).json({ error: "invoiceId is required" });
+
+    const FinanceService = getFinanceService();
+    const invoice = await FinanceService.getInvoice(req.societyId, String(invoiceId));
+    if (!invoice) return res.status(404).json({ error: "Invoice not found" });
+    if (invoice.status !== "published") return res.status(409).json({ error: "Only a published invoice can be paid" });
+
+    const { db } = require("../src/shared/Database");
+    const amountMinor = await FinanceService.outstandingMinor(db, req.societyId, String(invoiceId));
+    if (amountMinor <= 0) return res.status(409).json({ error: "Invoice is already settled" });
+
+    const vpa = process.env.UPI_DEMO_VPA || "sero-demo@upi";
+    const payeeName = process.env.UPI_DEMO_NAME || "SERO Demo";
+    const amount = (amountMinor / 100).toFixed(2);
+    const note = `DEMO ${invoice.number}`;
+    const upiUri =
+      `upi://pay?pa=${encodeURIComponent(vpa)}&pn=${encodeURIComponent(payeeName)}` +
+      `&am=${amount}&cu=INR&tn=${encodeURIComponent(note)}`;
+
+    const QRCode = require("qrcode");
+    const dataUrl = await QRCode.toDataURL(upiUri, { width: 320, margin: 2 });
+    const qrPngBase64 = dataUrl.replace(/^data:image\/png;base64,/, "");
+
+    res.json({
+      upiUri,
+      qrPngBase64,
+      amountMinor,
+      amount: Number(amount),
+      currency: "INR",
+      payee: { vpa, name: payeeName },
+      invoiceId: invoice.id,
+      invoiceNumber: invoice.number,
+      note: "DEMO/TEST",
+    });
+  } catch (err) {
+    if (err.code === "NOT_FOUND") return res.status(404).json({ error: "Invoice not found" });
+    logger.error({ error: err.message }, "UPI QR generation failed");
+    res.status(500).json({ error: "Failed to build UPI QR" });
+  }
+});
+
+// POST /payments/upi-demo/mark-paid {invoiceId, reference} — admin-only DEMO
+// confirmation of a UPI QR payment. Allowed only when NODE_ENV !== production
+// or ADMIN_DEMO_MODE=true. Settles the invoice through the normal idempotent
+// payment recording path (ONE financial effect: payment + allocation + ledger +
+// receipt) and writes a demo_payment_audits row (who/when/reference).
+router.post("/payments/upi-demo/mark-paid", authMiddleware, tenantMiddleware, canManageFunds, async (req, res) => {
+  try {
+    if (!demoModeEnabled()) {
+      return res.status(403).json({ error: "Demo payments are disabled in production", code: "DEMO_DISABLED" });
+    }
+    const { invoiceId, reference } = req.body || {};
+    if (!invoiceId || !reference || typeof reference !== "string" || !reference.trim()) {
+      return res.status(400).json({ error: "invoiceId and reference are required" });
     }
 
-    // Verify HMAC
-    const crypto = require("crypto");
-    const expectedSignature = crypto
-      .createHmac("sha256", secret)
-      .update(req.rawBody)
-      .digest("hex");
-
-    if (expectedSignature !== signature) {
-      logger.warn({ ip: req.ip, signature }, "SEC-ALERT: Invalid Razorpay webhook signature");
-      return res.status(400).send("Invalid signature");
-    }
-
-    // Parse event
-    const event = req.body;
-    const eventId = event.id; // Razorpay webhook event ID
-    
-    // Idempotency check
-    const db = getDb();
-    const webhookDoc = await db.collection("processed_webhooks").doc(eventId).get();
-    if (webhookDoc.exists) {
-      return res.status(200).send("Already processed");
-    }
-
-    // Process event
-    if (event.event === "payment.captured" || event.event === "order.paid") {
-      const paymentEntity = event.payload.payment.entity;
-      const paymentId = paymentEntity.id;
-      const amount = paymentEntity.amount / 100; // Convert subunits
-      
-      // We look up the transaction by transactionId to see if it was already processed synchronously
-      const transSnap = await db.collection("transactions").where("transactionId", "==", paymentId).get();
-      if (transSnap.empty) {
-        // If we attached society_id and user_id to notes, we could create it here.
-        // For MVP, we log it so admin can manually reconcile, or we extract from notes.
-        const notes = paymentEntity.notes || {};
-        if (notes.society_id) {
-          await db.collection("transactions").add({
-            society_id: notes.society_id,
-            title: "Webhook Payment Capture",
-            amount: Number(amount),
-            type: "credit",
-            category: "maintenance",
-            note: `Gateway: razorpay | ID: ${paymentId}`,
-            transactionId: paymentId,
-            addedBy: notes.user_id || "system",
-            createdAt: getAdmin().firestore.FieldValue.serverTimestamp(),
-          });
-        } else {
-          logger.warn({ paymentId }, "Webhook received but no society_id in notes to create transaction.");
-        }
-      }
-    }
-
-    // Mark as processed
-    await db.collection("processed_webhooks").doc(eventId).set({
-      processedAt: getAdmin().firestore.FieldValue.serverTimestamp(),
-      event: event.event
+    const result = await getFinanceService().markInvoicePaidDemo(req.societyId, {
+      invoiceId: String(invoiceId),
+      reference: reference.trim(),
+      actorId: req.user.uid,
     });
 
-    res.status(200).send("OK");
+    await AuditLogService.getInstance().logAdminAction(
+      req.user,
+      "UPI Demo Payment Marked Paid",
+      `Invoice ${invoiceId} marked paid (demo) with reference ${reference.trim()}`
+    );
+
+    res.status(result.duplicate ? 200 : 201).json({
+      success: true,
+      duplicate: result.duplicate,
+      payment: result.payment,
+      receipt: result.receipt || null,
+      invoiceId: result.invoiceId,
+      amountMinor: result.amountMinor,
+      testMode: true,
+    });
   } catch (err) {
-    logger.error({ error: err.message }, "Webhook Processing Error");
-    res.status(500).send("Internal Server Error");
+    if (err.code === "NOT_FOUND") return res.status(404).json({ error: "Invoice not found" });
+    if (err.code === "INVALID_STATE") return res.status(409).json({ error: err.message });
+    logger.error({ error: err.message }, "UPI demo mark-paid failed");
+    res.status(500).json({ error: "Failed to mark invoice paid" });
   }
 });
 

@@ -63,17 +63,19 @@ class StatusBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Pill geometry aligned with the canonical StatusChip (sero_ui.dart).
     return Container(
-      padding: padding ?? const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      padding: padding ?? const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: bgColor ?? const Color(0xFFE2E8F0),
-        borderRadius: BorderRadius.circular(6),
+        color: bgColor ?? const Color(0xFFF1F5F9),
+        borderRadius: BorderRadius.circular(16),
       ),
       child: Text(
         label,
         style: GoogleFonts.outfit(
           fontSize: fontSize,
-          fontWeight: FontWeight.w600,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.2,
           color: textColor ?? const Color(0xFF64748B),
         ),
       ),

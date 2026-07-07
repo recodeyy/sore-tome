@@ -235,12 +235,12 @@ class _ProposedActionCardState extends State<ProposedActionCard> {
         widget.message['executed'] = true;
       });
       widget.onExecuted();
-      if (!context.mounted) return;
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Action confirmed!')),
       );
     } catch (e) {
-      if (!context.mounted) return;
+      if (!mounted) return;
       setState(() => _loading = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Execution failed: $e')),

@@ -81,6 +81,34 @@ export const ParkingService = {
     return rows;
   },
 
+  /**
+   * Admin/committee-facing: all allocations for the society (MR-004 — the
+   * Flutter admin app GETs /parking/allocations). Joined to slot + vehicle so
+   * the client can render code/location/plate without extra round-trips.
+   */
+  async listAllocations(societyId: string, opts: { status?: string; limit?: number } = {}) {
+    const params: any[] = [societyId];
+    let where = `a.society_id = $1`;
+    if (opts.status) { params.push(opts.status); where += ` AND a.status = $${params.length}`; }
+    params.push(Math.min(opts.limit || 200, 500));
+    const { rows } = await db.query(
+      `SELECT a.id, a.slot_id, a.vehicle_id, a.unit_id, a.allocated_to, a.allocated_by,
+              a.status, a.allocated_at, a.released_at,
+              s.code AS slot_code, s.type AS slot_type, s.location AS slot_location,
+              v.plate AS vehicle_plate, v.type AS vehicle_type, v.make_model,
+              u.number AS unit_number
+         FROM parking_allocations a
+         JOIN parking_slots s ON s.id = a.slot_id
+         LEFT JOIN vehicles v ON v.id = a.vehicle_id
+         LEFT JOIN units u ON u.id::text = a.unit_id::text
+        WHERE ${where}
+        ORDER BY a.allocated_at DESC
+        LIMIT $${params.length}`,
+      params
+    );
+    return rows;
+  },
+
   async registerVehicle(
     societyId: string,
     input: { plate: string; type?: string; unitId?: string; ownerId?: string; makeModel?: string }

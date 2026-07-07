@@ -8,14 +8,22 @@ import '../screens/shared/auth/welcome_landing_screen.dart';
 import '../screens/shared/auth/role_login_landing_screen.dart';
 import '../screens/shared/auth/role_login_form_screen.dart';
 import '../screens/shared/auth/workspace_selector_screen.dart';
-import '../screens/shared/auth/account_state_screen.dart';
-import '../screens/shared/auth/auth_challenge_screen.dart';
 import '../screens/shared/auth/register_screen.dart';
 import '../screens/shared/ai/ai_society_pulse_screen.dart';
 import '../screens/shared/ai/complaint_intelligence_screen.dart';
 import '../screens/shared/ai/predictive_maintenance_screen.dart';
 import '../screens/shared/ai/financial_anomaly_screen.dart';
 import '../screens/resident/issues/post_issue_screen.dart';
+import '../screens/resident/issues/resident_issues_screen.dart';
+import '../screens/resident/visitors/visitor_approval_screen.dart';
+import '../screens/resident/visitors/invite_visitor_screen.dart';
+import '../screens/resident/onboarding/society_search_screen.dart';
+import '../screens/resident/onboarding/request_status_screen.dart';
+import '../screens/guard/gate_screen.dart';
+import '../screens/guard/staff_tasks_screen.dart';
+import '../screens/shared/ai_chat/ai_chat_screen.dart';
+import '../screens/resident/payments/bills_dues_screen.dart';
+import '../screens/resident/amenities/amenities_home_screen.dart';
 import '../screens/admin/post_notice_screen.dart';
 import '../screens/admin/manage_issues_screen.dart';
 import '../screens/shared/splash_screen.dart';
@@ -71,17 +79,16 @@ import '../screens/super_admin/super_admin_approvals_screen.dart';
 import '../screens/super_admin/super_admin_settings_screen.dart';
 import '../screens/super_admin/super_admin_support_screen.dart';
 
+/// Global navigator key so services (push-notification deep links) can
+/// navigate without a BuildContext.
+final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
+
 class SocietyApp extends StatelessWidget {
   const SocietyApp({super.key});
 
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'SocietyApp',
-      debugShowCheckedModeBanner: false,
-      theme: appTheme(),
-      initialRoute: '/splash',
-      routes: {
+  /// Registered named routes. Exposed statically so NotificationService can
+  /// validate incoming deep links before navigating.
+  static final Map<String, WidgetBuilder> routes = {
         '/splash':            (_) => const SplashScreen(),
         '/welcome':           (_) => const WelcomeLandingScreen(),
         '/login':             (_) => const RoleLoginLandingScreen(),
@@ -202,7 +209,52 @@ class SocietyApp extends StatelessWidget {
         '/profile':                   (_) => const AuthGuard(child: ProfileScreen()),
         '/profile/edit':              (_) => const AuthGuard(child: EditProfileScreen()),
         '/settings':                  (_) => const AuthGuard(child: SettingsScreen()),
-      },
+
+        // --- STAFF/GUARD ROUTES (MR-007) ---
+        // '/staff/gate' aliases the reworked guard_home gate console so any
+        // existing deep link into the guard flow keeps working.
+        '/staff/gate':                (_) => const AuthGuard(
+                                              allowedRoles: ['guard', 'security_manager', 'facility_manager', 'supervisor', 'maintenance_staff', 'housekeeping_staff', 'reception_staff', 'parcel_desk_staff', 'staff'],
+                                              child: GateScreen(),
+                                            ),
+        '/staff/tasks':               (_) => const AuthGuard(
+                                              allowedRoles: ['guard', 'security_manager', 'facility_manager', 'supervisor', 'maintenance_staff', 'housekeeping_staff', 'reception_staff', 'parcel_desk_staff', 'staff'],
+                                              child: StaffTasksScreen(),
+                                            ),
+        '/staff/assistant':           (_) => const AuthGuard(
+                                              child: AiChatScreen(
+                                                userRole: 'staff',
+                                                initialMessage: 'How can I help with your shift today?',
+                                              ),
+                                            ),
+
+        // --- RESIDENT ONBOARDING (MR-006) ---
+        // Society search is a public endpoint, so no AuthGuard: a new user can
+        // browse societies before registering. Submitting the join request and
+        // checking status require a session.
+        '/onboarding':                (_) => const SocietySearchScreen(),
+        '/onboarding/status':         (_) => const AuthGuard(
+                                              requireApproved: false,
+                                              child: RequestStatusScreen(),
+                                            ),
+
+        // --- RESIDENT DEEP-LINK ROUTES (push notifications) ---
+        '/resident/visitors':         (_) => const AuthGuard(child: VisitorApprovalScreen()),
+        '/resident/invite-visitor':   (_) => const AuthGuard(child: InviteVisitorScreen()),
+        '/resident/payments':         (_) => const AuthGuard(child: BillsDuesScreen()),
+        '/resident/complaints':       (_) => const AuthGuard(child: ResidentIssuesScreen()),
+        '/resident/amenities':        (_) => const AuthGuard(child: AmenitiesHomeScreen()),
+      };
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'SocietyApp',
+      debugShowCheckedModeBanner: false,
+      navigatorKey: appNavigatorKey,
+      theme: appTheme(),
+      initialRoute: '/splash',
+      routes: routes,
       // Safety net: any route that isn't registered renders a friendly
       // "coming soon" screen instead of crashing to a red error page.
       onUnknownRoute: (settings) => MaterialPageRoute(

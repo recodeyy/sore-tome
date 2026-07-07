@@ -103,6 +103,168 @@ export const MemberService = {
     });
   },
 
+  // ---- MR-006: resident self-service onboarding (join requests) ----------
+  // A "join request" is a members row in the existing pending state — no new
+  // table. requested_unit captures the claimed flat (e.g. "A / Floor 14 / A-1402")
+  // until the admin approval links a real units row (matched by number).
+
+  /** Resident asks to join a society. Idempotent per (society, user). */
+  async createJoinRequest(input: {
+    societyId: string;
+    userId: string;
+    name: string;
+    phone?: string;
+    wing?: string;
+    block?: string;
+    floor?: string | number;
+    unitNumber: string;
+  }) {
+    return withTx(async (client) => {
+      const soc = await client.query(
+        `SELECT society_id, name FROM society_profiles WHERE society_id = $1`,
+        [input.societyId]
+      );
+      if (!soc.rows[0]) throw err("Society not found", "NOT_FOUND");
+
+      // Idempotency: an open (pending) or accepted (approved) membership wins.
+      const existing = await client.query(
+        `SELECT * FROM members WHERE society_id = $1 AND user_id = $2
+          AND status IN ('pending','approved') ORDER BY created_at DESC LIMIT 1`,
+        [input.societyId, input.userId]
+      );
+      if (existing.rows[0]) return { request: existing.rows[0], existed: true };
+
+      // Try to resolve the claimed flat to a real unit (exact number match,
+      // then wing-prefixed variant).
+      const unitNo = String(input.unitNumber).trim().toUpperCase();
+      const candidates = [unitNo];
+      if (input.wing) candidates.push(`${String(input.wing).trim().toUpperCase()}-${unitNo}`);
+      const unit = await client.query(
+        `SELECT id, number FROM units WHERE society_id = $1 AND upper(number) = ANY($2) LIMIT 1`,
+        [input.societyId, candidates]
+      );
+      const unitId = unit.rows[0]?.id || null;
+
+      const requestedUnit = [
+        input.wing ? `Wing ${input.wing}` : null,
+        input.block ? `Block ${input.block}` : null,
+        input.floor !== undefined && input.floor !== null && `${input.floor}` !== "" ? `Floor ${input.floor}` : null,
+        unitNo,
+      ].filter(Boolean).join(" / ");
+
+      const { rows } = await client.query(
+        `INSERT INTO members (society_id, user_id, name, phone, unit_id, status, role, requested_unit)
+         VALUES ($1,$2,$3,$4,$5,'pending','resident',$6) RETURNING *`,
+        [input.societyId, input.userId, input.name, input.phone || null, unitId, requestedUnit]
+      );
+
+      // Notify society admins there is a new join request to review.
+      const admins = await Recipients.adminUserIds(client, input.societyId);
+      await Recipients.fanOut(client, {
+        societyId: input.societyId,
+        eventType: "member.join_requested",
+        payload: { memberId: rows[0].id, name: input.name, requestedUnit },
+        recipients: admins,
+        notification: {
+          title: "New join request",
+          body: `${input.name} requested to join (${requestedUnit}).`,
+          type: "member",
+          data: { memberId: rows[0].id, deeplink: `/members/join-requests` },
+        },
+      });
+      logger.info({ societyId: input.societyId, memberId: rows[0].id }, "Join request created + admins notified");
+      return { request: rows[0], existed: false };
+    });
+  },
+
+  /** All of a user's join requests / memberships across societies (status view). */
+  async myJoinRequests(userId: string) {
+    const { rows } = await db.query(
+      `SELECT m.id, m.society_id, COALESCE(p.name, m.society_id) AS society_name,
+              m.name, m.phone, m.status, m.role, m.requested_unit, m.unit_id,
+              u.number AS unit_number, m.created_at, m.updated_at
+         FROM members m
+         LEFT JOIN society_profiles p ON p.society_id = m.society_id
+         LEFT JOIN units u ON u.id = m.unit_id
+        WHERE m.user_id = $1
+        ORDER BY m.created_at DESC`,
+      [userId]
+    );
+    return rows;
+  },
+
+  /** Admin: pending join requests for the society. */
+  async listJoinRequests(societyId: string) {
+    const { rows } = await db.query(
+      `SELECT m.*, u.number AS unit_number
+         FROM members m
+         LEFT JOIN units u ON u.id = m.unit_id
+        WHERE m.society_id = $1 AND m.status = 'pending'
+        ORDER BY m.created_at ASC`,
+      [societyId]
+    );
+    return rows;
+  },
+
+  /**
+   * Admin approves/rejects a pending join request. On approve the member row
+   * becomes the active membership (status approved, unit linked if resolvable).
+   * The resident is notified in-app + push either way.
+   */
+  async decideJoinRequest(societyId: string, memberId: string, decision: "approved" | "rejected", decidedBy?: string) {
+    return withTx(async (client) => {
+      const cur = await client.query(
+        `SELECT * FROM members WHERE id = $1 AND society_id = $2 FOR UPDATE`,
+        [memberId, societyId]
+      );
+      const member = cur.rows[0];
+      if (!member) throw err("Join request not found", "NOT_FOUND");
+      if (member.status !== "pending") {
+        throw err(`Join request is already ${member.status}`, "INVALID_TRANSITION");
+      }
+
+      // Late unit resolution: the flat may have been created since the request.
+      let unitId = member.unit_id;
+      if (decision === "approved" && !unitId && member.requested_unit) {
+        const unitNo = String(member.requested_unit).split("/").pop()!.trim().toUpperCase();
+        const u = await client.query(
+          `SELECT id FROM units WHERE society_id = $1 AND upper(number) = $2 LIMIT 1`,
+          [societyId, unitNo]
+        );
+        unitId = u.rows[0]?.id || null;
+      }
+
+      const { rows } = await client.query(
+        `UPDATE members SET status = $3, unit_id = COALESCE($4, unit_id),
+                version = version + 1, updated_at = now()
+          WHERE id = $1 AND society_id = $2 RETURNING *`,
+        [memberId, societyId, decision, unitId]
+      );
+
+      const soc = await client.query(`SELECT name FROM society_profiles WHERE society_id = $1`, [societyId]);
+      const societyName = soc.rows[0]?.name || "your society";
+      const approved = decision === "approved";
+      if (member.user_id) {
+        await Recipients.fanOut(client, {
+          societyId,
+          eventType: approved ? "member.join_approved" : "member.join_rejected",
+          payload: { memberId, decidedBy: decidedBy || null },
+          recipients: [member.user_id],
+          notification: {
+            title: approved ? "Join request approved" : "Join request declined",
+            body: approved
+              ? `Welcome to ${societyName}! Your membership is now active.`
+              : `Your request to join ${societyName} was declined. Contact the society office for details.`,
+            type: "member",
+            data: { memberId, deeplink: approved ? "/home" : "/onboarding" },
+          },
+        });
+      }
+      logger.info({ societyId, memberId, decision }, "Join request decided + resident notified");
+      return rows[0];
+    });
+  },
+
   async addFamilyMember(
     societyId: string,
     memberId: string,

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:sero/app/theme.dart';
+import 'package:sero/widgets/shared/sero_ui.dart';
 import 'package:sero/providers/super_admin/super_admin_providers.dart';
 
 class KycVerificationScreen extends ConsumerStatefulWidget {
@@ -254,8 +255,8 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen> {
             ],
           );
         },
-        loading: () => const Center(child: CircularProgressIndicator(color: kPrimaryGreen)),
-        error: (err, _) => Center(child: Text('Error loading applications: $err')),
+        loading: () => const SkeletonList(itemCount: 4),
+        error: (err, _) => ErrorRetryView(message: 'Could not load KYC applications.', onRetry: () => ref.invalidate(superAdminSocietiesProvider)),
       ),
     );
   }
@@ -331,17 +332,19 @@ class _KycVerificationScreenState extends ConsumerState<KycVerificationScreen> {
                 );
                 return;
               }
+              // Capture before the dialog context is popped / async gap.
+              final messenger = ScaffoldMessenger.of(context);
               Navigator.pop(context);
               try {
                 if (approve) {
                   await ref.read(superAdminSocietiesProvider.notifier).approve(id, reason: _reasonController.text);
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Society approved and activated.')));
+                  messenger.showSnackBar(const SnackBar(content: Text('Society approved and activated.')));
                 } else {
                   await ref.read(superAdminSocietiesProvider.notifier).reject(id, reason: _reasonController.text);
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('KYC rejected.')));
+                  messenger.showSnackBar(const SnackBar(content: Text('KYC rejected.')));
                 }
               } catch (e) {
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Action failed: $e')));
+                messenger.showSnackBar(SnackBar(content: Text('Action failed: $e')));
               }
             },
             style: ElevatedButton.styleFrom(

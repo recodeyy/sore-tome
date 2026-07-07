@@ -7,6 +7,7 @@ import 'package:sero/providers/shared/notices_provider.dart';
 import 'package:sero/providers/shared/issues_provider.dart';
 import 'package:sero/providers/shared/funds_provider.dart';
 import 'package:sero/providers/shared/community_providers.dart';
+import 'package:sero/widgets/shared/sero_ui.dart';
 import '../../shared/profile/profile_screen.dart';
 import '../notifications/notifications_center_screen.dart';
 import '../payments/bills_dues_screen.dart';
@@ -319,14 +320,18 @@ class ResidentHomeScreen extends ConsumerWidget {
         _sectionRow(context, 'Recent Activity'),
         const SizedBox(height: 12),
         noticesAsync.when(
-          loading: () => const Padding(
-            padding: EdgeInsets.all(16),
-            child: Center(child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2, color: kPrimaryGreen))),
-          ),
+          loading: () => const Column(children: [
+            SkeletonCard(height: 64, margin: EdgeInsets.only(bottom: 10)),
+            SkeletonCard(height: 64, margin: EdgeInsets.only(bottom: 10)),
+          ]),
           error: (e, _) => _activityItem(Icons.info_outline, 'Could not load activity', '$e'.split('\n').first),
           data: (notices) {
             if (notices.isEmpty) {
-              return _activityItem(Icons.notifications_none, 'No recent activity', 'You are all caught up');
+              return const EmptyState(
+                icon: Icons.notifications_none_rounded,
+                title: 'No recent activity',
+                message: 'You are all caught up. New notices will appear here.',
+              );
             }
             return Column(
               children: notices.take(4).map((n) {

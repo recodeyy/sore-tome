@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:sero/app/theme.dart';
 import 'package:sero/providers/shared/resident_dues_provider.dart';
 import 'package:sero/models/fund.dart';
+import 'package:sero/widgets/shared/sero_ui.dart';
 import '../funds/resident_funds_screen.dart';
 import 'bill_details_screen.dart';
 import 'auto_pay_setup_screen.dart';
@@ -42,7 +43,10 @@ class BillsDuesScreen extends ConsumerWidget {
             // ── Total Due card ──
             duesAsync.when(
               loading: () => const _DueSkeleton(),
-              error: (e, _) => _errorBox('Could not load your dues'),
+              error: (e, _) => ErrorRetryView(
+                message: 'Could not load your dues.',
+                onRetry: () => ref.invalidate(residentDuesProvider),
+              ),
               data: (dues) => _buildDueCard(context, dues),
             ),
             const SizedBox(height: 12),
@@ -107,12 +111,22 @@ class BillsDuesScreen extends ConsumerWidget {
             _label('Payment History'),
             const SizedBox(height: 12),
             paymentsAsync.when(
-              loading: () => const Center(
-                  child: Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator(color: kPrimaryGreen))),
-              error: (e, _) => _errorBox('Could not load payment history'),
+              loading: () => const Column(children: [
+                SkeletonCard(height: 72),
+                SkeletonCard(height: 72),
+                SkeletonCard(height: 72),
+              ]),
+              error: (e, _) => ErrorRetryView(
+                message: 'Could not load payment history.',
+                onRetry: () => ref.invalidate(residentPaymentsProvider),
+              ),
               data: (payments) {
                 if (payments.isEmpty) {
-                  return _emptyBox(Icons.receipt_long_outlined, 'No payments yet');
+                  return const EmptyState(
+                    icon: Icons.receipt_long_outlined,
+                    title: 'No payments yet',
+                    message: 'Payments you make will appear here with receipts.',
+                  );
                 }
                 return Column(children: payments.map(_paidRow).toList());
               },
@@ -287,12 +301,6 @@ class BillsDuesScreen extends ConsumerWidget {
         ),
       );
 
-  Widget _errorBox(String msg) => Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(color: kBadgeRedBg, borderRadius: BorderRadius.circular(16)),
-        child: Text(msg, style: GoogleFonts.outfit(color: kBadgeRedText, fontSize: 13)),
-      );
 }
 
 class _DueSkeleton extends StatelessWidget {

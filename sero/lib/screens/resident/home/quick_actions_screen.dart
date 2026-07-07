@@ -33,24 +33,24 @@ class QuickActionsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final actions = <_QA>[
-      _QA('Pay Bill', Icons.payments_rounded, (c) => const ResidentFundsScreen()),
-      _QA('My Messages', Icons.forum_rounded, (c) => const ResidentChannelsScreen()),
-      _QA('Visitors', Icons.people_alt_rounded, (c) => const VisitorApprovalScreen()),
-      _QA('Raise Complaint', Icons.report_problem_rounded, (c) => const PostIssueScreen()),
-      _QA('Amenities', Icons.pool_rounded, (c) => const FacilitiesScreen()),
-      _QA('Book Slot', Icons.event_available_rounded, (c) => const FacilitiesScreen()),
-      _QA('My Parking', Icons.local_parking_rounded, (c) => const MyParkingScreen()),
-      _QA('Notice Board', Icons.campaign_rounded, (c) => const ResidentChannelsScreen()),
-      _QA('Events', Icons.celebration_rounded, (c) => const ResidentEventsScreen()),
-      _QA('Polls', Icons.how_to_vote_rounded, (c) => const PollsScreen()),
-      _QA('Marketplace', Icons.storefront_rounded, (c) => const MarketplaceScreen()),
-      _QA('Carpool', Icons.directions_car_rounded, (c) => const CarpoolScreen()),
-      _QA('Lost & Found', Icons.search_rounded, (c) => const LostFoundScreen()),
-      _QA('Documents', Icons.folder_rounded, (c) => const DocumentsScreen()),
-      _QA('My Bookings', Icons.event_note_rounded, (c) => const MyBookingsScreen()),
-      _QA('Society Rules', Icons.gavel_rounded, (c) => const ResidentRulesScreen()),
-      _QA('Emergency', Icons.emergency_rounded, (c) => const EmergencyHomeScreen()),
-      _QA('Contact Admin', Icons.support_agent_rounded, (c) => const ResidentIssuesScreen()),
+      _QA('Pay Bill', Icons.payments_rounded, (c) => const ResidentFundsScreen(), const Color(0xFF10B981)),
+      _QA('My Messages', Icons.forum_rounded, (c) => const ResidentChannelsScreen(), const Color(0xFF3B82F6)),
+      _QA('Visitors', Icons.people_alt_rounded, (c) => const VisitorApprovalScreen(), const Color(0xFF06B6D4)),
+      _QA('Raise Complaint', Icons.report_problem_rounded, (c) => const PostIssueScreen(), const Color(0xFFEF4444)),
+      _QA('Amenities', Icons.pool_rounded, (c) => const FacilitiesScreen(), const Color(0xFF14B8A6)),
+      _QA('Book Slot', Icons.event_available_rounded, (c) => const FacilitiesScreen(), const Color(0xFF6366F1)),
+      _QA('My Parking', Icons.local_parking_rounded, (c) => const MyParkingScreen(), const Color(0xFF8B5CF6)),
+      _QA('Notice Board', Icons.campaign_rounded, (c) => const ResidentChannelsScreen(), const Color(0xFFF59E0B)),
+      _QA('Events', Icons.celebration_rounded, (c) => const ResidentEventsScreen(), const Color(0xFFEC4899)),
+      _QA('Polls', Icons.how_to_vote_rounded, (c) => const PollsScreen(), const Color(0xFF2563EB)),
+      _QA('Marketplace', Icons.storefront_rounded, (c) => const MarketplaceScreen(), const Color(0xFFF97316)),
+      _QA('Carpool', Icons.directions_car_rounded, (c) => const CarpoolScreen(), const Color(0xFF059669)),
+      _QA('Lost & Found', Icons.travel_explore_rounded, (c) => const LostFoundScreen(), const Color(0xFFA855F7)),
+      _QA('Documents', Icons.folder_rounded, (c) => const DocumentsScreen(), const Color(0xFF0EA5E9)),
+      _QA('My Bookings', Icons.event_note_rounded, (c) => const MyBookingsScreen(), const Color(0xFF65A30D)),
+      _QA('Society Rules', Icons.gavel_rounded, (c) => const ResidentRulesScreen(), const Color(0xFFD97706)),
+      _QA('Emergency', Icons.emergency_rounded, (c) => const EmergencyHomeScreen(), const Color(0xFFDC2626)),
+      _QA('Contact Admin', Icons.support_agent_rounded, (c) => const ResidentIssuesScreen(), const Color(0xFF16A34A)),
     ];
 
     return Scaffold(
@@ -101,13 +101,18 @@ class QuickActionsScreen extends ConsumerWidget {
       child: Column(
         children: [
           Container(
-            height: 56,
-            width: 56,
+            height: 58,
+            width: 58,
             decoration: BoxDecoration(
-              color: kPrimaryGreen.withValues(alpha: 0.07),
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [qa.color.withValues(alpha: 0.18), qa.color.withValues(alpha: 0.08)],
+              ),
               borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: qa.color.withValues(alpha: 0.22)),
             ),
-            child: Icon(qa.icon, color: kPrimaryGreen, size: 26),
+            child: Icon(qa.icon, color: qa.color, size: 27),
           ),
           const SizedBox(height: 6),
           Text(qa.label,
@@ -171,5 +176,6 @@ class _QA {
   final String label;
   final IconData icon;
   final Widget Function(BuildContext)? builder;
-  _QA(this.label, this.icon, this.builder);
+  final Color color;
+  _QA(this.label, this.icon, this.builder, [this.color = kPrimaryGreen]);
 }
