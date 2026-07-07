@@ -1,3 +1,5 @@
+import path from "node:path";
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
@@ -13,6 +15,12 @@ const nextConfig = {
       config.resolve.symlinks = false;
       config.cache = false;
     }
+    // Explicit "@/*" -> ./src alias so path resolution is deterministic on Linux
+    // (case-sensitive) builds regardless of tsconfig baseUrl handling.
+    config.resolve.alias = {
+      ...(config.resolve.alias || {}),
+      "@": path.resolve(process.cwd(), "src"),
+    };
     return config;
   },
   async headers() {
