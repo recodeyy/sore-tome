@@ -1,0 +1,494 @@
+import { Router, Request, Response } from "express";
+import { AIChatService } from "../services/ai/AIChatService";
+import { AIQueueService } from "../services/ai/AIQueueService";
+import { AIExtractionService } from "../services/ai/AIExtractionService";
+import { AIToolService } from "../services/ai/AIToolService";
+import { ParserService } from "../services/ai/ParserService";
+import { logger } from "../shared/Logger";
+import { z } from "zod";
+
+// @ts-ignore
+import { authMiddleware } from "../../middleware/auth";
+import { tenantMiddleware } from "../../middleware/tenantMiddleware";
+import { VectorStoreService } from "../services/ai/VectorStoreService";
+import { db } from "../shared/Database";
+import rateLimit from "express-rate-limit";
+
+// Rate limiting for costly AI Ingestion
+const uploadRateLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 10, // 10 documents per hour max
+  message: { error: "Upload quota exceeded per hour." },
+  keyGenerator: (req: any) => req.user?.society_id || req.ip,
+  validate: { default: false },
+});
+
+const router = Router();
+
+/**
+ * POST /ai/chat
+ * High-performance RAG chat with society context.
+ */
+router.post("/chat", authMiddleware, tenantMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { message, base64Image, stream = false, context: contextData, conversationId } = req.body;
+    const userId = (req as any).user?.uid || "anonymous";
+    const societyId = (req as any).societyId;
+
+    // 1. Validation
+    if (!message || typeof message !== "string" || message.trim().length === 0) {
+      if (!base64Image) {
+        return res.status(400).json({ error: "message or image is required" });
+      }
+    }
+
+    const MAX_SIZE = 2 * 1024 * 1024; // 2MB Limit
+    if (base64Image && base64Image.length > MAX_SIZE) {
+      return res.status(413).json({ error: "Image too large (max 2MB)" });
+    }
+
+    const aiService = AIChatService.getInstance();
+
+    // SSE Streaming Mode
+    if (stream === true || req.headers.accept === "text/event-stream") {
+      return aiService.chatStreaming(userId, societyId, message || "", res, undefined, conversationId);
+    }
+
+    // JSON Mode (Flutter/default)
+    const { history = [] } = req.body;
+    const userRole = (req as any).user?.role || "resident";
+    
+    const result = await aiService.chatNonStreaming(userId, societyId, message || "", base64Image, contextData, userRole, history, conversationId);
+    return res.status(200).json(result);
+
+  } catch (error: any) {
+    logger.error({ error: error.message }, "/ai/chat failed");
+    return res.status(500).json({ error: "AI processing failed" });
+  }
+});
+
+/**
+ * POST /ai/extract-receipt
+ */
+router.post("/extract-receipt", authMiddleware, tenantMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { base64Image } = req.body;
+    const userId = (req as any).user?.uid || "anonymous";
+    const societyId = (req as any).societyId;
+    const requestId = `rec_${Date.now()}`;
+
+    if (!base64Image) return res.status(400).json({ error: "receipt image is required" });
+
+    const receiptSchema = z.object({
+      vendor: z.string(),
+      date: z.string(),
+      amount: z.number(),
+      category: z.string(),
+      note: z.string().optional(),
+    });
+
+    const parser = ParserService.getInstance();
+    const extractionService = AIExtractionService.getInstance();
+
+    const { content } = await parser.parseBase64(base64Image, { requestId, userId, societyId });
+    const result = await extractionService.extractForm(content, receiptSchema, { requestId, userId, societyId });
+
+    if (result && result.parsed) {
+      result.parsed.category = extractionService.autoMapCategory(result.parsed.category || "");
+    }
+
+    return res.status(200).json(result);
+  } catch (error: any) {
+    return res.status(500).json({ error: "Extraction failed" });
+  }
+});
+
+/**
+ * POST /ai/upload-document
+ */
+router.post("/upload-document", authMiddleware, tenantMiddleware, uploadRateLimiter, async (req: Request, res: Response) => {
+  try {
+    const { fileUrl, fileName, fileType, documentType = "general" } = req.body;
+    const societyId = (req as any).societyId;
+    const userId = (req as any).user?.uid;
+
+    if (!fileUrl || !fileName) return res.status(400).json({ error: "fileUrl and fileName are required" });
+
+    // SSRF & Security Validation
+    if (!fileUrl.startsWith("https://") || fileUrl.includes("localhost")) {
+       return res.status(403).json({ error: "Invalid file URL." });
+    }
+    
+    const queueService = AIQueueService.getInstance();
+    await queueService.addJob("DOC_INGESTION", { 
+      filePath: fileUrl, 
+      fileName,
+      fileType,
+      documentType,
+      society_id: societyId,
+      userId: userId
+    });
+
+    return res.status(202).json({ message: "Ingestion verified and started", status: "Processing" });
+  } catch (error: any) {
+    return res.status(500).json({ error: "Upload failed" });
+  }
+});
+
+// AI V2.4: Direct Multipart Upload
+const multer = require("multer");
+const { getStorage } = require("../../config/firebase");
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+
+router.post("/upload-document-direct", authMiddleware, tenantMiddleware, uploadRateLimiter, upload.single("file"), async (req: Request, res: Response) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+    
+    const { documentType = "general" } = req.body;
+    const societyId = (req as any).societyId;
+    const userId = (req as any).user?.uid;
+    const fileName = `${Date.now()}_${req.file.originalname}`;
+
+    // 1. Upload to Firebase Storage
+    const bucket = getStorage().bucket();
+    const file = bucket.file(`documents/${societyId}/${fileName}`);
+    
+    await file.save(req.file.buffer, {
+      metadata: { 
+        contentType: req.file.mimetype,
+        metadata: {
+          uploadedBy: userId,
+          society_id: societyId,
+          documentType
+        }
+      },
+      public: true,
+    });
+
+    const fileUrl = `https://storage.googleapis.com/${bucket.name}/${file.name}`;
+
+    // 2. Queue for AI Ingestion
+    const queueService = AIQueueService.getInstance();
+    await queueService.addJob("DOC_INGESTION", { 
+      filePath: fileUrl, 
+      fileName: req.file.originalname,
+      fileType: req.file.mimetype,
+      documentType,
+      society_id: societyId,
+      userId: userId
+    });
+
+    return res.status(202).json({ 
+      message: "File uploaded and ingestion started", 
+      fileUrl,
+      status: "Processing" 
+    });
+  } catch (error: any) {
+    logger.error({ error: error.message }, "/ai/upload-document-direct failed");
+    return res.status(500).json({ error: "Direct upload failed" });
+  }
+});
+
+/**
+ * DELETE /ai/document
+ */
+router.delete("/document", authMiddleware, tenantMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { documentId } = req.body;
+    const societyId = (req as any).societyId;
+    const role = (req as any).user?.role;
+    
+    if (!["admin", "main_admin"].includes(role)) return res.status(403).json({ error: "Forbidden: Admins only" });
+
+    const vectorStore = VectorStoreService.getInstance();
+    const count = await vectorStore.deleteDocument(documentId, societyId);
+    
+    return res.status(200).json({ message: "Document chunks deleted", count });
+  } catch (error: any) {
+    return res.status(500).json({ error: "Delete failed" });
+  }
+});
+
+/**
+ * GET /ai/digest
+ */
+router.get("/digest", authMiddleware, tenantMiddleware, async (req: Request, res: Response) => {
+  try {
+    const societyId = (req as any).societyId;
+    const toolService = AIToolService.getInstance();
+    const digest = await toolService.getSocietyDigest(societyId);
+    return res.status(200).json(digest);
+  } catch (error: any) {
+    return res.status(500).json({ error: "Digest failed" });
+  }
+});
+
+/**
+ * POST /ai/execute-tool
+ */
+router.post("/execute-tool", authMiddleware, tenantMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { actionId } = req.body;
+    const userId = (req as any).user?.uid;
+    const societyId = (req as any).societyId;
+    const role = (req as any).user?.role || "resident";
+
+    if (!actionId) return res.status(400).json({ error: "actionId is required" });
+
+    const toolService = AIToolService.getInstance();
+    const result = await toolService.executeAction(actionId, userId, societyId, role);
+
+    return res.status(200).json({ message: "Action executed successfully", result });
+  } catch (error: any) {
+    return res.status(400).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /ai/logs
+ */
+router.get("/logs", authMiddleware, tenantMiddleware, async (req: Request, res: Response) => {
+  try {
+    const role = (req as any).user?.role;
+    const societyId = (req as any).societyId;
+
+    if (!["admin", "main_admin"].includes(role)) return res.status(403).json({ error: "Forbidden: Admins only" });
+
+    const { limit = 50, offset = 0 } = req.query;
+    const vectorStore = VectorStoreService.getInstance();
+    const pool = (vectorStore as any).pool;
+
+    const query = `
+      SELECT action_id, tool_id, user_id, action, params, status, created_at, error_message
+      FROM ai_audit_logs 
+      WHERE society_id = $1
+      ORDER BY created_at DESC
+      LIMIT $2 OFFSET $3
+    `;
+    const result = await pool.query(query, [societyId, limit, offset]);
+
+    return res.status(200).json({ logs: result.rows });
+  } catch (error: any) {
+    return res.status(500).json({ error: "Failed to fetch logs" });
+  }
+});
+
+/**
+ * GET /ai/rules
+ */
+router.get("/rules", authMiddleware, tenantMiddleware, async (req: Request, res: Response) => {
+  try {
+    const societyId = (req as any).societyId;
+
+    const result = await db.query(`
+      SELECT DISTINCT ON (content) content, metadata->>'source' as source
+      FROM document_chunks
+      WHERE (metadata->>'society_id')::text = $1 AND metadata->>'documentType' = 'rules'
+      ORDER BY content
+    `, [societyId]);
+
+    const rules = result.rows.map((row: any) => ({
+      rule: row.content,
+      source: row.source
+    }));
+
+    return res.status(200).json({ success: true, rules });
+  } catch (error: any) {
+    return res.status(500).json({ error: "Failed to fetch rules" });
+  }
+});
+
+/**
+ * GET /ai/stats
+ */
+router.get("/stats", authMiddleware, tenantMiddleware, async (req: Request, res: Response) => {
+  try {
+    const societyId = (req as any).societyId;
+    const toolService = AIToolService.getInstance();
+    const stats = await toolService.getSocietyStats(societyId);
+    return res.status(200).json(stats);
+  } catch (error: any) {
+    return res.status(500).json({ error: "Failed to fetch stats" });
+  }
+});
+
+/**
+ * POST /ai/conversations
+ */
+router.post("/conversations", authMiddleware, tenantMiddleware, async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user?.uid;
+    const societyId = (req as any).societyId;
+    const { title, language } = req.body;
+
+    const aiService = AIChatService.getInstance();
+    const conv = await aiService.createConversation(userId, societyId, title, language);
+    return res.status(201).json({ success: true, data: conv });
+  } catch (error: any) {
+    return res.status(500).json({ error: error.message || "Failed to create conversation" });
+  }
+});
+
+/**
+ * GET /ai/conversations
+ */
+router.get("/conversations", authMiddleware, tenantMiddleware, async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user?.uid;
+    const societyId = (req as any).societyId;
+    const { limit, offset, search } = req.query;
+
+    const aiService = AIChatService.getInstance();
+    const list = await aiService.listConversations(userId, societyId, {
+      limit: limit ? Number(limit) : undefined,
+      offset: offset ? Number(offset) : undefined,
+      search: search as string | undefined
+    });
+    return res.status(200).json({ success: true, data: list });
+  } catch (error: any) {
+    return res.status(500).json({ error: error.message || "Failed to fetch conversations" });
+  }
+});
+
+/**
+ * GET /ai/conversations/:id
+ */
+router.get("/conversations/:id", authMiddleware, tenantMiddleware, async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user?.uid;
+    const societyId = (req as any).societyId;
+    const conversationId = req.params.id as string;
+
+    const aiService = AIChatService.getInstance();
+    const messages = await aiService.getConversationMessages(conversationId, userId, societyId);
+    return res.status(200).json({ success: true, data: messages });
+  } catch (error: any) {
+    return res.status(500).json({ error: error.message || "Failed to fetch conversation messages" });
+  }
+});
+
+/**
+ * PATCH /ai/conversations/:id
+ */
+router.patch("/conversations/:id", authMiddleware, tenantMiddleware, async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user?.uid;
+    const societyId = (req as any).societyId;
+    const conversationId = req.params.id as string;
+    const { title, is_archived, language_preference } = req.body;
+
+    const aiService = AIChatService.getInstance();
+    const updated = await aiService.updateConversation(conversationId, userId, societyId, {
+      title,
+      is_archived,
+      language_preference
+    });
+
+    if (!updated) {
+      return res.status(404).json({ error: "Conversation not found or unauthorized" });
+    }
+
+    return res.status(200).json({ success: true, data: updated });
+  } catch (error: any) {
+    return res.status(500).json({ error: error.message || "Failed to update conversation" });
+  }
+});
+
+/**
+ * DELETE /ai/conversations/:id
+ */
+router.delete("/conversations/:id", authMiddleware, tenantMiddleware, async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user?.uid;
+    const societyId = (req as any).societyId;
+    const conversationId = req.params.id as string;
+
+    const aiService = AIChatService.getInstance();
+    const deleted = await aiService.deleteConversation(conversationId, userId, societyId);
+
+    if (!deleted) {
+      return res.status(404).json({ error: "Conversation not found or unauthorized" });
+    }
+
+    return res.status(200).json({ success: true, data: deleted });
+  } catch (error: any) {
+    return res.status(500).json({ error: error.message || "Failed to delete conversation" });
+  }
+});
+
+// ─── AI INNOVATION ROUTES ───────────────────────────────────────────────────
+
+import { AIInnovationService } from '../services/ai/AIInnovationService';
+
+const innovationRouter = Router();
+innovationRouter.use(authMiddleware);
+innovationRouter.use(tenantMiddleware);
+
+/**
+ * GET /ai/society-pulse
+ * AI-powered society health metrics and autopilot alerts.
+ * Role: admin, super_admin
+ */
+innovationRouter.get('/society-pulse', async (req: Request, res: Response) => {
+  try {
+    const societyId = (req as any).user?.society_id;
+    if (!societyId) return res.status(400).json({ error: 'Society context required' });
+    const pulse = await AIInnovationService.generateSocietyPulse(societyId);
+    return res.json(pulse);
+  } catch (err) {
+    logger.error({ err }, 'GET /ai/society-pulse failed');
+    return res.status(500).json({ error: 'Failed to generate society pulse' });
+  }
+});
+
+/**
+ * GET /ai/complaint-clusters
+ * AI root-cause and duplicate complaint detection.
+ */
+innovationRouter.get('/complaint-clusters', async (req: Request, res: Response) => {
+  try {
+    const societyId = (req as any).user?.society_id;
+    if (!societyId) return res.status(400).json({ error: 'Society context required' });
+    const clusters = await AIInnovationService.detectComplaintClusters(societyId);
+    return res.json({ clusters, generatedAt: new Date() });
+  } catch (err) {
+    logger.error({ err }, 'GET /ai/complaint-clusters failed');
+    return res.status(500).json({ error: 'Failed to detect clusters' });
+  }
+});
+
+/**
+ * GET /ai/financial-anomalies
+ * AI financial leakage and duplicate invoice scanner.
+ * Role: admin, treasurer
+ */
+innovationRouter.get('/financial-anomalies', async (req: Request, res: Response) => {
+  try {
+    const societyId = (req as any).user?.society_id;
+    if (!societyId) return res.status(400).json({ error: 'Society context required' });
+    const anomalies = await AIInnovationService.detectFinancialAnomalies(societyId);
+    return res.json({ anomalies, generatedAt: new Date() });
+  } catch (err) {
+    logger.error({ err }, 'GET /ai/financial-anomalies failed');
+    return res.status(500).json({ error: 'Failed to scan financials' });
+  }
+});
+
+/**
+ * GET /ai/maintenance-predictions
+ * AI predictive maintenance risk scoring.
+ */
+innovationRouter.get('/maintenance-predictions', async (req: Request, res: Response) => {
+  try {
+    const societyId = (req as any).user?.society_id;
+    if (!societyId) return res.status(400).json({ error: 'Society context required' });
+    const predictions = await AIInnovationService.predictMaintenanceNeeds(societyId);
+    return res.json({ predictions, generatedAt: new Date() });
+  } catch (err) {
+    logger.error({ err }, 'GET /ai/maintenance-predictions failed');
+    return res.status(500).json({ error: 'Failed to generate predictions' });
+  }
+});
+
+export { innovationRouter };
+export default router;

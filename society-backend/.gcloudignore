@@ -1,0 +1,11 @@
+node_modules/
+npm-debug.log
+.env
+.env.local
+.git/
+.gitignore
+*.log
+load/
+deploy/
+__tests__/
+scripts/portal_test_results.txt

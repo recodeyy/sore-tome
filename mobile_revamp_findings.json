@@ -1,0 +1,41 @@
+{
+  "audit_date": "2026-07-07",
+  "verified_by": "live local stack run (docker pg16+redis, backend :3001, flutter analyze, jest, role-token probes)",
+  "repo_state": {
+    "local_head": "b3ab522 (2026-06-30) + 10 uncommitted fix files",
+    "origin_master": "bd5d305 (2026-06-21) — STALE, unrelated history; do not pull",
+    "decision": "local tree is source of truth; push local state to origin"
+  },
+  "technology_decision": {"choice": "flutter", "reason": "0 analyzer errors, builds, 4 role shells exist; Expo migration not justified"},
+  "findings": [
+    {"id": "MR-001", "sev": "P0", "area": "notifications", "title": "FCM token never persisted", "detail": "App PATCHes /users/me {fcmToken}; backend whitelist (routes/users.js:69) ignores it -> 400; notificationService.sendToUser reads Firestore fcmToken that nothing writes -> all pushes silently skipped", "fix": "device_tokens store + accept fcmToken; prune invalid tokens", "status": "open"},
+    {"id": "MR-002", "sev": "P0", "area": "deployment", "title": "Only live backend is expiring GCP Cloud Run and is the default URL in shipped APKs", "fix": "migrate per MOBILE_REVAMP_DEPLOYMENT_MIGRATION_PLAN.md (Render+Neon+Upstash, keep Firebase)", "status": "open"},
+    {"id": "MR-003", "sev": "P0", "area": "security", "title": "Firebase admin SDK service-account JSON present in repo root (sore-tome/sero-73976-firebase-adminsdk-*.json)", "fix": "verify git-tracked status; remove + rotate key", "status": "open"},
+    {"id": "MR-004", "sev": "P1", "area": "api", "title": "GET /parking/allocations 404 while Flutter admin calls it", "status": "open"},
+    {"id": "MR-005", "sev": "P1", "area": "api", "title": "Complaint staff-assign 500 on non-uuid staff id (jest complaint.integration fails)", "status": "open"},
+    {"id": "MR-006", "sev": "P1", "area": "product", "title": "Resident onboarding flow (society search -> flat -> admin approval -> unlock) missing app+API", "status": "open"},
+    {"id": "MR-007", "sev": "P1", "area": "product", "title": "Staff/Guard app is a single screen vs required 5-tab operational app (gate console, parcels, tasks, SOS, attendance)", "status": "open"},
+    {"id": "MR-008", "sev": "P1", "area": "notifications", "title": "App NotificationService is a stub: no background handler, no tap deep-links, single channel, no multi-device, no token refresh", "status": "open"},
+    {"id": "MR-009", "sev": "P1", "area": "product", "title": "Visitor pre-approval pass (QR/OTP), provider quick-select, parcels, domestic-help, SOS flows missing on app side", "status": "open"},
+    {"id": "MR-010", "sev": "P2", "area": "ui", "title": "Two competing green palettes (Emerald spec vs Fresh/Mint) cause visual drift", "fix": "canonical tokens per section 4 of prompt", "status": "open"},
+    {"id": "MR-011", "sev": "P2", "area": "crash-risk", "title": "use_build_context_synchronously in 12 places (society_logo, impersonation, kyc_verification, feature_controls, proposed_action_card)", "status": "open"},
+    {"id": "MR-012", "sev": "P2", "area": "resident-nav", "title": "Resident tabs lack center Pay button and Visitors tab (spec section 6)", "status": "open"},
+    {"id": "MR-013", "sev": "P2", "area": "demo-data", "title": "Seed is hubtown-sunmist A-1204; prompt wants Hubtown Sunkist A-1402; lacks visitors/parcels/polls/bookings/vehicles depth", "status": "open"},
+    {"id": "MR-014", "sev": "P2", "area": "api", "title": "Legacy endpoints still consumed: /polls/{id}/vote, /rules, /channels, /issues, /notices (one-offs)", "status": "open"},
+    {"id": "MR-015", "sev": "P3", "area": "quality", "title": "40 flutter analyze lints incl ~20 withOpacity deprecations", "status": "open"},
+    {"id": "MR-016", "sev": "P3", "area": "auth", "title": "Super-admin portal credentials undocumented/unverified", "status": "open"}
+  ],
+  "fixed_previously": [
+    "Global 'Something went wrong' error boundary (6b5634f + uncommitted hardening)",
+    "Firestore permission-denied blanks (Firebase custom token on login/restore)",
+    "Unscoped-token zero dashboards / phantom demo-soc-1 workspace (JWT now scoped, verified live)",
+    "Blank staff screens & restart-logout (/users/me returns society_id+role)",
+    "Release APK emulator-URL default"
+  ],
+  "live_probe_pass": {
+    "admin": ["/admin/dashboard/summary", "/notices-v2", "/complaints", "/finance/invoices", "/polls-v2", "/events-v2", "/amenities", "/staff-v2", "/visitors"],
+    "resident": ["/users/me", "/notices-v2", "/funds/maintenance-status", "/finance/invoices", "/complaints", "/polls-v2", "/amenities", "/parking/my", "/resident/family", "/resident/vehicles", "/visitors", "/events-v2"],
+    "staff": ["login ok (guard role)"]
+  },
+  "tests": {"flutter_analyze": "0 errors / 40 lints", "backend_tsc": "clean", "backend_jest": "266/267 warm (MR-005 is the failure)"}
+}

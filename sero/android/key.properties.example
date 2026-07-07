@@ -1,0 +1,11 @@
+# Release signing config — COPY to `key.properties` (git-ignored) and fill in.
+# Generate a keystore (keep it OUT of Git):
+#   keytool -genkey -v -keystore ~/sero-release.jks -keyalg RSA \
+#           -keysize 2048 -validity 10000 -alias sero
+#
+# Then set the values below. `storeFile` is relative to the android/app dir
+# (or an absolute path).
+storePassword=CHANGE_ME
+keyPassword=CHANGE_ME
+keyAlias=sero
+storeFile=../../sero-release.jks

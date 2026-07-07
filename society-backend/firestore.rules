@@ -1,0 +1,60 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Tenant isolation: doc's society_id must match the caller's claim.
+    function isSameSociety(data) {
+      return data.society_id == request.auth.token.society_id;
+    }
+
+    function role() {
+      return request.auth.token.role;
+    }
+
+    function isAdmin() {
+      return role() in ['admin', 'main_admin', 'super_admin'];
+    }
+
+    // Collections that only the API (admin SDK) or an admin client may write.
+    // Residents must never write finance or governance config directly.
+    function isPrivilegedCollection(name) {
+      return name in [
+        'transactions', 'funds', 'invoices', 'payments', 'ledger',
+        'notices', 'rules', 'events', 'staff', 'polls', 'audit_logs', 'access_logs'
+      ];
+    }
+
+    match /{collection}/{docId} {
+
+      allow read: if isAuthenticated()
+        && (resource == null || isSameSociety(resource.data));
+
+      // Privileged collections: same-society AND admin role.
+      allow create: if isAuthenticated()
+        && isSameSociety(request.resource.data)
+        && (!isPrivilegedCollection(collection) || isAdmin());
+
+      allow update, delete: if isAuthenticated()
+        && isSameSociety(resource.data)
+        && (!isPrivilegedCollection(collection) || isAdmin());
+
+      // Sub-collections inherit the parent's tenant protection.
+      match /{subCollection}/{subDocId} {
+        allow read, write: if isAuthenticated()
+          && isSameSociety(get(/databases/$(database)/documents/$(collection)/$(docId)).data);
+      }
+    }
+
+    // society_settings doc id is the society_id; only admins may write.
+    match /society_settings/{society_id} {
+      allow read: if isAuthenticated() && request.auth.token.society_id == society_id;
+      allow write: if isAuthenticated()
+        && request.auth.token.society_id == society_id
+        && isAdmin();
+    }
+  }
+}
