@@ -6,7 +6,7 @@ import { useToast } from "@/components/ui/toast";
 import { PageHeader, Card, StatusChip, Modal } from "@/components/ui/primitives";
 import { LoadingState, ErrorState, EmptyState } from "@/components/ui/states";
 import { formatMoneyMinor, formatDate } from "@/lib/format";
-import { exportCsv, exportPdf } from "@/lib/export";
+import { exportCsv, exportPdf, exportReceipt } from "@/lib/export";
 
 type Invoice = {
   id: string;
@@ -47,8 +47,24 @@ export default function BillingPage() {
   const totals = useMemo(() => {
     const total = invoices.reduce((a, i) => a + num(i.total_minor), 0);
     const paid = invoices.filter((i) => i.status === "paid").reduce((a, i) => a + num(i.total_minor), 0);
-    return { total, paid, count: invoices.length };
+    const outstanding = total - paid;
+    const rate = total > 0 ? Math.round((paid / total) * 100) : 0;
+    return { total, paid, outstanding, rate, count: invoices.length };
   }, [invoices]);
+
+  function downloadReceipt(inv: Invoice) {
+    exportReceipt({
+      number: inv.number,
+      memberName: memberName(inv.member_id),
+      period: inv.period,
+      status: inv.status,
+      totalMinor: num(inv.total_minor),
+      taxMinor: num(inv.tax_minor),
+      dueDate: inv.due_date ? formatDate(inv.due_date) : null,
+      societyName: "Hubtown Sunkist",
+    });
+    push("success", `Receipt ${inv.number} downloaded`);
+  }
 
   function doExportCsv() {
     exportCsv(
@@ -100,7 +116,7 @@ export default function BillingPage() {
         }
       />
 
-      <div className="mb-4 grid grid-cols-3 gap-3">
+      <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Card className="p-4">
           <p className="text-xs uppercase text-slate-500">Invoices</p>
           <p className="mt-1 text-2xl font-semibold">{totals.count}</p>
@@ -112,6 +128,13 @@ export default function BillingPage() {
         <Card className="p-4">
           <p className="text-xs uppercase text-slate-500">Collected</p>
           <p className="mt-1 text-2xl font-semibold text-brand-600">{formatMoneyMinor(totals.paid)}</p>
+          <p className="mt-0.5 text-xs text-slate-400">{totals.rate}% collection rate</p>
+        </Card>
+        <Card className="p-4">
+          <p className="text-xs uppercase text-slate-500">Outstanding</p>
+          <p className={`mt-1 text-2xl font-semibold ${totals.outstanding > 0 ? "text-red-600" : "text-slate-900"}`}>
+            {formatMoneyMinor(totals.outstanding)}
+          </p>
         </Card>
       </div>
 
@@ -172,6 +195,14 @@ export default function BillingPage() {
                           <IndianRupee className="h-3.5 w-3.5" /> Record
                         </button>
                       )}
+                      <button
+                        className="btn-ghost h-8 px-2 text-xs"
+                        title={inv.status === "paid" ? "Download receipt" : "Download invoice"}
+                        onClick={() => downloadReceipt(inv)}
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                        {inv.status === "paid" ? "Receipt" : "Invoice"}
+                      </button>
                     </div>
                   </td>
                 </tr>

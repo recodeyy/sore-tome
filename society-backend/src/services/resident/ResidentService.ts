@@ -25,9 +25,36 @@ export type ResidentContext = {
   unitId: string | null;
 };
 
+/** JWT claims of the caller, used to self-heal a missing members row. */
+export type ResidentClaims = {
+  role?: string;
+  name?: string;
+  phone?: string;
+};
+
+const RESIDENT_ROLES = new Set([
+  "resident",
+  "resident_owner",
+  "resident_tenant",
+  "owner",
+  "tenant",
+]);
+
 export const ResidentService = {
-  /** Resolves the active member record for a resident user. Throws NOT_A_MEMBER. */
-  async resolveContext(societyId: string, userId: string): Promise<ResidentContext> {
+  /**
+   * Resolves the active member record for a resident user. Throws NOT_A_MEMBER.
+   *
+   * Self-healing: memberships historically live in Firestore (login/approval),
+   * while this service reads Postgres. A resident whose JWT is already scoped to
+   * this society (issued only after login resolved an approved workspace) but
+   * who has no Postgres row yet gets one provisioned lazily, instead of every
+   * /resident/* endpoint 403-ing ("No active membership for this user").
+   */
+  async resolveContext(
+    societyId: string,
+    userId: string,
+    claims?: ResidentClaims
+  ): Promise<ResidentContext> {
     const { rows } = await db.query(
       `SELECT id, unit_id FROM members
         WHERE society_id = $1 AND user_id = $2 AND status = 'approved'
@@ -35,8 +62,21 @@ export const ResidentService = {
       [societyId, userId]
     );
     const m = rows[0];
-    if (!m) throw err("No active membership for this user", "NOT_A_MEMBER");
-    return { societyId, userId, memberId: m.id, unitId: m.unit_id || null };
+    if (m) return { societyId, userId, memberId: m.id, unitId: m.unit_id || null };
+
+    const role = (claims?.role || "").trim().toLowerCase().replace(/-/g, "_");
+    if (claims && RESIDENT_ROLES.has(role)) {
+      const inserted = await db.query(
+        `INSERT INTO members (society_id, user_id, name, phone, status, role)
+         VALUES ($1, $2, $3, $4, 'approved', 'resident')
+         RETURNING id, unit_id`,
+        [societyId, userId, claims.name || "Resident", claims.phone || null]
+      );
+      const nm = inserted.rows[0];
+      return { societyId, userId, memberId: nm.id, unitId: nm.unit_id || null };
+    }
+
+    throw err("No active membership for this user", "NOT_A_MEMBER");
   },
 
   /** Outstanding published invoices with ageing buckets, scoped to the resident's unit. */

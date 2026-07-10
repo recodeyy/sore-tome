@@ -1,8 +1,15 @@
-import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/session";
+import Landing from "@/components/marketing/Landing";
 
 export default function Home() {
   const user = getSessionUser();
-  if (!user) redirect("/login");
-  redirect(user.portal === "super-admin" ? "/super-admin/dashboard" : "/dashboard");
+  // The landing page always shows at `/`. If the visitor is already signed in,
+  // the CTA/Sign-in buttons take them straight to their portal dashboard;
+  // otherwise to the login screen.
+  const ctaHref = user
+    ? user.portal === "super-admin"
+      ? "/super-admin/dashboard"
+      : "/dashboard"
+    : "/login";
+  return <Landing ctaHref={ctaHref} signedIn={!!user} />;
 }

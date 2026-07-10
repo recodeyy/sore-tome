@@ -39,7 +39,18 @@ class ApiClient {
     final headers = await getHeaders(requiresAuth: requiresAuth);
 
     try {
-      final response = await _executeRequest(method, url, headers, body);
+      http.Response response;
+      try {
+        response = await _executeRequest(method, url, headers, body);
+      } on TimeoutException {
+        // Render's free plan sleeps the backend after idle; the first request
+        // can take ~60s while the instance boots, far beyond the 15s timeout.
+        // Wake the server with a long-timeout health ping, then retry once.
+        debugPrint('Timeout [$endpoint] — waking server and retrying once');
+        await _wakeServer();
+        response = await _executeRequest(method, url, headers, body,
+            timeout: const Duration(seconds: 30));
+      }
 
       if (response.statusCode == 401 && requiresAuth) {
         final success = await _handleRefresh();
@@ -63,23 +74,35 @@ class ApiClient {
     }
   }
 
+  /// Blocks until the (possibly sleeping) backend answers /health, up to 75s.
+  /// Failures are swallowed — the retried request will surface the real error.
+  static Future<void> _wakeServer() async {
+    try {
+      final origin = baseUrl.replaceAll('/api/v1', '');
+      await http
+          .get(Uri.parse('$origin/health'))
+          .timeout(const Duration(seconds: 75));
+    } catch (_) {}
+  }
+
   static Future<http.Response> _executeRequest(
     String method,
     Uri url,
     Map<String, String> headers,
-    Map<String, dynamic>? body,
-  ) async {
+    Map<String, dynamic>? body, {
+    Duration timeout = const Duration(seconds: 15),
+  }) async {
     switch (method.toUpperCase()) {
       case 'GET':
-        return await http.get(url, headers: headers).timeout(const Duration(seconds: 15));
+        return await http.get(url, headers: headers).timeout(timeout);
       case 'POST':
-        return await http.post(url, headers: headers, body: jsonEncode(body)).timeout(const Duration(seconds: 15));
+        return await http.post(url, headers: headers, body: jsonEncode(body)).timeout(timeout);
       case 'PUT':
-        return await http.put(url, headers: headers, body: jsonEncode(body)).timeout(const Duration(seconds: 15));
+        return await http.put(url, headers: headers, body: jsonEncode(body)).timeout(timeout);
       case 'DELETE':
-        return await http.delete(url, headers: headers).timeout(const Duration(seconds: 15));
+        return await http.delete(url, headers: headers).timeout(timeout);
       case 'PATCH':
-        return await http.patch(url, headers: headers, body: jsonEncode(body)).timeout(const Duration(seconds: 15));
+        return await http.patch(url, headers: headers, body: jsonEncode(body)).timeout(timeout);
       default:
         throw Exception('Method $method not supported');
     }

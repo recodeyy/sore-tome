@@ -56,7 +56,12 @@ async function withCtx(req: Request, res: Response, fn: (ctx: any) => Promise<an
   try {
     const userId = userIdOf(req);
     if (!userId) return res.status(401).json({ error: "Unauthenticated" });
-    const ctx = await ResidentService.resolveContext(societyOf(req), userId);
+    const u = (req as any).user || {};
+    const ctx = await ResidentService.resolveContext(societyOf(req), userId, {
+      role: u.role,
+      name: u.name,
+      phone: u.phone,
+    });
     return await fn(ctx);
   } catch (e: any) { return map(res, e, fallback); }
 }

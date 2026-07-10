@@ -16,6 +16,61 @@ const REFRESH_TOKEN_EXPIRES_IN = 7 * 24 * 60 * 60 * 1000; // 7 days in ms
 
 const hashToken = (token) => crypto.createHash("sha256").update(token).digest("hex");
 
+// ─── PHONE NORMALIZATION ────────────────────────────────────────────────────────
+// BUGFIX: registration stored the phone verbatim (only spaces stripped) and login
+// did an exact-match lookup, so a number registered as "+919876543210" could NOT
+// be found when the user typed "9876543210" (or vice-versa) → "Invalid phone number
+// or password" for admin/staff/resident alike. These helpers reconcile the common
+// Indian formats (with/without +91, leading 0, punctuation) so login works no
+// matter which form was stored, without needing a data migration.
+
+/** Canonical storage form: "+91XXXXXXXXXX" for a 10-digit Indian number, else
+ *  "+<digits>" for an already-international number, else the cleaned input. */
+function canonicalPhone(raw) {
+  if (!raw) return "";
+  const cleaned = String(raw).trim().replace(/[\s\-().]/g, "");
+  const digits = cleaned.replace(/\D/g, "");
+  const last10 = digits.slice(-10);
+  if (digits.length === 10) return "+91" + digits;
+  if (digits.length === 12 && digits.startsWith("91")) return "+" + digits;
+  if (digits.length === 11 && digits.startsWith("0")) return "+91" + last10;
+  if (digits.length >= 10) return "+" + digits;
+  return cleaned;
+}
+
+/** All plausible stored forms for a typed number, so a Firestore `in` lookup
+ *  matches regardless of how the account was originally saved. Firestore caps
+ *  `in` at 10 values, so we return at most 10. */
+function phoneCandidates(raw) {
+  const set = new Set();
+  const add = (v) => { if (v && /\d/.test(v)) set.add(v); };
+  const trimmed = String(raw || "").trim();
+  const cleaned = trimmed.replace(/[\s\-().]/g, "");
+  add(cleaned);
+  const digits = cleaned.replace(/\D/g, "");
+  add(digits);
+  add("+" + digits);
+  const last10 = digits.slice(-10);
+  if (last10.length === 10) {
+    add(last10);            // 9876543210
+    add("0" + last10);      // 09876543210
+    add("91" + last10);     // 919876543210
+    add("+91" + last10);    // +919876543210
+  }
+  const candidates = Array.from(set).slice(0, 10);
+  // Non-numeric identifiers (e.g. the "superadmin" username login) have no digit
+  // candidates. Firestore `in` rejects an empty array, so fall back to an exact
+  // match on the raw trimmed value to keep username-style logins working.
+  return candidates.length ? candidates : [trimmed];
+}
+
+/** Normalize a free-typed society name to a stable partition key: trim, collapse
+ *  internal whitespace and uppercase, so "Hubtown Sunkist", " hubtown  sunkist "
+ *  all map to "HUBTOWN SUNKIST". Does not fix genuine misspellings. */
+function canonicalSociety(raw) {
+  return String(raw || "").trim().replace(/\s+/g, " ").toUpperCase();
+}
+
 const { validate } = require("../src/middleware/validate");
 const { RegisterSchema, LoginSchema, RefreshTokenSchema } = require("../src/shared/schemas");
 
@@ -143,13 +198,24 @@ router.post("/logout-all", authMiddleware, async (req, res) => {
 // SECURITY: Strictly validated via Zod schemas.
 router.post("/register", validate(RegisterSchema), async (req, res) => {
     try {
-        const { name, phone, password, flatNumber, blockName, society_id } = req.body;
+        const { name, phone, password, flatNumber, blockName } = req.body;
 
-        const cleanPhone = phone.replace(/\s+/g, "");
+        // BUGFIX: normalize society_id so trivial formatting variants (leading/
+        // trailing spaces, double spaces, mixed case) resolve to the SAME tenant.
+        // Without this, "Hubtown Sunkist", "hubtown  sunkist " etc. become
+        // separate societies and residents vanish from the admin's approval list.
+        // NOTE: genuine typos (e.g. "SUNMIST" vs "SUNKIST") still diverge — the
+        // real fix is an app-side society picker with stable IDs. See canonicalSociety.
+        const society_id = canonicalSociety(req.body.society_id);
+
+        // BUGFIX: store one canonical phone form and check duplicates across all
+        // formats, so the account can always be found at login regardless of how
+        // the number is typed later.
+        const cleanPhone = canonicalPhone(phone);
         const db = getDb();
 
-        // Check duplicate phone
-        const existing = await db.collection("users").where("phone", "==", cleanPhone).limit(1).get();
+        // Check duplicate phone (across every equivalent format)
+        const existing = await db.collection("users").where("phone", "in", phoneCandidates(phone)).limit(1).get();
         if (!existing.empty) {
             return res.status(409).json({ error: "This phone number is already registered" });
         }
@@ -522,11 +588,13 @@ router.post("/login", validate(LoginSchema), async (req, res) => {
         const fDb = getDb();
 
         // 1. Fetch user (one-shot lookup by phone or email)
+        // BUGFIX: match across all common phone formats (with/without +91, leading
+        // 0, punctuation) so a number stored in a different form still logs in.
         let snap;
         if (phone.includes("@")) {
             snap = await fDb.collection("users").where("email", "==", phone.trim().toLowerCase()).limit(1).get();
         } else {
-            snap = await fDb.collection("users").where("phone", "==", cleanPhone).limit(1).get();
+            snap = await fDb.collection("users").where("phone", "in", phoneCandidates(phone)).limit(1).get();
         }
         const userDoc = snap.empty ? null : snap.docs[0];
         const user = userDoc ? userDoc.data() : null;
