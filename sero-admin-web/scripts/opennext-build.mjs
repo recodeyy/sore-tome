@@ -32,13 +32,18 @@ process.env.TMPDIR = tmp;
 //   patch-readlink.cjs  -> Node-24 Windows readlink EISDIR during `next build`
 //   patch-mkdtemp.cjs   -> OpenNext's malformed image-optimizer temp-dir name (drive colon)
 // Both are no-ops on Linux. Merge with any existing NODE_OPTIONS.
-// Use forward slashes (Node accepts them on Windows) and no quotes — backslashes and
-// quotes get mangled when NODE_OPTIONS passes through the shell. The paths have no spaces.
+// NODE_OPTIONS --require paths must contain NO spaces (quotes get mangled when the
+// value passes through the shell, and Node splits on the first space — a repo path
+// like "E:\All projects\..." breaks as "Cannot find module 'E:/All'"). The repo path
+// has spaces, so copy the shims into the space-free tmp dir and preload from there.
 const toPosix = (p) => p.replace(/\\/g, "/");
-const requires = [
-  toPosix(path.join(scriptsDir, "patch-readlink.cjs")),
-  toPosix(path.join(scriptsDir, "patch-mkdtemp.cjs")),
-].map((p) => `--require ${p}`).join(" ");
+const requires = ["patch-readlink.cjs", "patch-mkdtemp.cjs"]
+  .map((name) => {
+    const dest = path.join(tmp, name);
+    fs.copyFileSync(path.join(scriptsDir, name), dest);
+    return `--require ${toPosix(dest)}`;
+  })
+  .join(" ");
 process.env.NODE_OPTIONS = [process.env.NODE_OPTIONS, requires].filter(Boolean).join(" ");
 
 // Same OpenNext version SST selects for Next 14. `npx --yes` reuses the local npx
