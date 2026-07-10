@@ -1,5 +1,9 @@
 # Deployment Connection — Executive Summary
 
+> **Update (later 2026-07-10):** every defect below plus the superadmin-login issue is FIXED in commit `74361a5`
+> (details: DEPLOYMENT_FIX_PLAN.md). Deploys pending owner approval: push tree to `render-live` (backend),
+> `npm run sst:deploy` (website), `flutter build apk --release` (mobile). Gate: FINAL_DEPLOYMENT_RELEASE_GATE.md.
+
 **Date:** 2026-07-10 · **Commit:** `139d2b7` · **Audit scope:** live production probes + repo config audit
 (run from dev machine; Render/AWS dashboards and physical devices not accessed).
 
