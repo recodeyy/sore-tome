@@ -1,22 +1,17 @@
 # SERO Admin Web — Deployment Runbook
 
+> **Live:** https://d79huy0uhwumb.cloudfront.net · AWS `824604027501` · `eu-west-1` · stage `production`
+> Deployed with **SST v3/v4 + OpenNext** (local build, no Git). Backend: `https://sero-api-live.onrender.com/api/v1`.
+
 ## A. Local development
 
 ```bash
-# 1. Backend (shared) must be running on :3001 with the Hubtown Sunkist seed applied
-#    (Postgres :5544, Redis :6379 already up in this environment).
-cd society-backend && npm start           # if not already running
-
-# 2. Web portal
 cd sero-admin-web
 cp .env.example .env.local                # fill keys (dev keys already present locally)
 npm install
 npm run dev                               # http://localhost:3005
 ```
-
-Demo logins (password `123456`): admin `9200000001` (portal Admin) ·
-super admin `superadmin` (portal Super Admin). Seed super-admin login once if missing:
-`node society-backend/scripts/seed_test_logins.js`.
+Demo logins (password `123456`): admin `9200000001` (portal Admin) · super admin via seeded login.
 
 ## B. Build & verify (CI gate)
 
@@ -27,44 +22,79 @@ npm run build            # next build (35 routes)  -> success
 npm run test:e2e         # Playwright (needs web :3005 + backend :3001 up)
 ```
 
-E2E notes:
-- API cross-role specs need no browser and pass in ~2s.
-- The UI spec needs `npx playwright install chromium` (one-time browser download).
-- The backend auth limiter is **5 logins / 15 min / IP**. If re-running rapidly trips it,
-  clear dev keys: from `society-backend`, `node -e "const R=require('ioredis');const r=new R('redis://localhost:6379');r.keys('*rl*').then(k=>k.length&&r.del(...k)).then(()=>r.disconnect())"`.
+## C. Deploy to AWS — SST v3/v4 + OpenNext (EXECUTED path, no Git needed)
 
-## C. Deploy to AWS Amplify (staging)
+> Builds the Next.js app **locally** and deploys SSR to **Lambda + CloudFront** via SST.
 
-1. Push `sero-admin-web/` to the Git repo connected to Amplify.
-2. In Amplify: create app → connect branch `staging` → framework auto-detected (Next.js SSR).
-3. Build settings: `npm ci && npm run build`; output handled by Amplify Next.js runtime.
-4. Environment variables: add all from `WEBSITE_ENVIRONMENT_MATRIX.md`; back secrets with
-   Secrets Manager references. Set `AI_PROXY_MODE=backend` once the backend is keyed.
-5. Attach domain (Route 53 + ACM) if available; else use the Amplify default HTTPS URL.
-6. Attach WAF web ACL to the CloudFront distribution.
+### C.0 — One-time: use an NTFS build workspace (the repo drive `E:\` is exFAT)
+exFAT can't do symlinks or bun's atomic lockfile rename, so `bun`/OpenNext fail on `E:\`.
+Build+deploy from an NTFS copy (`C:\sero-deploy`). Recreate it any time with:
+```powershell
+robocopy "E:\All projects\Society management\sore-tome\sero-admin-web" "C:\sero-deploy" `
+  /E /XD node_modules .next .sst test-results .git /XF tsconfig.tsbuildinfo
+```
+Then `cd C:\sero-deploy`. The three Windows build shims (`scripts/patch-readlink.cjs`,
+`scripts/patch-mkdtemp.cjs`, `scripts/opennext-build.mjs`) travel with the repo and are no-ops on Linux.
 
-Production is the same on a `production` branch with production secrets + backend URL.
+### C.1 — Deploy
+```bash
+cd /c/sero-deploy
+aws sts get-caller-identity                 # sanity: account 824604027501, eu-west-1
+npm ci                                       # sst + build wrapper are in the repo
+
+# secrets -> SSM (values come from .env.local; NEVER commit them). One-time / on change:
+npx sst secret set SeroBackendUrl   "https://sero-api-live.onrender.com/api/v1" --stage production
+npx sst secret set SessionSecret    "<from .env.local>"  --stage production
+npx sst secret set GroqApiKey       "<from .env.local>"  --stage production
+npx sst secret set GeminiApiKey     "<from .env.local>"  --stage production
+npx sst secret set OpenaiApiKey     "<from .env.local>"  --stage production
+npx sst secret set ElevenLabsApiKey "<from .env.local>"  --stage production
+npx sst secret set ElevenLabsVoiceId "21m00Tcm4TlvDq8ikWAM" --stage production
+
+# deploy — sst.config.ts buildCommand runs scripts/opennext-build.mjs, which forces a clean
+# TEMP (C:\sst-tmp) and preloads the readlink + mkdtemp shims into the OpenNext build.
+mkdir -p /c/sst-tmp
+TEMP=C:/sst-tmp TMP=C:/sst-tmp npx sst deploy --stage production
+```
+SST prints the CloudFront `url` on completion. (A clean Linux/WSL/CI build needs no TEMP/shims.)
+
+If a prior run aborted and left a lock: `npx sst unlock --stage production`, then redeploy.
+
+### C.2 — Change the backend URL (e.g. new API host)
+```bash
+npx sst secret set SeroBackendUrl "https://<new-api>/api/v1" --stage production
+TEMP=C:/sst-tmp TMP=C:/sst-tmp npx sst deploy --stage production
+```
+Only the Lambda env changes; CloudFront is untouched (fast redeploy).
+
+### C.3 — Teardown
+```bash
+cd /c/sero-deploy && npx sst remove --stage production
+```
 
 ## D. Smoke test after deploy
 
 ```bash
-BASE=https://<amplify-url>
-curl -s $BASE/login -o /dev/null -w "login %{http_code}\n"                 # expect 200
-# authenticated smoke (replace creds):
+BASE=https://d79huy0uhwumb.cloudfront.net
+curl -s $BASE/login -o /dev/null -w "login-page %{http_code}\n"             # expect 200
+# BFF login -> backend /auth/login, sets httpOnly cookies (portal=admin):
 curl -s -c cj -X POST $BASE/api/session/login -H 'Content-Type: application/json' \
-  -d '{"phone":"9200000001","password":"...","portal":"admin"}' -o /dev/null -w "login %{http_code}\n"
+  -d '{"phone":"9200000001","password":"123456","portal":"admin"}' -w "\nsession-login %{http_code}\n"
 curl -s -b cj $BASE/api/proxy/admin/dashboard/summary                       # expect live JSON
 curl -s $BASE/api/proxy/finance/invoices -o /dev/null -w "guard %{http_code}\n"  # expect 401
 ```
+> The Render backend is on the free plan and **cold-starts (~50s)** after idle — the first
+> `session-login` after a quiet period (or right after a fresh deploy) may return 504/503 for
+> up to a minute before it warms up. Retry once.
 
 ## E. Rollback
 
-- **Amplify:** open the app → Deployments → select last green build → **Redeploy this version**.
-- **App Runner/container:** update the service to the previous image tag; wait for health check.
-- Cookies/secrets are backward compatible across builds; no DB migration is owned by the web app.
+- Redeploy a previous build with `npx sst deploy`, or re-set a secret and redeploy.
+- SST keeps Pulumi state; `sst.config.ts` sets `removal: retain` on production.
+- Cookies/secrets are backward compatible across builds; the web app owns no DB migration.
 
 ## F. Health & monitoring
 
 - Health path: `GET /login` (200, public).
-- CloudWatch: alarm on SSR 5xx and elevated error rate.
+- CloudWatch log group per Lambda; alarm on SSR 5xx.
 - Backend outages surface in-app as error states with Retry (no crash, no raw JSON).

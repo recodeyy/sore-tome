@@ -49,7 +49,12 @@ router.get("/", authMiddleware, tenantMiddleware, async (req, res) => {
     if (SECURITY_ROLES.includes(role)) {
       return res.json({ parcels: await ParcelService.listAll(societyOf(req), { status: req.query.status as string }) });
     }
-    const ctx = await ResidentService.resolveContext(societyOf(req), userIdOf(req) as string);
+    const u = (req as any).user || {};
+    const ctx = await ResidentService.resolveContext(societyOf(req), userIdOf(req) as string, {
+      role: u.role,
+      name: u.name,
+      phone: u.phone,
+    });
     res.json({ parcels: await ParcelService.listForUnit(societyOf(req), ctx.unitId) });
   } catch (e: any) { map(res, e, "Failed to list parcels"); }
 });

@@ -7,6 +7,21 @@ const nextConfig = {
   env: {
     NEXT_PUBLIC_APP_NAME: "SERO Control",
   },
+  experimental: {
+    // DEPLOY FIX: the Windows output-file tracer systematically drops Next.js's
+    // conditionally-required vendored internals (e.g. `@swc/helpers`,
+    // `next/dist/compiled/@opentelemetry/api`), producing Lambda
+    // "Cannot find module ..." crashes on every route. Force-include the whole
+    // set of runtime deps so OpenNext always bundles them into the server function.
+    outputFileTracingIncludes: {
+      "*": [
+        "./node_modules/next/**/*",
+        "./node_modules/@next/**/*",
+        "./node_modules/@swc/helpers/**/*",
+        "./node_modules/styled-jsx/**/*",
+      ],
+    },
+  },
   webpack: (config) => {
     // Node 24 on Windows returns EISDIR from fs.readlink on regular files, which
     // webpack's symlink resolution + PackFileCache snapshotter do not tolerate.

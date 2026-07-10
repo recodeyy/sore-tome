@@ -35,8 +35,11 @@ services:
       # ── Auto-set values ───────────────────────────────────────────────────
       - key: NODE_ENV
         value: production
+      # Exact origins only — server.js compares literal strings, so "*" would
+      # never match a real browser origin. Mobile apps send no Origin header and
+      # are always allowed. Add the custom domain here when one is attached.
       - key: CORS_ORIGINS
-        value: "*"
+        value: "https://d79huy0uhwumb.cloudfront.net,http://localhost:3000,http://localhost:3001"
       - key: LOG_LEVEL
         value: info
       # Render-managed Postgres terminates SSL with a cert chain Node won't verify

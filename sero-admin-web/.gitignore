@@ -10,3 +10,9 @@ next-env.d.ts
 /playwright-report
 /test-results
 .DS_Store
+
+# SST (ion) — generated platform, state, and local outputs (never commit)
+/.sst
+/.open-next
+/.pulumi
+sst-env.d.ts

@@ -34,10 +34,15 @@ export default $config({
     const elevenLabsApiKey = new sst.Secret("ElevenLabsApiKey", "");
     const elevenLabsVoiceId = new sst.Secret("ElevenLabsVoiceId", "21m00Tcm4TlvDq8ikWAM");
 
+    // NOTE: on this Windows host the Node-24 readlink shim (scripts/patch-readlink.cjs)
+    // is applied to the local `next build` via NODE_OPTIONS="--require ./scripts/patch-readlink.cjs"
+    // set in the deploy command (see package.json "deploy" / "sst:deploy"). It is a no-op
+    // on AWS Linux, so the default OpenNext build command is left unchanged here.
     const site = new sst.aws.Nextjs("SeroAdminWeb", {
-      // Preserve the Windows Node-24 readlink shim during the local `next build`.
-      // Harmless no-op on Linux; required when building on this Windows host.
-      buildCommand: "node -r ./scripts/patch-readlink.cjs ./node_modules/@opennextjs/aws/dist/index.js build",
+      // Build via an in-project wrapper that forces OpenNext's os.tmpdir() to a clean
+      // C:\sst-tmp so its image-optimizer `npm install sharp` doesn't walk up into the
+      // user's home node_modules. See scripts/opennext-build.mjs for the full rationale.
+      buildCommand: "node ./scripts/opennext-build.mjs",
       environment: {
         NEXT_PUBLIC_APP_NAME: "SERO Control",
         AI_PROXY_MODE: "backend",

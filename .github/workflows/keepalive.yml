@@ -1,0 +1,18 @@
+# Pings the Render backend every 10 minutes so the free-plan instance doesn't
+# sleep (it idles out after ~15 min and takes ~60s to cold-start, which shows up
+# as login timeouts / blank screens in the app and website).
+name: keepalive
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping backend health
+        run: |
+          curl -sS -o /dev/null -w "health -> %{http_code} in %{time_total}s\n" \
+            --max-time 90 https://sero-api-live.onrender.com/health || true

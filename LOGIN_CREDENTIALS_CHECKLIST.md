@@ -33,7 +33,7 @@ Then log in with the listed **phone** + that account's password (seeded accounts
 
 | # | Role / Portal | Login (phone) | Password | Verified login? |
 |---|---------------|---------------|----------|-----------------|
-| 3 | Super Admin (`/login/super-admin`) | ____ | ____ | ☐ |
+| 3 | Super Admin (`/login/super-admin`) | `superadmin` | `123456` | ✅ verified on prod website 2026-07-10 (account `superadmin-001`, role `super_admin`) |
 | 4 | Staff (`/login/staff`) | ____ | ____ | ☐ |
 | 5 | Security / Guard (`/login/staff`) | ____ | ____ | ☐ |
 | 6 | Committee / Treasurer (`/login/admin`) | ____ | ____ | ☐ |

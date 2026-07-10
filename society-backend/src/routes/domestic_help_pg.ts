@@ -39,8 +39,14 @@ const map = (res: Response, err: any, fallback: string) => {
   return res.status(500).json({ error: fallback });
 };
 
-const ctxOf = (req: Request) =>
-  ResidentService.resolveContext(societyOf(req), userIdOf(req) as string);
+const ctxOf = (req: Request) => {
+  const u = (req as any).user || {};
+  return ResidentService.resolveContext(societyOf(req), userIdOf(req) as string, {
+    role: u.role,
+    name: u.name,
+    phone: u.phone,
+  });
+};
 
 /** GET /domestic-help — the resident's own registered helpers. */
 router.get("/", authMiddleware, tenantMiddleware, async (req, res) => {

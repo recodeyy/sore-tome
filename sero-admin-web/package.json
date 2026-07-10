@@ -8,7 +8,9 @@
     "start": "next start -p 3005",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "sst:deploy": "sst deploy --stage production",
+    "sst:remove": "sst remove --stage production"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.62.7",

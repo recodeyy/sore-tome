@@ -35,6 +35,7 @@ export const ADMIN_NAV: NavGroup[] = [
     items: [
       { key: "dashboard", label: "nav.dashboard", href: "/dashboard", icon: "LayoutDashboard" },
       { key: "members", label: "nav.members", href: "/members", icon: "Users" },
+      { key: "approvals", label: "nav.approvals", href: "/approvals", icon: "UserCheck" },
     ],
   },
   {

@@ -1,6 +1,8 @@
 "use client";
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
+import { usePathname } from "next/navigation";
 import { Lang, translate } from "./dictionaries";
+import { ensureGoogleTranslate, applyLanguage } from "./gtranslate";
 
 type I18nContext = {
   lang: Lang;
@@ -18,12 +20,27 @@ const STORAGE_KEY = "sero_lang";
 
 export function I18nProvider({ children }: { children: React.ReactNode }) {
   const [lang, setLangState] = useState<Lang>("en");
+  const pathname = usePathname();
 
+  // Restore saved language + boot the Google Translate widget once.
   useEffect(() => {
+    ensureGoogleTranslate();
     const saved = (typeof window !== "undefined" &&
       (localStorage.getItem(STORAGE_KEY) as Lang)) || "en";
     setLangState(saved);
+    if (saved !== "en") {
+      setTimeout(() => applyLanguage(saved), 600); // let the widget mount first
+    }
   }, []);
+
+  // Re-apply the active language after client-side navigation (App Router does
+  // not full-reload, so a freshly rendered page would otherwise show English).
+  useEffect(() => {
+    if (lang !== "en") {
+      const id = setTimeout(() => applyLanguage(lang), 400);
+      return () => clearTimeout(id);
+    }
+  }, [pathname, lang]);
 
   const setLang = useCallback((l: Lang) => {
     setLangState(l);
@@ -34,6 +51,7 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
     } catch {
       /* ignore */
     }
+    applyLanguage(l); // translate the whole page, not just dictionary strings
   }, []);
 
   const t = useCallback((key: string) => translate(lang, key), [lang]);
