@@ -1,0 +1,84 @@
+{
+  "audit_date": "2026-07-10",
+  "commit": "74361a5",
+  "findings": [
+    {
+      "id": "F-1",
+      "severity": "P1",
+      "area": "Render",
+      "environment": "Render + Mobile release APK + Web production",
+      "summary": "Free-plan cold start ~60s vs 15s mobile client timeout guarantees first-request failure after idle (blank screens, login hangs)",
+      "reproduction": "Leave backend idle >15min; GET /health times out at 60s, retry answers in 0.3s",
+      "expected": "First request after idle succeeds",
+      "actual": "TimeoutException on every initial mobile request; occasional 504 via website",
+      "root_cause": "Render free plan sleeps instance; ApiClient hard 15s timeout; no keepalive",
+      "fix": "ApiClient wake-and-retry (75s /health ping, 30s retry); website login retry with waking banner; GitHub Actions keepalive every 10min; recommend paid plan",
+      "test": "Idle backend, fresh APK login succeeds; website login shows waking banner then succeeds",
+      "status": "fixed_in_code_pending_deploy"
+    },
+    {
+      "id": "F-2",
+      "severity": "P1",
+      "area": "Database",
+      "environment": "Render",
+      "summary": "Firestore-only memberships have no Postgres members row; all resident_pg endpoints 403 'No active membership' (parcels 500)",
+      "reproduction": "Login 9876543200, GET /api/v1/resident/family -> 403",
+      "expected": "200 with family list",
+      "actual": "403/500 -> 'Something went wrong' on resident Profile/Family/Vehicles/KYC/Emergency/Parcels/DomesticHelp/dashboard",
+      "root_cause": "Dual data store; approval/login flows write Firestore only; ResidentService.resolveContext requires approved Postgres members row",
+      "fix": "resolveContext lazily provisions members row from JWT society scope (resident roles only); wired through resident_pg, parcels_pg, domestic_help_pg",
+      "test": "GET /api/v1/resident/family -> 200 after deploy",
+      "status": "fixed_in_code_pending_deploy"
+    },
+    {
+      "id": "F-3",
+      "severity": "P0_ux",
+      "area": "Website",
+      "environment": "Web production",
+      "summary": "Superadmin website login 'not working': login form pre-fills society-admin account; Super Admin tab submit returns PORTAL_MISMATCH; superadmin creds never documented",
+      "reproduction": "Open /login, click Super Admin, submit prefilled 9200000001/123456",
+      "expected": "Superadmin can sign in",
+      "actual": "403 'This account does not have access to the selected portal'",
+      "root_cause": "Static prefill + undocumented credentials (superadmin/123456, account superadmin-001); backend flow verified correct",
+      "fix": "Per-portal demo prefill+hint in login page; credentials recorded in LOGIN_CREDENTIALS_CHECKLIST.md",
+      "test": "Super Admin tab -> sign in -> /super-admin/dashboard 200 (verified live via BFF with real creds)",
+      "status": "fixed_in_code_pending_deploy"
+    },
+    {
+      "id": "F-4",
+      "severity": "P2",
+      "area": "Env",
+      "environment": "Local",
+      "summary": "Local .env DATABASE_URL points at stopped Docker Postgres (localhost:5544); empty-message connection errors in local shell",
+      "fix": "Start Docker Desktop; docker compose up -d with PG_USER/PG_DATABASE/PG_PASSWORD set",
+      "status": "documented"
+    },
+    {
+      "id": "F-5",
+      "severity": "P2",
+      "area": "CORS",
+      "environment": "Render",
+      "summary": "CORS_ORIGINS='*' compared literally in server.js -> matches no browser origin (latent; BFF architecture masks it)",
+      "fix": "render.yaml now lists CloudFront + localhost origins",
+      "status": "fixed_in_code_pending_deploy"
+    },
+    {
+      "id": "F-6",
+      "severity": "P1",
+      "area": "Render",
+      "environment": "Render",
+      "summary": "Git split-brain: Render deploys branch render-live; GitHub master is an unrelated stale history (2026-06-21); local master (canonical) can't fast-forward push; keepalive cron won't run until default branch carries it",
+      "fix": "Owner decision required: force-push local master (archive old first) or adopt render-live as canonical; deploy command prepared",
+      "status": "blocked_owner_decision"
+    },
+    {
+      "id": "F-7",
+      "severity": "P3",
+      "area": "Auth",
+      "environment": "Web production",
+      "summary": "Demo credentials displayed on public login page; real AI keys in local .env.local; second undocumented super_admin account exists",
+      "fix": "Remove hints + rotate before real-customer production; audit account uF8Tyx2aVZqHzIsm8NDM",
+      "status": "open"
+    }
+  ]
+}

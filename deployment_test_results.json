@@ -1,0 +1,24 @@
+{
+  "run_date": "2026-07-10",
+  "environment": "production (sero-api-live.onrender.com + d79huy0uhwumb.cloudfront.net)",
+  "results": [
+    {"test": "backend /health", "status": "PASS", "note": "200; cold start >60s on first hit after idle"},
+    {"test": "website GET / and /login", "status": "PASS", "note": "200 via CloudFront"},
+    {"test": "website BFF -> backend link", "status": "PASS", "note": "backend errors surface through /api/session/login"},
+    {"test": "login resident 9876543200", "status": "PASS", "note": "token+firebaseToken+activeWorkspace(demo-soc-1)"},
+    {"test": "login admin portal=admin", "status": "PASS"},
+    {"test": "login admin portal=super-admin", "status": "PASS", "note": "correctly denied PORTAL_MISMATCH"},
+    {"test": "login superadmin portal=super-admin (backend + website BFF + /super-admin/dashboard)", "status": "PASS"},
+    {"test": "resident endpoints users/me notices-v2 funds complaints amenities polls-v2 events-v2 notifications parking visitors", "status": "PASS", "note": "all 200"},
+    {"test": "resident/family vehicles kyc emergency-contacts", "status": "FAIL_FIXED", "note": "403 No active membership; fix in 74361a5 pending deploy"},
+    {"test": "parcels", "status": "FAIL_FIXED", "note": "500 same root cause; pending deploy"},
+    {"test": "domestic-help", "status": "FAIL_FIXED", "note": "403 same root cause; pending deploy"},
+    {"test": "auth validation empty body", "status": "PASS", "note": "400 with field details"},
+    {"test": "legacy root /auth/login mount", "status": "PASS"},
+    {"test": "secrets in git", "status": "PASS", "note": "only .env.example tracked"},
+    {"test": "backend typecheck (tsc --noEmit)", "status": "PASS"},
+    {"test": "website typecheck (tsc --noEmit)", "status": "PASS"},
+    {"test": "backend jest integration suites", "status": "BLOCKED", "note": "require local Postgres (Docker not running); pre-existing"},
+    {"test": "device tests (FCM, blank-screen on device, two-session sync, receipts, uploads)", "status": "BLOCKED", "note": "need physical device + rebuilt APK"}
+  ]
+}
