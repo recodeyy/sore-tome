@@ -1,8 +1,11 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:sero/providers/shared/channels_provider.dart';
 
+/// Local chat outbox/cache. Best-effort like LocalDatabaseService: a cache
+/// failure (e.g. sqflite unavailable on web) must never crash a screen.
 class OfflineRepository {
   static Database? _database;
 
@@ -35,67 +38,85 @@ class OfflineRepository {
   }
 
   static Future<void> saveMessage(ChatMessage message, String channelId, {required MessageStatus status}) async {
-    final db = await database;
-    await db.insert(
-      'local_messages',
-      {
-        'clientId': message.clientId,
-        'channelId': channelId,
-        'status': status.name,
-        'data': jsonEncode(message.toMap()),
-        'createdAt': message.createdAt.millisecondsSinceEpoch,
-      },
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
-    
-    if (status == MessageStatus.sent || status == MessageStatus.delivered) {
-      await _cleanupOldMessages(channelId);
+    try {
+      final db = await database;
+      await db.insert(
+        'local_messages',
+        {
+          'clientId': message.clientId,
+          'channelId': channelId,
+          'status': status.name,
+          'data': jsonEncode(message.toMap()),
+          'createdAt': message.createdAt.millisecondsSinceEpoch,
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+
+      if (status == MessageStatus.sent || status == MessageStatus.delivered) {
+        await _cleanupOldMessages(channelId);
+      }
+    } catch (e) {
+      debugPrint('OfflineRepo: saveMessage skipped ($e)');
     }
   }
 
   static Future<void> markAsSynced(String clientId) async {
-    final db = await database;
-    await db.update(
-      'local_messages',
-      {'status': MessageStatus.sent.name},
-      where: 'clientId = ?',
-      whereArgs: [clientId],
-    );
+    try {
+      final db = await database;
+      await db.update(
+        'local_messages',
+        {'status': MessageStatus.sent.name},
+        where: 'clientId = ?',
+        whereArgs: [clientId],
+      );
+    } catch (e) {
+      debugPrint('OfflineRepo: markAsSynced skipped ($e)');
+    }
   }
 
   static Future<List<ChatMessage>> getPendingMessages(String channelId) async {
-    final db = await database;
-    final List<Map<String, dynamic>> maps = await db.query(
-      'local_messages',
-      where: 'channelId = ? AND (status = ? OR status = ?)',
-      whereArgs: [channelId, MessageStatus.sending.name, MessageStatus.error.name],
-      orderBy: 'createdAt ASC',
-    );
-
-    return List.generate(maps.length, (i) {
-      final data = jsonDecode(maps[i]['data']);
-      return ChatMessage.fromMap(data, maps[i]['clientId'] ?? 'local_${maps[i]['id']}').copyWith(
-        status: MessageStatus.values.firstWhere((e) => e.name == maps[i]['status']),
+    try {
+      final db = await database;
+      final List<Map<String, dynamic>> maps = await db.query(
+        'local_messages',
+        where: 'channelId = ? AND (status = ? OR status = ?)',
+        whereArgs: [channelId, MessageStatus.sending.name, MessageStatus.error.name],
+        orderBy: 'createdAt ASC',
       );
-    });
+
+      return List.generate(maps.length, (i) {
+        final data = jsonDecode(maps[i]['data']);
+        return ChatMessage.fromMap(data, maps[i]['clientId'] ?? 'local_${maps[i]['id']}').copyWith(
+          status: MessageStatus.values.firstWhere((e) => e.name == maps[i]['status']),
+        );
+      });
+    } catch (e) {
+      debugPrint('OfflineRepo: getPendingMessages skipped ($e)');
+      return const [];
+    }
   }
 
   static Future<List<ChatMessage>> getCachedMessages(String channelId) async {
-    final db = await database;
-    final List<Map<String, dynamic>> maps = await db.query(
-      'local_messages',
-      where: 'channelId = ? AND status = ?',
-      whereArgs: [channelId, MessageStatus.sent.name],
-      orderBy: 'createdAt DESC',
-      limit: 200,
-    );
-
-    return List.generate(maps.length, (i) {
-      final data = jsonDecode(maps[i]['data']);
-      return ChatMessage.fromMap(data, maps[i]['clientId'] ?? 'local_${maps[i]['id']}').copyWith(
-        status: MessageStatus.sent,
+    try {
+      final db = await database;
+      final List<Map<String, dynamic>> maps = await db.query(
+        'local_messages',
+        where: 'channelId = ? AND status = ?',
+        whereArgs: [channelId, MessageStatus.sent.name],
+        orderBy: 'createdAt DESC',
+        limit: 200,
       );
-    });
+
+      return List.generate(maps.length, (i) {
+        final data = jsonDecode(maps[i]['data']);
+        return ChatMessage.fromMap(data, maps[i]['clientId'] ?? 'local_${maps[i]['id']}').copyWith(
+          status: MessageStatus.sent,
+        );
+      });
+    } catch (e) {
+      debugPrint('OfflineRepo: getCachedMessages skipped ($e)');
+      return const [];
+    }
   }
 
   static Future<void> _cleanupOldMessages(String channelId) async {
@@ -124,12 +145,16 @@ class OfflineRepository {
   }
 
   static Future<void> deleteMessage(String clientId) async {
-    final db = await database;
-    await db.delete(
-      'local_messages',
-      where: 'clientId = ?',
-      whereArgs: [clientId],
-    );
+    try {
+      final db = await database;
+      await db.delete(
+        'local_messages',
+        where: 'clientId = ?',
+        whereArgs: [clientId],
+      );
+    } catch (e) {
+      debugPrint('OfflineRepo: deleteMessage skipped ($e)');
+    }
   }
 }
 

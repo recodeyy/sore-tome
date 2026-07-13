@@ -64,7 +64,12 @@ const { abuseProtection } = require("./middleware/abuseProtection");
 const { sanitizeInput } = require("./middleware/sanitize");
 
 // ─── Trust Proxy ─────────────────────────────────────────────────────────────
-app.set("trust proxy", 1); // Enable IP sensing behind load balancers/proxies
+// Render fronts the app with more than one proxy hop, so a hop count of 1
+// resolved req.ip to Render's internal 10.x address — the SAME for every
+// client. That collapsed all users into one abuse-protection/rate-limit
+// bucket (one noisy client 403-blocked the entire user base on 2026-07-13).
+// Trusting the platform chain restores per-client IPs.
+app.set("trust proxy", true);
 
 // ─── Middleware ────────────────────────────────────────────────────────────────
 app.use(contextMiddleware); // Enterprise tracing & log context
