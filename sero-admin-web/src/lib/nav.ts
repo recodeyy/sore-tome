@@ -65,6 +65,8 @@ export const ADMIN_NAV: NavGroup[] = [
     items: [
       { key: "staff", label: "nav.staff", href: "/staff", icon: "UserCog", roles: SECURITY_ROLES },
       { key: "visitors", label: "nav.visitors", href: "/visitors", icon: "DoorOpen", roles: SECURITY_ROLES },
+      { key: "parcels", label: "nav.parcels", href: "/parcels", icon: "Package", roles: SECURITY_ROLES },
+      { key: "amenities", label: "nav.amenities", href: "/amenities", icon: "Dumbbell", roles: SECURITY_ROLES },
       { key: "parking", label: "nav.parking", href: "/parking", icon: "SquareParking", roles: SECURITY_ROLES },
       { key: "assets", label: "nav.assets", href: "/assets", icon: "Wrench", roles: SECURITY_ROLES },
     ],
