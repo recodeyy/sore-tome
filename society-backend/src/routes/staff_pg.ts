@@ -97,23 +97,41 @@ async function resolveAttendanceStaffId(req: Request, opts: { autoProvision: boo
   return own;
 }
 
+// The mobile shift card reads camelCase keys (checkInTime/checkOutTime); the
+// table rows carry check_in_at/check_out_at. Serialize both so neither client
+// generation misparses the state (misparse = card stuck on OFF DUTY and the
+// next check-in 409s "already checked in").
+const attendanceJson = (row: any) =>
+  row ? { ...row, checkInTime: row.check_in_at, checkOutTime: row.check_out_at } : null;
+
 router.get("/attendance/me", authMiddleware, tenantMiddleware, async (req, res) => {
   try {
     const staffId = await StaffService.staffIdForUser(societyOf(req), userOf(req).uid, { autoProvision: false });
     if (!staffId) return res.json({ attendance: null });
-    res.json({ attendance: await StaffService.attendanceFor(societyOf(req), staffId, todayIso()) });
+    res.json({ attendance: attendanceJson(await StaffService.attendanceFor(societyOf(req), staffId, todayIso())) });
   } catch (e: any) { map(res, e, "Failed to load attendance"); }
 });
 router.post("/attendance/check-in", authMiddleware, tenantMiddleware, validate(CheckSchema), async (req, res) => {
   try {
     const staffId = await resolveAttendanceStaffId(req, { autoProvision: true });
-    res.status(201).json({ attendance: await StaffService.checkIn(societyOf(req), staffId, req.body.workDate || todayIso(), req.body.source || "app") });
-  } catch (e: any) { map(res, e, "Check-in failed"); }
+    res.status(201).json({ attendance: attendanceJson(await StaffService.checkIn(societyOf(req), staffId, req.body.workDate || todayIso(), req.body.source || "app")) });
+  } catch (e: any) {
+    // Re-tapping Check In after an app restart that misread the state should
+    // succeed idempotently, not fail: return the existing entry.
+    if (e.code === "ALREADY_CHECKED_IN") {
+      const staffId = await resolveAttendanceStaffId(req, { autoProvision: false }).catch(() => null);
+      if (staffId) {
+        const existing = await StaffService.attendanceFor(societyOf(req), staffId, req.body.workDate || todayIso());
+        return res.status(200).json({ attendance: attendanceJson(existing), duplicate: true });
+      }
+    }
+    map(res, e, "Check-in failed");
+  }
 });
 router.post("/attendance/check-out", authMiddleware, tenantMiddleware, validate(CheckSchema), async (req, res) => {
   try {
     const staffId = await resolveAttendanceStaffId(req, { autoProvision: false });
-    res.json({ attendance: await StaffService.checkOut(societyOf(req), staffId, req.body.workDate || todayIso()) });
+    res.json({ attendance: attendanceJson(await StaffService.checkOut(societyOf(req), staffId, req.body.workDate || todayIso())) });
   } catch (e: any) { map(res, e, "Check-out failed"); }
 });
 
