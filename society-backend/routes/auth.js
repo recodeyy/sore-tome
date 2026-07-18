@@ -994,6 +994,30 @@ router.post("/approve/:uid", authMiddleware, mainAdminOnly, async (req, res) => 
             approvedBy: req.user.uid,
         });
 
+        // Mirror the approval into the Postgres members directory. The admin
+        // website's Members & Tenants (and finance/notification recipient
+        // resolution) read Postgres `members`, while app registrations live in
+        // Firestore `users` — without this upsert an approved resident never
+        // appears on the website. Best-effort: a Postgres hiccup must not
+        // block the approval itself.
+        try {
+            const { db: pg } = require("../src/shared/Database");
+            await pg.query(
+                `INSERT INTO members (society_id, user_id, name, phone, email, status, role)
+                 SELECT $1, $2, $3, $4, $5, 'approved', $6
+                  WHERE NOT EXISTS (SELECT 1 FROM members WHERE society_id = $1 AND user_id = $2)`,
+                [societyId, req.params.uid, userData.name || "Resident",
+                 userData.phone || null, userData.email || null, userData.role || "resident"]
+            );
+            await pg.query(
+                `UPDATE members SET status = 'approved', updated_at = now()
+                  WHERE society_id = $1 AND user_id = $2`,
+                [societyId, req.params.uid]
+            );
+        } catch (e) {
+            logger.warn({ uid: req.params.uid, error: e.message }, "Postgres members mirror failed (non-fatal)");
+        }
+
         await db.collection("notifications").add({
             type: "registration_approved",
             title: "Registration approved!",
