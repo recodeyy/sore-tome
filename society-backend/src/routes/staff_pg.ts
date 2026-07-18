@@ -25,7 +25,10 @@ const CreateStaffSchema = z.object({
   }).strict(),
 });
 const StatusSchema = z.object({ body: z.object({ status: z.enum(["active", "suspended", "terminated"]), leavingDate: isoDate.optional() }).strict() });
-const CheckSchema = z.object({ body: z.object({ staffId: s.max(64), workDate: isoDate, source: z.string().max(20).optional() }).strict() });
+// staffId/workDate are optional: the mobile staff app posts an EMPTY body for
+// self check-in/out (the caller IS the staff member); admins pass staffId to
+// mark someone else. workDate defaults to today.
+const CheckSchema = z.object({ body: z.object({ staffId: s.max(64).optional(), workDate: isoDate.optional(), source: z.string().max(20).optional() }).strict() });
 const RosterSchema = z.object({ body: z.object({ staffId: s.max(64), dutyDate: isoDate, shiftTemplateId: z.string().uuid().optional(), area: z.string().max(60).optional() }).strict() });
 const LeaveTypeSchema = z.object({ body: z.object({ name: s.max(60), annualQuotaDays: z.number().int().nonnegative().optional(), isPaid: z.boolean().optional() }).strict() });
 const ShiftSchema = z.object({ body: z.object({ name: s.max(60), startMinutes: z.number().int().min(0), endMinutes: z.number().int().min(0) }).strict() });
@@ -63,13 +66,55 @@ router.patch("/:id/status", authMiddleware, tenantMiddleware, canManageContent, 
 });
 
 // Attendance
-router.post("/attendance/check-in", authMiddleware, tenantMiddleware, canManageContent, validate(CheckSchema), async (req, res) => {
-  try { res.status(201).json({ attendance: await StaffService.checkIn(societyOf(req), req.body.staffId, req.body.workDate, req.body.source) }); }
-  catch (e: any) { map(res, e, "Check-in failed"); }
+//
+// Two modes share these routes:
+//  - SELF (mobile staff app): empty body — the caller's own staff row is
+//    resolved from their user id (auto-provisioned on first check-in, since
+//    app-registered staff exist in Firebase but not in the Postgres staff
+//    table). No management permission needed to mark YOURSELF present.
+//  - ADMIN: body carries staffId (+ optional workDate) — requires a
+//    management role, enforced here because canManageContent no longer wraps
+//    the route.
+const MANAGE_ROLES = new Set(["main_admin", "admin", "secretary", "treasurer", "committee_member", "super_admin", "superadmin"]);
+const todayIso = () => new Date().toISOString().slice(0, 10);
+
+async function resolveAttendanceStaffId(req: Request, opts: { autoProvision: boolean }): Promise<string> {
+  const societyId = societyOf(req);
+  const user = userOf(req);
+  if (req.body?.staffId) {
+    if (!MANAGE_ROLES.has(String(user.role || "").toLowerCase())) {
+      throw Object.assign(new Error("Only management can mark another staff member's attendance"), { code: "INVALID_INPUT" });
+    }
+    return req.body.staffId;
+  }
+  const own = await StaffService.staffIdForUser(societyId, user.uid, {
+    autoProvision: opts.autoProvision,
+    name: user.name,
+    role: user.role,
+    phone: user.phone,
+  });
+  if (!own) throw Object.assign(new Error("No staff profile linked to your account"), { code: "NOT_FOUND" });
+  return own;
+}
+
+router.get("/attendance/me", authMiddleware, tenantMiddleware, async (req, res) => {
+  try {
+    const staffId = await StaffService.staffIdForUser(societyOf(req), userOf(req).uid, { autoProvision: false });
+    if (!staffId) return res.json({ attendance: null });
+    res.json({ attendance: await StaffService.attendanceFor(societyOf(req), staffId, todayIso()) });
+  } catch (e: any) { map(res, e, "Failed to load attendance"); }
 });
-router.post("/attendance/check-out", authMiddleware, tenantMiddleware, canManageContent, validate(CheckSchema), async (req, res) => {
-  try { res.json({ attendance: await StaffService.checkOut(societyOf(req), req.body.staffId, req.body.workDate) }); }
-  catch (e: any) { map(res, e, "Check-out failed"); }
+router.post("/attendance/check-in", authMiddleware, tenantMiddleware, validate(CheckSchema), async (req, res) => {
+  try {
+    const staffId = await resolveAttendanceStaffId(req, { autoProvision: true });
+    res.status(201).json({ attendance: await StaffService.checkIn(societyOf(req), staffId, req.body.workDate || todayIso(), req.body.source || "app") });
+  } catch (e: any) { map(res, e, "Check-in failed"); }
+});
+router.post("/attendance/check-out", authMiddleware, tenantMiddleware, validate(CheckSchema), async (req, res) => {
+  try {
+    const staffId = await resolveAttendanceStaffId(req, { autoProvision: false });
+    res.json({ attendance: await StaffService.checkOut(societyOf(req), staffId, req.body.workDate || todayIso()) });
+  } catch (e: any) { map(res, e, "Check-out failed"); }
 });
 
 // Roster / shift / leave types
