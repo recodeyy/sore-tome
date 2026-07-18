@@ -71,6 +71,28 @@ function canonicalSociety(raw) {
   return String(raw || "").trim().replace(/\s+/g, " ").toUpperCase();
 }
 
+function slugSociety(raw) {
+  return String(raw || "").trim().toLowerCase().replace(/\s+/g, "-");
+}
+
+/**
+ * Resolve client-supplied society text to an EXISTING tenant id when any
+ * spelling variant of it already has users (slug > as-typed > legacy UPPER),
+ * so a registration joins the society its admin/staff accounts already use
+ * instead of minting a new spelling variant (the "HUBTOWN SUNKIST" vs
+ * "hubtown-sunkist" split: admin and residents could never see each other).
+ * Brand-new societies get the slug form — the seed/staff convention.
+ */
+async function resolveSocietyId(db, raw) {
+  const exact = String(raw || "").trim().replace(/\s+/g, " ");
+  if (!exact) return "";
+  const candidates = [...new Set([slugSociety(exact), exact, canonicalSociety(exact)])];
+  const snap = await db.collection("users").where("society_id", "in", candidates).limit(50).get();
+  const present = new Set(snap.docs.map((d) => d.data().society_id));
+  for (const c of candidates) if (present.has(c)) return c;
+  return slugSociety(exact);
+}
+
 const { validate } = require("../src/middleware/validate");
 const { RegisterSchema, LoginSchema, RefreshTokenSchema } = require("../src/shared/schemas");
 
@@ -200,19 +222,17 @@ router.post("/register", validate(RegisterSchema), async (req, res) => {
     try {
         const { name, phone, password, flatNumber, blockName } = req.body;
 
-        // BUGFIX: normalize society_id so trivial formatting variants (leading/
-        // trailing spaces, double spaces, mixed case) resolve to the SAME tenant.
-        // Without this, "Hubtown Sunkist", "hubtown  sunkist " etc. become
-        // separate societies and residents vanish from the admin's approval list.
-        // NOTE: genuine typos (e.g. "SUNMIST" vs "SUNKIST") still diverge — the
-        // real fix is an app-side society picker with stable IDs. See canonicalSociety.
-        const society_id = canonicalSociety(req.body.society_id);
-
         // BUGFIX: store one canonical phone form and check duplicates across all
         // formats, so the account can always be found at login regardless of how
         // the number is typed later.
         const cleanPhone = canonicalPhone(phone);
         const db = getDb();
+
+        // Join an existing society id when any spelling variant already has
+        // users; otherwise mint the slug form. (Genuine typos, e.g. "SUNMIST"
+        // vs "SUNKIST", still diverge — the real fix remains an app-side
+        // society picker with stable IDs.)
+        const society_id = await resolveSocietyId(db, req.body.society_id);
 
         // Check duplicate phone (across every equivalent format)
         const existing = await db.collection("users").where("phone", "in", phoneCandidates(phone)).limit(1).get();
@@ -973,6 +993,30 @@ router.post("/approve/:uid", authMiddleware, mainAdminOnly, async (req, res) => 
             approvedAt: getAdmin().firestore.FieldValue.serverTimestamp(),
             approvedBy: req.user.uid,
         });
+
+        // Mirror the approval into the Postgres members directory. The admin
+        // website's Members & Tenants (and finance/notification recipient
+        // resolution) read Postgres `members`, while app registrations live in
+        // Firestore `users` — without this upsert an approved resident never
+        // appears on the website. Best-effort: a Postgres hiccup must not
+        // block the approval itself.
+        try {
+            const { db: pg } = require("../src/shared/Database");
+            await pg.query(
+                `INSERT INTO members (society_id, user_id, name, phone, email, status, role)
+                 SELECT $1, $2, $3, $4, $5, 'approved', $6
+                  WHERE NOT EXISTS (SELECT 1 FROM members WHERE society_id = $1 AND user_id = $2)`,
+                [societyId, req.params.uid, userData.name || "Resident",
+                 userData.phone || null, userData.email || null, userData.role || "resident"]
+            );
+            await pg.query(
+                `UPDATE members SET status = 'approved', updated_at = now()
+                  WHERE society_id = $1 AND user_id = $2`,
+                [societyId, req.params.uid]
+            );
+        } catch (e) {
+            logger.warn({ uid: req.params.uid, error: e.message }, "Postgres members mirror failed (non-fatal)");
+        }
 
         await db.collection("notifications").add({
             type: "registration_approved",

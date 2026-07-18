@@ -86,6 +86,21 @@ export const Recipients = {
     return rows.map((r: any) => r.user_id).filter((u: any) => !!u);
   },
 
+  /**
+   * user_ids of ALL approved residents of a society. Fallback audience for
+   * society-wide records with no member/unit attribution (e.g. a bulk invoice
+   * or notice) — without it those events fan out to zero recipients.
+   */
+  async societyResidentUserIds(client: PoolClient, societyId: string): Promise<string[]> {
+    const { rows } = await client.query(
+      `SELECT DISTINCT user_id FROM members
+        WHERE society_id = $1 AND status = 'approved'
+          AND user_id IS NOT NULL AND role = 'resident'`,
+      [societyId]
+    );
+    return rows.map((r: any) => r.user_id);
+  },
+
   /** user_ids of active staff, optionally filtered to a set of roles. */
   async staffUserIds(client: PoolClient, societyId: string, roles?: string[]): Promise<string[]> {
     const params: any[] = [societyId];

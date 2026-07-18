@@ -281,9 +281,23 @@ router.get("/maintenance-status", authMiddleware, tenantMiddleware, async (req, 
       }
     });
 
+    // PRIVACY: plain residents only get THEIR OWN row — the society-wide
+    // paid/unpaid roster (names, flats, amounts) is management data. The app's
+    // resident screens only ever look up the caller's own entry; the full list
+    // feeds admin dashboards (overdueResidentsProvider).
+    const managementRoles = new Set([
+      "main_admin", "admin", "treasurer", "secretary", "committee_member",
+      "super_admin", "superadmin",
+    ]);
+    const isManagement = managementRoles.has(String(req.user.role || "").toLowerCase());
+    const onlySelf = (rows) => rows.filter(r => r.uid === req.user.uid);
+
+    const paid = liableUsers.filter(u => paidUids.has(u.uid)).map(u => ({ uid: u.uid, name: u.name, flatNumber: u.flatNumber }));
+    const unpaid = overdueList.sort((a, b) => b.amountOwed - a.amountOwed);
+
     res.json({
-      paid: liableUsers.filter(u => paidUids.has(u.uid)).map(u => ({ uid: u.uid, name: u.name, flatNumber: u.flatNumber })),
-      unpaid: overdueList.sort((a, b) => b.amountOwed - a.amountOwed)
+      paid: isManagement ? paid : onlySelf(paid),
+      unpaid: isManagement ? unpaid : onlySelf(unpaid),
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

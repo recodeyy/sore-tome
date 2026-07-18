@@ -69,6 +69,52 @@ router.get("/", authMiddleware, tenantMiddleware, async (req, res) => {
   } catch (e: any) { map(res, e, "Failed to list members"); }
 });
 
+// POST /members/sync-firestore — admin: mirror this society's APPROVED
+// app-registered users (Firestore `users`) into the Postgres members
+// directory. App registrations/approvals historically wrote Firestore only,
+// so the website's Members & Tenants never showed them. Idempotent upsert
+// keyed by (society_id, user_id); deletes nothing.
+router.post("/sync-firestore", authMiddleware, tenantMiddleware, canManageContent, async (req, res) => {
+  try {
+    const societyId = societyOf(req);
+    // @ts-ignore — JS firebase helper
+    const { getDb } = require("../../config/firebase");
+    const { db } = require("../shared/Database");
+
+    const snap = await getDb().collection("users")
+      .where("society_id", "==", societyId)
+      .where("status", "==", "approved")
+      .get();
+
+    let inserted = 0, updated = 0;
+    for (const doc of snap.docs) {
+      const u = doc.data();
+      const existing = await db.query(
+        `SELECT id FROM members WHERE society_id = $1 AND user_id = $2`,
+        [societyId, doc.id]
+      );
+      if (existing.rows.length) {
+        await db.query(
+          `UPDATE members SET status = 'approved', name = COALESCE($3, name),
+                  phone = COALESCE($4, phone), updated_at = now()
+            WHERE society_id = $1 AND user_id = $2`,
+          [societyId, doc.id, u.name || null, u.phone || null]
+        );
+        updated++;
+      } else {
+        await db.query(
+          `INSERT INTO members (society_id, user_id, name, phone, email, status, role)
+           VALUES ($1, $2, $3, $4, $5, 'approved', $6)`,
+          [societyId, doc.id, u.name || "Resident", u.phone || null, u.email || null, u.role || "resident"]
+        );
+        inserted++;
+      }
+    }
+    logger.info({ societyId, inserted, updated }, "Firestore→members sync completed");
+    res.json({ success: true, checked: snap.size, inserted, updated });
+  } catch (e: any) { map(res, e, "Failed to sync members from Firestore"); }
+});
+
 // Committee directory (MUST be declared before "/:id" or it is swallowed by it)
 router.get("/committee", authMiddleware, tenantMiddleware, async (req, res) => {
   try { res.json({ committee: await MemberService.listCommittee(societyOf(req)) }); }
