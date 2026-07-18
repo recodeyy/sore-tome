@@ -311,7 +311,7 @@ async function getUserDestinations(uid, phone) {
                 type: isAdmin ? "admin" : "resident",
                 role: row.role || (isAdmin ? "admin" : "resident_owner"),
                 societyId: row.society_id,
-                societyName: row.society_name || "My Society",
+                societyName: row.society_name || row.society_id || "My Society",
                 unitId: row.unit_id || null,
                 status: row.status
             });
@@ -338,7 +338,7 @@ async function getUserDestinations(uid, phone) {
                 type: "staff",
                 role: row.role || "guard",
                 societyId: row.society_id,
-                societyName: row.society_name || "My Society",
+                societyName: row.society_name || row.society_id || "My Society",
                 status: row.status === "active" ? "approved" : "suspended"
             });
         }
@@ -387,7 +387,7 @@ function addFirestoreDestinations(user, destinations) {
                 type: "admin",
                 role: user.role,
                 societyId: user.society_id,
-                societyName: "My Society",
+                societyName: user.society_id || "My Society",
                 status: user.status || "approved"
             });
         }
@@ -401,7 +401,7 @@ function addFirestoreDestinations(user, destinations) {
                 type: "staff",
                 role: user.role,
                 societyId: user.society_id,
-                societyName: "My Society",
+                societyName: user.society_id || "My Society",
                 status: user.status || "approved"
             });
         }
@@ -412,7 +412,7 @@ function addFirestoreDestinations(user, destinations) {
                 type: "resident",
                 role: "resident_owner",
                 societyId: user.society_id,
-                societyName: "My Society",
+                societyName: user.society_id || "My Society",
                 status: user.status || "pending"
             });
         }
