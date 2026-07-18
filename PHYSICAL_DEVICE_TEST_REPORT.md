@@ -53,9 +53,19 @@ Every ✅ below was demonstrated on the physical device or against the live prod
 
 ## 4. Open gaps (not yet fixed — next work)
 
+### Update (same day, staff-flow round 2 — all fixed & device-verified)
+
+The staff journey was completed after this report's first version:
+- **Flats seeded** (Wing A + units + occupancy via admin APIs) → Target-flat dropdown works.
+- **Attendance**: self-service check-in/out with auto-provisioned staff rows (was admin-only + missing fields) → "ON DUTY" verified on device; state-restore field-name mismatch fixed backend-side (`checkInTime` aliases + idempotent duplicate check-in).
+- **Restart routing**: staff sessions restored into StaffShell (previously AdminShell → "Admin access required").
+- **Gate lifecycle**: courier logged → appeared under **Inside** → **Check Out** works (`BlueDart QA → checked_out` confirmed on backend). Inside bucket now accepts `checked_in/arrived/inside`; checkout/arrival call the same `/guard/visitors` store as the list.
+- **Society selector**: works for multi-society staff (guard now spans 2 societies); real society names deploy with the next Render release.
+- APK: **`sero-app-20260718-staff-flow-fix.apk`** supersedes all previous builds.
+
 | Sev | Gap | Detail |
 |-----|-----|--------|
-| P1 | **Staff parcel/visitor → resident routing blocked by empty flats directory** | Gate Console's "Target flat" dropdown has no options in `demo-soc-1` (no units/flats seeded), so a courier entry cannot be assigned to a resident and the cross-role parcel→approval→notification journey cannot complete. Needs the §4 idempotent seed (wings/floors/flats + occupancies) or admin flats setup. |
+| P2 | ~~Staff parcel/visitor routing blocked by empty flats directory~~ | **FIXED & verified** (see update above). Remaining: idempotent §4 seed script so new societies get structure automatically. |
 | P1 | **FCM system-tray push unverified** | In-app inbox works; Android channels are registered (billing imp 4, visitors/SOS imp 5). But no SERO push banner was observed in the tray during the reminder test — device FCM token registration and the outbox→FCM sender need a dedicated test. |
 | P2 | **Dual finance engines disagree** | Legacy Firestore dues (`/funds/maintenance-status`: ₹1250 outstanding) vs Postgres invoices (both settled). The §7.2 finance engine should become the single source and the legacy dues card should read from it. |
 | P2 | Old receipt `RCPT-000001` invisible to the resident | Predates the attribution fix (`created_by` null, intent metadata without `createdBy`). Admin sees it; a one-row data repair or an admin reissue would restore resident visibility. |
