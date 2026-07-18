@@ -3,25 +3,99 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:sero/app/theme.dart';
 import 'package:sero/providers/shared/resident_dues_provider.dart';
+import 'package:sero/providers/shared/funds_provider.dart';
+import 'package:sero/providers/shared/auth_provider.dart';
+import 'package:sero/providers/resident/resident_billing_provider.dart';
 import 'package:sero/models/fund.dart';
+import 'package:sero/models/invoice.dart';
+import 'package:sero/services/payment_service.dart';
 import 'package:sero/widgets/shared/sero_ui.dart';
-import '../funds/resident_funds_screen.dart';
 import 'bill_details_screen.dart';
 import 'auto_pay_setup_screen.dart';
+import 'pay_invoice_sheet.dart';
+import 'receipts_screen.dart';
 
 /// Bills & Dues + Payment History (design: payment.png screens 1 & 3).
 ///
 /// LIVE DATA:
 ///  - Total Due / dues breakdown -> residentDuesProvider (GET /funds/maintenance-status)
+///  - Published invoices (§7.2)  -> publishedInvoicesProvider (GET /finance/invoices)
 ///  - Payment history (Paid tab) -> residentPaymentsProvider (GET /funds/transactions)
-///  - Pay flow                   -> ResidentFundsScreen (POST /funds/payments/*)
-class BillsDuesScreen extends ConsumerWidget {
+///  - Pay All (legacy dues)      -> PaymentService (POST /funds/payments/*) → Razorpay
+///  - Pay invoice (§7.2)         -> PayInvoiceSheet (POST /finance/payments/*) → Razorpay
+///  - Receipts                   -> ReceiptsScreen (GET /finance/receipts + /:id/pdf)
+class BillsDuesScreen extends ConsumerStatefulWidget {
   const BillsDuesScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<BillsDuesScreen> createState() => _BillsDuesScreenState();
+}
+
+class _BillsDuesScreenState extends ConsumerState<BillsDuesScreen> {
+  bool _paying = false;
+  late final DuesCheckout _checkout;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkout = DuesCheckout(
+      onProcessing: () {
+        if (mounted) setState(() => _paying = true);
+      },
+      onSuccess: (paymentId) {
+        if (!mounted) return;
+        setState(() => _paying = false);
+        ref.invalidate(residentDuesProvider);
+        ref.invalidate(residentBalanceProvider);
+        ref.invalidate(residentPaymentsProvider);
+        ref.invalidate(receiptsProvider);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          backgroundColor: kPrimaryGreen,
+          content: Text('Payment successful — ID $paymentId'),
+        ));
+      },
+      onFailure: (message) {
+        if (!mounted) return;
+        setState(() => _paying = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Payment failed: $message')),
+        );
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _checkout.dispose();
+    super.dispose();
+  }
+
+  /// Opens the Razorpay (TEST) checkout for the resident's outstanding
+  /// maintenance dues via the legacy /funds payment path. The backend verifies
+  /// the signature and records the credit transaction; providers refresh in
+  /// the checkout callbacks.
+  Future<void> _payDues(ResidentDues dues) async {
+    if (_paying || !dues.hasDues) return;
+    setState(() => _paying = true);
+    final user = ref.read(authProvider).value;
+    await _checkout.start(
+      amount: dues.amountOwed,
+      title: 'Maintenance Payment',
+      description: dues.unitInfo.isEmpty ? 'Society maintenance dues' : dues.unitInfo,
+      contact: user?.phone,
+    );
+    // start() returns once the checkout sheet is open (or failed to open);
+    // reset the spinner if no callback has fired yet so the button recovers
+    // when the user dismisses the sheet without paying.
+    if (mounted && _paying) setState(() => _paying = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final duesAsync = ref.watch(residentDuesProvider);
     final paymentsAsync = ref.watch(residentPaymentsProvider);
+    final invoicesAsync = ref.watch(publishedInvoicesProvider);
+    final settledIds = ref.watch(settledInvoiceIdsProvider);
 
     return Scaffold(
       backgroundColor: kSlateBg,
@@ -50,6 +124,25 @@ class BillsDuesScreen extends ConsumerWidget {
               data: (dues) => _buildDueCard(context, dues),
             ),
             const SizedBox(height: 12),
+
+            // ── Published invoices (§7.2 finance engine) ──
+            invoicesAsync.when(
+              loading: () => const SizedBox.shrink(),
+              error: (e, _) => const SizedBox.shrink(), // legacy dues card above still works
+              data: (invoices) {
+                final open = invoices.where((i) => !settledIds.contains(i.id)).toList();
+                if (open.isEmpty) return const SizedBox.shrink();
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SizedBox(height: 12),
+                    _label('Invoices'),
+                    const SizedBox(height: 12),
+                    ...open.map((inv) => _invoiceRow(context, inv)),
+                  ],
+                );
+              },
+            ),
 
             // Quick links to Bill Details / Receipt and Auto-Pay setup
             Row(
@@ -81,6 +174,21 @@ class BillsDuesScreen extends ConsumerWidget {
                     ),
                     icon: const Icon(Icons.autorenew_rounded, size: 18),
                     label: Text('Auto-Pay', style: GoogleFonts.outfit(fontWeight: FontWeight.w700, fontSize: 12)),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => Navigator.push(context,
+                        MaterialPageRoute(builder: (_) => const ReceiptsScreen())),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: kPrimaryGreen,
+                      side: const BorderSide(color: kSlateBorder),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    icon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
+                    label: Text('Receipts', style: GoogleFonts.outfit(fontWeight: FontWeight.w700, fontSize: 12)),
                   ),
                 ),
               ],
@@ -164,10 +272,10 @@ class BillsDuesScreen extends ConsumerWidget {
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
-              onPressed: dues.hasDues
-                  ? () => Navigator.push(context,
-                      MaterialPageRoute(builder: (_) => const ResidentFundsScreen()))
-                  : null,
+              // Opens the Razorpay TEST checkout (UPI / cards / netbanking)
+              // directly — previously this pushed the read-only Treasury
+              // screen, a dead end with no pay action.
+              onPressed: dues.hasDues && !_paying ? () => _payDues(dues) : null,
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.white,
                 foregroundColor: kPrimaryGreen,
@@ -175,9 +283,76 @@ class BillsDuesScreen extends ConsumerWidget {
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
               ),
-              child: Text(dues.hasDues ? 'Pay All' : 'All Clear',
+              child: Text(
+                  _paying ? 'Opening checkout…' : (dues.hasDues ? 'Pay All' : 'All Clear'),
                   style: GoogleFonts.outfit(fontWeight: FontWeight.w700)),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// One published §7.2 invoice with a Pay button that opens [PayInvoiceSheet]
+  /// (Razorpay TEST checkout; backend-verified; receipt generated on capture).
+  Widget _invoiceRow(BuildContext context, Invoice inv) {
+    final total = (inv.totalMinor + inv.lateFeeMinor) / 100.0;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: kSlateBorder),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: kLightMint,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(Icons.receipt_outlined, color: kPrimaryGreen, size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(inv.number,
+                    style: GoogleFonts.outfit(
+                        fontWeight: FontWeight.w700, color: kDeepNavy, fontSize: 14)),
+                Text(
+                  [
+                    if (inv.period != null && inv.period!.isNotEmpty) inv.period!,
+                    if (inv.dueDate != null) 'Due ${inv.dueDate!.split('T').first}',
+                  ].join('  ·  '),
+                  style: GoogleFonts.outfit(color: const Color(0xFF64748B), fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text('₹${total.toStringAsFixed(0)}',
+                  style: GoogleFonts.outfit(
+                      fontWeight: FontWeight.w700, color: kDeepNavy, fontSize: 14)),
+              const SizedBox(height: 4),
+              ElevatedButton(
+                onPressed: () => showPayInvoiceSheet(context, inv),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: kPrimaryGreen,
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size(64, 30),
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                child: Text('Pay',
+                    style: GoogleFonts.outfit(fontWeight: FontWeight.w700, fontSize: 12)),
+              ),
+            ],
           ),
         ],
       ),

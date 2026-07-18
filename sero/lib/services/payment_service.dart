@@ -123,6 +123,115 @@ class InvoiceCheckout {
   }
 }
 
+/// Legacy maintenance-dues checkout against POST /funds/payments/*.
+///
+/// Per-instance Razorpay (mirrors [InvoiceCheckout]) so each screen can own
+/// one without clobbering another screen's callbacks — unlike the singleton
+/// [PaymentService] below, which overwrites its callbacks on every init().
+class DuesCheckout {
+  DuesCheckout({
+    required this.onProcessing,
+    required this.onSuccess,
+    required this.onFailure,
+  });
+
+  /// Checkout callback received; backend verification in flight.
+  final void Function() onProcessing;
+
+  /// Backend verify recorded the payment. Argument is the gateway payment id.
+  final void Function(String paymentId) onSuccess;
+
+  final void Function(String message) onFailure;
+
+  Razorpay? _razorpay;
+  double? _amount;
+  String? _title;
+
+  Future<void> start({
+    required double amount,
+    required String title,
+    String? description,
+    String? contact,
+    String? email,
+  }) async {
+    _amount = amount;
+    _title = title;
+    try {
+      final res = await ApiService.post('/funds/payments/create-order', {
+        'amount': amount,
+        'currency': 'INR',
+      });
+      if (res.statusCode != 200) {
+        String message = 'Could not start the payment (${res.statusCode}).';
+        try {
+          final err = jsonDecode(res.body)['error'];
+          if (err is String && err.isNotEmpty) message = err;
+        } catch (_) {}
+        onFailure(message);
+        return;
+      }
+
+      final order = jsonDecode(res.body) as Map<String, dynamic>;
+      _razorpay ??= (Razorpay()
+        ..on(Razorpay.EVENT_PAYMENT_SUCCESS, _handleSuccess)
+        ..on(Razorpay.EVENT_PAYMENT_ERROR, _handleError)
+        ..on(Razorpay.EVENT_EXTERNAL_WALLET, _handleExternalWallet));
+
+      _razorpay!.open({
+        'key': order['metadata']?['key'],
+        'amount': (amount * 100).toInt(), // paise
+        'currency': order['currency'] ?? 'INR',
+        'order_id': order['id'],
+        'name': 'SERO Society',
+        'description': description ?? title,
+        'prefill': {'contact': contact ?? '', 'email': email ?? ''},
+      });
+    } catch (e) {
+      onFailure('Could not start the payment: $e');
+    }
+  }
+
+  Future<void> _handleSuccess(PaymentSuccessResponse response) async {
+    onProcessing();
+    try {
+      final res = await ApiService.post('/funds/payments/verify', {
+        'razorpay_order_id': response.orderId,
+        'razorpay_payment_id': response.paymentId,
+        'razorpay_signature': response.signature,
+        // Echoed for the backend's transaction record and as its amount
+        // fallback when the gateway amount-fetch is unavailable.
+        if (_amount != null) 'amount': _amount,
+        if (_title != null) 'title': _title,
+      });
+      if (res.statusCode == 200) {
+        onSuccess(response.paymentId ?? 'unknown');
+      } else {
+        String message = 'Payment verification failed';
+        try {
+          final err = jsonDecode(res.body)['error'];
+          if (err is String && err.isNotEmpty) message = err;
+        } catch (_) {}
+        onFailure(message);
+      }
+    } catch (e) {
+      onFailure('Verification error: $e');
+    }
+  }
+
+  void _handleError(PaymentFailureResponse response) {
+    onFailure(response.message ?? 'Payment was cancelled or failed');
+  }
+
+  void _handleExternalWallet(ExternalWalletResponse response) {
+    onFailure('External wallet (${response.walletName ?? 'unknown'}) is not supported in test mode');
+  }
+
+  void dispose() {
+    _razorpay?.clear();
+    _razorpay = null;
+  }
+}
+
 class PaymentService {
   static final PaymentService _instance = PaymentService._internal();
   factory PaymentService() => _instance;
@@ -131,6 +240,10 @@ class PaymentService {
   late Razorpay _razorpay;
   Function(String)? _onSuccess;
   Function(String)? _onFailure;
+  // Echoed back on verify: the backend records the transaction with this
+  // title/amount when the gateway amount-fetch is unavailable.
+  double? _lastAmount;
+  String? _lastTitle;
 
   void init({
     required Function(String) onSuccess,
@@ -157,6 +270,8 @@ class PaymentService {
     String? contact,
   }) async {
     try {
+      _lastAmount = amount;
+      _lastTitle = title;
       // 1. Create Order on Backend
       final res = await ApiService.post('/funds/payments/create-order', {
         'amount': amount,
@@ -200,6 +315,8 @@ class PaymentService {
         'razorpay_order_id': response.orderId,
         'razorpay_payment_id': response.paymentId,
         'razorpay_signature': response.signature,
+        if (_lastAmount != null) 'amount': _lastAmount,
+        if (_lastTitle != null) 'title': _lastTitle,
       });
 
       if (verifyRes.statusCode == 200) {

@@ -9,6 +9,7 @@ import '../domestic/domestic_help_screen.dart';
 import '../documents/documents_screen.dart';
 import '../rules/resident_rules_screen.dart';
 import '../issues/resident_issues_screen.dart';
+import '../payments/receipts_screen.dart';
 import '../profile/resident_profile_screen.dart';
 
 /// Resident "More" tab (MR-012): a hub linking to every secondary feature
@@ -43,6 +44,12 @@ class ResidentMoreScreen extends StatelessWidget {
         label: 'Domestic Help',
         subtitle: 'Maid, cook, driver',
         onTap: (ctx) => _push(ctx, const DomesticHelpScreen()),
+      ),
+      _MoreItem(
+        icon: Icons.receipt_long_rounded,
+        label: 'Receipts',
+        subtitle: 'Payment receipts',
+        onTap: (ctx) => _push(ctx, const ReceiptsScreen()),
       ),
       _MoreItem(
         icon: Icons.description_rounded,

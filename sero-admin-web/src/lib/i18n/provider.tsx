@@ -22,13 +22,18 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
   const [lang, setLangState] = useState<Lang>("en");
   const pathname = usePathname();
 
-  // Restore saved language + boot the Google Translate widget once.
+  // Restore saved language. The Google Translate widget is only booted when a
+  // non-English language is actually in use: its element.js pulls further
+  // el_main css/js resources that can hang in "pending" forever (observed on
+  // CloudFront in-region), which keeps the document from ever reaching idle —
+  // the page looks hung and automation/lighthouse time out. English users
+  // never need the widget, so don't pay that cost on every load.
   useEffect(() => {
-    ensureGoogleTranslate();
     const saved = (typeof window !== "undefined" &&
       (localStorage.getItem(STORAGE_KEY) as Lang)) || "en";
     setLangState(saved);
     if (saved !== "en") {
+      ensureGoogleTranslate();
       setTimeout(() => applyLanguage(saved), 600); // let the widget mount first
     }
   }, []);
@@ -51,6 +56,7 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
     } catch {
       /* ignore */
     }
+    if (l !== "en") ensureGoogleTranslate(); // lazy-boot on first real use
     applyLanguage(l); // translate the whole page, not just dictionary strings
   }, []);
 

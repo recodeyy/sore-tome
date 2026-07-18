@@ -33,9 +33,12 @@ class FloatingPillNavbar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // NOTE: no `alignment:` here — a Container with `alignment` set expands to
+    // fill its parent, so Scaffold would measure this bottomNavigationBar as
+    // full-screen tall and lay the body out with ZERO height (blank screen on
+    // every shell). The padded pill must size itself intrinsically.
     return Container(
       padding: const EdgeInsets.fromLTRB(24, 0, 24, 28),
-      alignment: Alignment.bottomCenter,
       child: Container(
         constraints: const BoxConstraints(maxWidth: 420),
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sero/services/api_service.dart';
 import 'package:sero/models/fund.dart';
 import 'package:sero/providers/shared/auth_provider.dart';
+import 'package:sero/providers/shared/resident_dues_provider.dart';
 import 'package:sero/services/local_database_service.dart';
 
 final fundsProvider = StateNotifierProvider.autoDispose<FundsNotifier, AsyncValue<List<FundTransaction>>>((ref) {
@@ -40,25 +41,14 @@ final overdueResidentsProvider = FutureProvider.autoDispose<List<OverdueResident
   return [];
 });
 
+/// The resident's own outstanding balance. Delegates to [residentDuesProvider]
+/// so the Home card, Treasury status, and Bill Details all read the SAME
+/// server-computed figure. (The old implementation matched the caller by name
+/// and read a non-existent `amount` field, so it always returned ₹0 while
+/// Bill Details showed real dues.)
 final residentBalanceProvider = FutureProvider.autoDispose<double>((ref) async {
-  final user = ref.watch(authProvider).value;
-  if (user == null) return 0.0;
-  
-  try {
-    final res = await ApiService.get('/funds/maintenance-status');
-    if (res.statusCode == 200) {
-      final data = jsonDecode(res.body);
-      final list = data['unpaid'] as List;
-      final myEntry = list.firstWhere(
-        (x) => x['name'] == user.name, // Simplified matching by name
-        orElse: () => null,
-      );
-      return myEntry != null ? (myEntry['amount'] as num).toDouble() : 0.0;
-    }
-  } catch (e) {
-    // Silent fail
-  }
-  return 0.0;
+  final dues = await ref.watch(residentDuesProvider.future);
+  return dues.amountOwed;
 });
 
 class FundsNotifier extends StateNotifier<AsyncValue<List<FundTransaction>>> {

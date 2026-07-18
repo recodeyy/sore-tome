@@ -64,6 +64,12 @@ async function invoiceRecipients(client: any, societyId: string, invoice: any): 
     if (invoice.unit_id) {
       out.push(...await Recipients.unitResidentUserIds(client, societyId, invoice.unit_id));
     }
+    // Society-wide invoice (no member/unit attribution): notify every approved
+    // resident. Without this fallback such invoices fan out to zero recipients
+    // and dues reminders silently reach nobody.
+    if (out.length === 0 && !invoice.member_id && !invoice.unit_id) {
+      out.push(...await Recipients.societyResidentUserIds(client, societyId));
+    }
   } catch (e: any) {
     logger.warn({ societyId, invoiceId: invoice.id, error: e.message }, "invoiceRecipients resolution failed");
   }
@@ -397,13 +403,23 @@ export const FinanceService = {
     const amountMinor = Number(intent.rows[0]?.amount_minor) || (await this.outstandingMinor(db, societyId, invoiceId));
 
     // Capture via the existing idempotent transactional path, keyed by payment id.
+    // Carry the payer identity recorded on the order intent through to the
+    // payment/receipt (receipts.created_by) — without it the resident's "own
+    // receipts" listing can never match a payment they made against an invoice
+    // that has no member/unit attribution.
     const result = await this.recordPayment(societyId, {
       idempotencyKey: `rzp:${paymentId}`,
       invoiceId,
       amountMinor,
       provider: "razorpay",
       providerPaymentId: paymentId,
-      metadata: { orderId, source: "checkout_verify", testMode: isRazorpayTestMode() },
+      metadata: {
+        orderId,
+        source: "checkout_verify",
+        testMode: isRazorpayTestMode(),
+        createdBy: intent.rows[0]?.metadata?.createdBy || null,
+        payerMemberId: intent.rows[0]?.metadata?.payerMemberId || null,
+      },
     });
 
     // Retire the pending intent once a real captured payment exists for this
@@ -722,13 +738,20 @@ export const FinanceService = {
     let where = `r.society_id = $1`;
     if (opts.userId) {
       params.push(opts.userId);
-      where += ` AND EXISTS (
-        SELECT 1 FROM payment_allocations pa
-        JOIN invoices i ON i.id = pa.invoice_id
-        LEFT JOIN members m ON m.id::text = i.member_id::text AND m.society_id = i.society_id
-        WHERE pa.payment_id = r.payment_id AND pa.society_id = r.society_id
-          AND (m.user_id = $${params.length}
-               OR i.unit_id::text IN (SELECT unit_id::text FROM members WHERE society_id = $1 AND user_id = $${params.length} AND unit_id IS NOT NULL))
+      // Own receipts = billed to my member/unit OR personally paid by me
+      // (receipts.created_by / the payment intent's createdBy). The payer
+      // clauses matter for invoices with no member/unit attribution.
+      where += ` AND (
+        r.created_by = $${params.length}
+        OR p.metadata->>'createdBy' = $${params.length}
+        OR EXISTS (
+          SELECT 1 FROM payment_allocations pa
+          JOIN invoices i ON i.id = pa.invoice_id
+          LEFT JOIN members m ON m.id::text = i.member_id::text AND m.society_id = i.society_id
+          WHERE pa.payment_id = r.payment_id AND pa.society_id = r.society_id
+            AND (m.user_id = $${params.length}
+                 OR i.unit_id::text IN (SELECT unit_id::text FROM members WHERE society_id = $1 AND user_id = $${params.length} AND unit_id IS NOT NULL))
+        )
       )`;
     }
     params.push(Math.min(opts.limit || 50, 200));
