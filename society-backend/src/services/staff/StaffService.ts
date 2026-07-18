@@ -59,6 +59,45 @@ export const StaffService = {
     return rows[0];
   },
 
+  /**
+   * The staff.id for a given app user, for self-service attendance. With
+   * autoProvision, creates the staff row on first use — app-registered staff
+   * (guards etc.) live in Firebase auth and historically had no Postgres
+   * staff record, which made every self check-in/out 404.
+   */
+  async staffIdForUser(
+    societyId: string,
+    userId: string | undefined,
+    opts: { autoProvision?: boolean; name?: string; role?: string; phone?: string } = {}
+  ): Promise<string | null> {
+    if (!userId) return null;
+    await ensureSchema();
+    const { rows } = await db.query(
+      `SELECT id FROM staff WHERE society_id = $1 AND user_id = $2 AND status = 'active' LIMIT 1`,
+      [societyId, userId]
+    );
+    if (rows[0]) return rows[0].id;
+    if (!opts.autoProvision) return null;
+    const created = await this.createStaff(societyId, {
+      name: opts.name || "Staff",
+      role: opts.role || "staff",
+      phone: opts.phone,
+      userId,
+    });
+    logger.info({ societyId, userId, staffId: created.id }, "Staff row auto-provisioned for app user");
+    return created.id;
+  },
+
+  /** Today's (or the given date's) attendance entry for one staff member. */
+  async attendanceFor(societyId: string, staffId: string, workDate: string) {
+    await ensureSchema();
+    const { rows } = await db.query(
+      `SELECT * FROM attendance_entries WHERE society_id = $1 AND staff_id = $2 AND work_date = $3`,
+      [societyId, staffId, workDate]
+    );
+    return rows[0] || null;
+  },
+
   async listStaff(societyId: string, opts: { status?: string; limit?: number } = {}) {
     await ensureSchema();
     const params: any[] = [societyId];
