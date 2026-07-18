@@ -4,6 +4,7 @@ import 'package:sero/providers/shared/auth_provider.dart';
 import 'package:sero/core/permissions/role_utils.dart';
 import 'admin_shell.dart';
 import 'resident_shell.dart';
+import 'staff_shell.dart';
 import 'super_admin_shell.dart';
 
 class MainShell extends ConsumerWidget {
@@ -16,6 +17,13 @@ class MainShell extends ConsumerWidget {
 
     if (RoleUtils.isSuperAdmin(role)) {
       return const SuperAdminShell();
+    }
+
+    // Staff/guard BEFORE the admin fallback: on app restart the splash routes
+    // every restored session through /home → MainShell, and without this a
+    // guard session fell into the AdminShell ("Admin access required").
+    if (RoleUtils.isStaff(role)) {
+      return const StaffShell();
     }
 
     if (RoleUtils.isResident(role)) {

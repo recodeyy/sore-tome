@@ -37,4 +37,15 @@ class RoleUtils {
   }
 
   static bool isSuperAdmin(String role) => normalize(role) == 'super_admin';
+
+  /// Gate/operations staff roles that belong in the StaffShell. Mirrors the
+  /// allowedRoles list on the '/staff' route in app.dart.
+  static bool isStaff(String role) {
+    const staffRoles = {
+      'guard', 'security_manager', 'facility_manager', 'supervisor',
+      'maintenance_staff', 'housekeeping_staff', 'reception_staff',
+      'parcel_desk_staff', 'staff',
+    };
+    return staffRoles.contains(normalize(role));
+  }
 }

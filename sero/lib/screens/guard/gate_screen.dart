@@ -204,8 +204,14 @@ class _GateScreenState extends ConsumerState<GateScreen> {
         .where((v) => (v.status == 'expected' || v.status == 'pre_approved') && matches(v))
         .toList();
     final pending = all.where((v) => v.status == 'pending' && matches(v)).toList();
+    // The /guard/visitors feed marks people on premises as 'checked_in' (or
+    // 'arrived'/'inside' from older flows); 'approved' covers resident-approved
+    // entries that haven't exited. Only 'approved' was matched before, so
+    // couriers/maids the guard checked in never appeared and could not be
+    // checked out.
+    const insideStatuses = {'approved', 'checked_in', 'arrived', 'inside'};
     final inside = all
-        .where((v) => v.status == 'approved' && v.exitTime == null && matches(v))
+        .where((v) => insideStatuses.contains(v.status) && v.exitTime == null && matches(v))
         .toList();
 
     if (expected.isEmpty && pending.isEmpty && inside.isEmpty) {
@@ -286,7 +292,12 @@ class _GateScreenState extends ConsumerState<GateScreen> {
 
   Future<void> _markArrived(Visitor v) async {
     try {
-      final res = await ApiService.patch('/visitors/${v.id}/action', {'action': 'arrived'});
+      // The gate feed comes from /guard/visitors, so entry must be recorded on
+      // the same store. Fall back to the legacy action route for old records.
+      var res = await ApiService.post('/guard/visitors/${v.id}/entry', {});
+      if (res.statusCode == 404) {
+        res = await ApiService.patch('/visitors/${v.id}/action', {'action': 'arrived'});
+      }
       if (!mounted) return;
       if (res.statusCode >= 200 && res.statusCode < 300) {
         ref.invalidate(guardVisitorsProvider);
@@ -307,8 +318,13 @@ class _GateScreenState extends ConsumerState<GateScreen> {
 
   Future<void> _checkout(Visitor v) async {
     try {
-      // Existing working checkout route: PATCH /visitors/{id}/checkout.
-      final res = await ApiService.patch('/visitors/${v.id}/checkout', {});
+      // Same-store checkout: the gate feed ids live under /guard/visitors, so
+      // the legacy PATCH /visitors/{id}/checkout can never find them. Keep the
+      // legacy route as a fallback for records created by the old flow.
+      var res = await ApiService.post('/guard/visitors/${v.id}/check-out', {});
+      if (res.statusCode == 404) {
+        res = await ApiService.patch('/visitors/${v.id}/checkout', {});
+      }
       if (!mounted) return;
       if (res.statusCode >= 200 && res.statusCode < 300) {
         ref.invalidate(guardVisitorsProvider);
