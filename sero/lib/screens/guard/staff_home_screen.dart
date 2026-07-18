@@ -273,8 +273,12 @@ class _StaffHomeScreenState extends ConsumerState<StaffHomeScreen> {
             .where((v) => v.status == 'expected' || v.status == 'pre_approved')
             .length;
         final pending = visitors.where((v) => v.status == 'pending').length;
+        // Same on-premises statuses as the Gate tab: /guard/visitors marks
+        // people inside as 'checked_in' (or 'arrived'/'inside' from older
+        // flows); 'approved' alone missed every guard-logged entry.
+        const insideStatuses = {'approved', 'checked_in', 'arrived', 'inside'};
         final inside = visitors
-            .where((v) => v.status == 'approved' && v.exitTime == null)
+            .where((v) => insideStatuses.contains(v.status) && v.exitTime == null)
             .length;
         return Row(
           children: [
