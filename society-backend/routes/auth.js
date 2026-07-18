@@ -136,6 +136,18 @@ router.post("/refresh", validate(RefreshTokenSchema), async (req, res) => {
         }
         const user = userDoc.data();
 
+        // Preserve the session's WORKSPACE scope across rotation. The refresh
+        // doc records the role/society this session was scoped to at login or
+        // workspace-select. Re-deriving them from the user doc (as before)
+        // silently teleported every multi-workspace session — e.g. a guard
+        // working a society other than their Firestore home — into the wrong
+        // tenant on the first background refresh: attendance/visitors then
+        // read/write a different society than the one on screen.
+        const scopedRole = tokenData.role || user.role;
+        const scopedSociety = tokenData.society_id !== undefined
+            ? tokenData.society_id
+            : (user.society_id ?? null);
+
         // 🔁 TOKEN ROTATION
         const batch = db.batch();
         batch.update(tokenDoc.ref, { revoked: true }); // Invalidate old token in Firestore
@@ -148,21 +160,22 @@ router.post("/refresh", validate(RefreshTokenSchema), async (req, res) => {
             expiresAt: getAdmin().firestore.Timestamp.fromDate(new Date(Date.now() + REFRESH_TOKEN_EXPIRES_IN)),
             revoked: false,
             createdAt: getAdmin().firestore.FieldValue.serverTimestamp(),
-            society_id: user.society_id
+            role: scopedRole,
+            society_id: scopedSociety
         });
 
         await batch.commit();
-        
+
         // Add old token to Redis Blacklist (Short TTL)
         await redis.setex(`blacklist:${tokenHash}`, 3600, "1");
 
         const newAccessToken = jwt.sign(
-            { 
-                uid: userDoc.id, 
-                phone: user.phone, 
-                role: user.role, 
+            {
+                uid: userDoc.id,
+                phone: user.phone,
+                role: scopedRole,
                 name: user.name,
-                society_id: user.society_id
+                society_id: scopedSociety
             },
             JWT_SECRET,
             { expiresIn: JWT_EXPIRES_IN }
